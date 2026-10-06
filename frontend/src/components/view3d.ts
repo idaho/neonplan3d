@@ -75,7 +75,7 @@ import { coverPositionable, lightAbilities } from "./quick-menu.ts";
 import "./quick-menu.ts";
 import { load3d } from "../load3d.ts";
 import { detectionKind, scaleGlow, buildMarkers, cameraMotionSensors, openMoreInfo, placedEntities, stateText, toggleEntity } from "../markers.ts";
-import { furnitureFootprint, isLamp, LAMP_MODEL, outdoorGround, pointInPolygon, surfaceHeight, type Building, type Furniture, type StartView } from "../model.ts";
+import { furnitureFootprint, isLamp, LAMP_MODEL, outdoorGround, pointInPolygon, roomCeilingAt, roomLevelAt, surfaceHeight, type Building, type Furniture, type StartView } from "../model.ts";
 import { floorCounts, floorInfoText, personsInRooms } from "../presence.ts";
 import { controls, tokens } from "../styles.ts";
 import type { HassEntity, HomeAssistant } from "../types.ts";
@@ -1835,16 +1835,16 @@ export class Fp3dView3d extends LitElement {
     const base = model === "strip" && !inRoom
       ? outdoorGround(floor, f.x, f.z) + (f.mount_y ?? 0)
       : f.mount_y != null && !item
-      ? f.mount_y
+      ? roomLevelAt(floor, f.x, f.z) + f.mount_y
       : item || model === "wall" || model === "strip"
       ? mountBase(floor, f)
       : model === "table"
         ? surfaceHeight(floor, f.x, f.z)
         : model === "bollard" || model === "garden"
-          ? outdoorGround(floor, f.x, f.z)
-          : 0;
+          ? inRoom ? roomLevelAt(floor, f.x, f.z) : outdoorGround(floor, f.x, f.z)
+          : roomLevelAt(floor, f.x, f.z);
     const room = floor.rooms.find((r) => r.points.length >= 3 && pointInPolygon([f.x, f.z], r.points));
-    const H = floor.height;
+    const H = roomCeilingAt(floor, f.x, f.z);
     // pack lamps: the marker sits above the lamp (below it when it hangs from the ceiling)
     const y = item
       ? item.mount === "ceiling"
@@ -1885,6 +1885,7 @@ export class Fp3dView3d extends LitElement {
       upright: !!f.upright,
       size: [f.w, f.d, f.h],
       base,
+      ceiling_y: H,
       pickable: !!entity,
       furnitureId: f.id,
       pack: item ? f.type : null,

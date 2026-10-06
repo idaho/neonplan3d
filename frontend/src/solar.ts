@@ -5,8 +5,9 @@
 // length); on a flat roof s runs across, level. A field's u and v place its lower left corner on the face.
 
 import type { Building, Floor, RoofSection, RoofWindow, SolarField, Vec2 } from "./model.ts";
-import { outdoorGround } from "./model.ts";
+import { floorTop, outdoorGround } from "./model.ts";
 import { generateWalls } from "./geometry/walls.ts";
+import { wallLevels } from "./room-levels.ts";
 import { sectionFrame, sectionOverhang, sectionProfile } from "./roof-sections.ts";
 
 const DEG = Math.PI / 180;
@@ -63,12 +64,12 @@ export function wallFaces(b: Building, floorId?: string): RoofFace[] {
       // exterior walls have their room on the left: the outer face lies on the right
       const nx = dz / l;
       const nz = -dx / l;
-      const height = Math.min(floor.height, w.height ?? floor.height);
+      const levels = wallLevels(floor, w), height = levels.top - levels.bottom;
       const face = (key: string, o: V3, eu: V3, n: V3) =>
         out.push({ key, section: null, side: "top", flat: false, o, eu, es: [0, 1, 0], n, lu: l, ls: height, pitch: 90, span: () => [0, l], facing: [n[0], n[2]], wall: { floorId: floor.id } });
-      face(`wall:${floor.id}:${w.id}`, [w.a[0] + nx * w.right, floor.elevation, w.a[1] + nz * w.right], [dx / l, 0, dz / l], [nx, 0, nz]);
+      face(`wall:${floor.id}:${w.id}`, [w.a[0] + nx * w.right, floor.elevation + levels.bottom, w.a[1] + nz * w.right], [dx / l, 0, dz / l], [nx, 0, nz]);
       // the back of a free wall runs the other way, so its modules face outwards too
-      if (w.free) face(`wall:${floor.id}:${w.id}:back`, [w.b[0] - nx * w.left, floor.elevation, w.b[1] - nz * w.left], [-dx / l, 0, -dz / l], [-nx, 0, -nz]);
+      if (w.free) face(`wall:${floor.id}:${w.id}:back`, [w.b[0] - nx * w.left, floor.elevation + levels.bottom, w.b[1] - nz * w.left], [-dx / l, 0, -dz / l], [-nx, 0, -nz]);
     }
   }
   return out;
@@ -135,7 +136,7 @@ export function proposeGroundField(b: Building, id: string): SolarField {
 /** The floor the single roof sits on: the highest with rooms (as the roof itself). */
 export function topFloor(b: Building): Floor | null {
   const withRooms = b.floors.filter((f) => f.rooms.some((r) => r.points.length >= 3));
-  return withRooms.sort((p, q) => q.elevation - p.elevation)[0] ?? null;
+  return withRooms.sort((p, q) => floorTop(q) - floorTop(p))[0] ?? null;
 }
 
 /** All roof faces modules can lie on. */
@@ -152,7 +153,7 @@ export function roofFaces(b: Building): RoofFace[] {
   const x1 = Math.max(...xs) + m;
   const z0 = Math.min(...zs) - m;
   const z1 = Math.max(...zs) + m;
-  const top = floor.elevation + floor.height;
+  const top = floorTop(floor);
   if (roof.type === "flat") return [flatFace("main", null, x0, z0, x1, z1, top + FLAT_SLAB)];
   // gable, as built by the roof: the ridge along the longer side (or the shorter one)
   const longX = x1 - x0 >= z1 - z0;

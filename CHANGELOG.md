@@ -4,6 +4,12 @@ All notable changes to NeonPlan 3D. The full notes in German and English are on 
 [releases page](https://github.com/Mastershort/neonplan3d/releases). Ideas and votes:
 [Discussions → Ideas](https://github.com/Mastershort/neonplan3d/discussions/categories/ideas).
 
+## 1.12.2
+
+### New
+
+- Per-room absolute floor elevation and independent clear height, inheriting the floor defaults when unset. Furniture, ceiling lights, openings and light surfaces follow the room levels. Interior doorways can add width-matched steps on either side; higher-side stairs recess the floor slab. The editor shows tread footprints and validates available space and shared opening height.
+
 ## 1.12.1
 
 ### New

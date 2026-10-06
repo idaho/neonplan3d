@@ -2,7 +2,7 @@
 // furniture has the type "pack:<pack id>:<item id>". Every bundle (main, editor, 3D) keeps its own
 // registry, filled with setPacks() from the packs the backend returns.
 
-import { builtinBase, ELECTRIC_FURNITURE, FURNITURE_SIZE, surfaceHeight, WALL_LAMP_Y, type Floor, type Furniture } from "./model.ts";
+import { builtinBase, ELECTRIC_FURNITURE, FURNITURE_SIZE, roomLevelAt, roomCeilingAt, surfaceHeight, WALL_LAMP_Y, type Floor, type Furniture } from "./model.ts";
 import type { LampModel } from "./viewer/viewer3d.ts";
 
 export interface PackPart {
@@ -151,19 +151,20 @@ export function packItemName(item: PackItem, language: string): string {
 /** Height of the bottom of a pack item, a wall light or an LED strip above the floor (0 for other built-in furniture). */
 export function mountBase(floor: Floor, f: Pick<Furniture, "type" | "x" | "z" | "h"> & { mount_y?: number | null }): number {
   const item = packItem(f.type);
-  if (f.mount_y != null) return f.mount_y;
+  const level = roomLevelAt(floor, f.x, f.z);
+  if (f.mount_y != null) return level + f.mount_y;
   // wall lights at the usual height, LED strips just under the ceiling
-  if (f.type === "lamp_wall") return WALL_LAMP_Y;
-  if (f.type === "led_strip") return Math.max(0, floor.height - 0.04 - Math.max(0.02, f.h));
+  if (f.type === "lamp_wall") return level + WALL_LAMP_Y;
+  if (f.type === "led_strip") return roomCeilingAt(floor, f.x, f.z) - 0.04 - Math.max(0.02, f.h);
   switch (item?.mount) {
     case "surface":
       return surfaceHeight(floor, f.x, f.z);
     case "wall":
-      return item.wall_y ?? 1;
+      return level + (item.wall_y ?? 1);
     case "ceiling":
-      return Math.max(0, floor.height - f.h);
+      return roomCeilingAt(floor, f.x, f.z) - f.h;
     default:
       // built-in models: where they are drawn by default (a wall cabinet at 1.45 m)
-      return item ? 0 : builtinBase(f);
+      return level + (item ? 0 : builtinBase(f));
   }
 }

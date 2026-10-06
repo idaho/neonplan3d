@@ -5,7 +5,7 @@
 
 import { Color } from "three";
 import type { Building, Floor, RoofSection, SolarField, Vec2 } from "../model.ts";
-import { polygonArea } from "../model.ts";
+import { floorTop, polygonArea } from "../model.ts";
 import { cutHole, sectionFloor, dormerHoles, dormerParent, effectiveDormer, offsetPolygon, sectionGeometry, sectionHeightAt, sectionPolygon, sectionFrame, sectionOverhang, sectionProfile, sectionUV, type Q, type SectionOverhang } from "../roof-sections.ts";
 import { DEG, GeoBuffer, LineBuffer, pushPrism, shade } from "./geo.ts";
 import { fieldModules, roofFaces, windowCorners, type RoofFace } from "../solar.ts";
@@ -57,7 +57,7 @@ export interface RoofGeometry {
 /** The floor the roof sits on: the highest one with rooms. */
 export function roofFloor(b: Building): Floor | null {
   const withRooms = b.floors.filter((f) => f.rooms.some((r) => r.points.length >= 3));
-  return withRooms.sort((p, q) => q.elevation - p.elevation)[0] ?? null;
+  return withRooms.sort((p, q) => floorTop(q) - floorTop(p))[0] ?? null;
 }
 
 /** The roof, in parts per floor (each part moves with its floor when the floors are pulled apart). */
@@ -183,7 +183,7 @@ function buildSingleRoof(b: Building): RoofGeometry | null {
       lines.seg([a[0], e, a[1]], [c[0], e, c[1]], RIDGE);
       lines.seg([a[0], 0, a[1]], [c[0], 0, c[1]], EAVE);
     }
-    return { floor, base: floor.height, solid, lines, glass: new GeoBuffer() };
+    return { floor, base: floorTop(floor) - floor.elevation, solid, lines, glass: new GeoBuffer() };
   }
   // gable: the ridge runs along the longer side, or along the shorter one (terraced houses)
   const longX = x1 - x0 >= z1 - z0;
@@ -218,7 +218,7 @@ function buildSingleRoof(b: Building): RoofGeometry | null {
     solid.tri(P(u, hw, -THICK), P(u, -hw, -THICK), P(u, 0, rw - THICK), g);
   }
   lines.seg(P(u0, 0, rise + 0.004), P(u1, 0, rise + 0.004), RIDGE);
-  return { floor, base: floor.height, solid, lines, glass: new GeoBuffer() };
+  return { floor, base: floorTop(floor) - floor.elevation, solid, lines, glass: new GeoBuffer() };
 }
 
 /** Roof sections, grouped by the floor whose wall tops are nearest below each section's base. */
@@ -240,7 +240,7 @@ function buildSections(b: Building, sections: readonly RoofSection[], overhang: 
     // themselves (knee walls, gables) and the roof draws none of its own; a dormer keeps its cheeks
     // a dormer or a cross gable (a smaller section on a bigger one) keeps its cheeks and front gable
     const parent = dormerParent(sections, sec);
-    const attic = floor.elevation + floor.height > sec.base + 0.05 && !sec.dormer && !parent;
+    const attic = floorTop(floor) > sec.base + 0.05 && !sec.dormer && !parent;
     // the slope opens under every dormer and cross gable sitting on this section, and under its roof windows
     const holes = sections.filter((d) => d !== sec && dormerParent(sections, d) === sec).flatMap((d) => dormerHoles(sec, d));
     for (const w of b.settings.roof.windows ?? []) {

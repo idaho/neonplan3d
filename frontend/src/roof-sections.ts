@@ -2,7 +2,7 @@
 // proposal of sections from the rooms. No three.js here: the editor uses it as well.
 
 import type { Building, FreeWall, Room, RoofSection, Vec2 } from "./model.ts";
-import { pointInPolygon, polygonArea } from "./model.ts";
+import { floorTop, pointInPolygon, polygonArea, roomHeight } from "./model.ts";
 import { generateWalls } from "./geometry/walls.ts";
 
 const DEG = Math.PI / 180;
@@ -589,7 +589,7 @@ export function wallTopUnder(b: Building, x0: number, z0: number, x1: number, z1
   // the roof on the ground floor (#166) – the highest floor any of nine points of the rectangle falls on
   const pts: Vec2[] = [];
   for (const u of [0.2, 0.5, 0.8]) for (const v of [0.2, 0.5, 0.8]) pts.push([x0 + (x1 - x0) * u, z0 + (z1 - z0) * v]);
-  const tops = b.floors.filter((f) => f.rooms.some((r) => r.points.length >= 3 && pts.some((p) => pointInPolygon(p, r.points)))).map((f) => f.elevation + f.height);
+  const tops = b.floors.flatMap((f) => f.rooms.filter((r) => r.points.length >= 3 && pts.some((p) => pointInPolygon(p, r.points))).map((r) => (r.elevation ?? f.elevation) + roomHeight(f, r)));
   return tops.length ? Math.max(...tops) : null;
 }
 
@@ -635,7 +635,7 @@ export function roofSectionsFromRooms(b: Building, makeId: (i: number) => string
     // greedy rectangles: as wide as possible, then as deep as the whole row allows
     const used = covered.map((row) => row.map(() => false));
     const free = (i: number, j: number) => covered[j][i] && !used[j][i];
-    const top = floor.elevation + floor.height;
+    const top = floorTop(floor);
     for (let j = 0; j < nz; j++) {
       for (let i = 0; i < nx; i++) {
         if (!free(i, j)) continue;

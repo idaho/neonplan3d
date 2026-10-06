@@ -133,6 +133,10 @@ Without a selection, the sidebar shows the floors:
 
 ### 4.3 Drawing rooms
 
+**Per-room levels (`feature/split-level-rooms`):** a selected room now offers independent **Height above the ground (m)** and **Room height (m)**. Elevation is absolute to the building reference, not relative to its floor; clear height starts at the room's own floor. Unset values inherit the floor defaults; **Use floor heights** resets both overrides. For a shared ceiling at 3 m, one room may be at 0 m with 3 m clear height and its neighbour at 0.6 m with 2.4 m clear height. Explicit absolute room elevations do not move when the floor elevation changes. Roof sections remain separate elements with their own adjustable heights.
+
+**Doorway steps:** rooms at different levels can still share a doorway. Its form offers no steps or steps in either named room, marked as lower/higher. Set count and total depth; width follows the resolved doorway width. Lower-side steps rise towards the doorway. Higher-side steps recess the floor and rise from the low doorway into the high room. Steps that do not fit inside the selected room are not built and show a warning. Increase room height or adjust elevation if shared opening height is insufficient. These are visual architectural elements, not furniture or door-leaf collision checks.
+
 - **Rectangle:** Tap the plan and drag.
 - **Free shape:** Set corner after corner. A tap on the first corner or **Enter** closes the room, **Esc** cancels.
 - **Moving corners:** Tap a room with **Select** and drag its corners. The **+** on an edge inserts a corner.
