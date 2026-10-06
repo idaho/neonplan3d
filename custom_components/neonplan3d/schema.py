@@ -6,6 +6,8 @@ so saving keeps working after a frontend update until Home Assistant restarts wi
 
 from __future__ import annotations
 
+from math import isfinite
+
 import voluptuous as vol
 
 MAX_FLOORS = 20
@@ -22,6 +24,43 @@ _POINT = vol.All([_COORD], vol.Length(min=2, max=2))
 _ENTITY_REF = vol.Any(None, vol.All(str, vol.Length(max=255)))
 
 _SENSOR_REF = vol.Any(None, vol.All(str, vol.Length(max=255)))
+
+
+def _simple_polygon(points: list[list[float]]) -> list[list[float]]:
+    """Reject crossed or degenerate free contours before they reach roof triangulation."""
+
+    def cross(a, b, c):
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    def on_segment(p, a, b):
+        return (
+            abs(cross(a, b, p)) < 1e-8
+            and min(a[0], b[0]) - 1e-8 <= p[0] <= max(a[0], b[0]) + 1e-8
+            and min(a[1], b[1]) - 1e-8 <= p[1] <= max(a[1], b[1]) + 1e-8
+        )
+
+    n = len(points)
+    if not all(isfinite(v) for p in points for v in p):
+        raise vol.Invalid("polygon coordinates must be finite")
+    area = sum(p[0] * points[(i + 1) % n][1] - points[(i + 1) % n][0] * p[1] for i, p in enumerate(points))
+    if abs(area) < 1e-8:
+        raise vol.Invalid("polygon needs a non-zero area")
+    for i, a in enumerate(points):
+        b, c = points[(i + 1) % n], points[(i + 2) % n]
+        if a == b or (abs(cross(a, b, c)) < 1e-8 and (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1]) < 0):
+            raise vol.Invalid("polygon has duplicate or overlapping corners")
+        for j in range(i + 2, n):
+            if (j + 1) % n == i:
+                continue
+            c, d = points[j], points[(j + 1) % n]
+            if (cross(a, b, c) * cross(a, b, d) < 0 and cross(c, d, a) * cross(c, d, b) < 0) or any(
+                (on_segment(a, c, d), on_segment(b, c, d), on_segment(c, a, b), on_segment(d, a, b))
+            ):
+                raise vol.Invalid("polygon edges must not cross or touch")
+    return points
+
+
+_FREE_POLYGON = vol.All([_POINT], vol.Length(min=3, max=MAX_POINTS), _simple_polygon)
 
 ROOM_SCHEMA = vol.Schema(
     {
@@ -285,6 +324,7 @@ OUTDOOR_TYPES = ["lawn", "terrace", "path", "driveway", "pool", "bed", "wild", "
 
 OUTDOOR_SCHEMA = vol.Schema(
     {
+        vol.Optional("freeform", default=False): bool,
         vol.Required("id"): _ID,
         vol.Required("type"): vol.In(OUTDOOR_TYPES),
         vol.Required("points"): vol.All([_POINT], vol.Length(min=3, max=MAX_POINTS)),
@@ -305,10 +345,19 @@ OUTDOOR_SCHEMA = vol.Schema(
     extra=vol.ALLOW_EXTRA,
 )
 
+
+def _validate_free_outdoor(area):
+    if area.get("freeform"):
+        _simple_polygon(area["points"])
+    return area
+
+
+OUTDOOR_SCHEMA = vol.All(OUTDOOR_SCHEMA, _validate_free_outdoor)
+
 _COORD = vol.All(vol.Coerce(float), vol.Range(min=-1000, max=1000))
 _HEIGHT = vol.All(vol.Coerce(float), vol.Range(min=-50, max=200))
 
-# one roof section of a "custom" roof: a rectangle with its own shape, ridge direction, eaves and pitches
+# one roof section of a "custom" roof: a rectangle or free footprint, with its own profile
 ROOF_SECTION_SCHEMA = vol.Schema(
     {
         vol.Required("id"): _ID,
@@ -327,8 +376,8 @@ ROOF_SECTION_SCHEMA = vol.Schema(
         vol.Required("base"): _HEIGHT,
         vol.Optional("overhang", default=None): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0, max=2))),
         vol.Optional("flip", default=False): bool,
-        # a flat roof as a free shape: its footprint polygon (x0 … z1 hold the bounding box)
-        vol.Optional("points", default=None): vol.Any(None, vol.All([_POINT], vol.Length(min=3, max=MAX_POINTS))),
+        # a free roof footprint, for any roof shape (x0 … z1 hold the bounding box)
+        vol.Optional("points", default=None): vol.Any(None, _FREE_POLYGON),
         # a dormer on the slope of another section
         vol.Optional("dormer", default=False): bool,
         vol.Optional("locked", default=False): bool,

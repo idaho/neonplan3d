@@ -142,6 +142,8 @@ export interface DeviceMarker {
   rotation?: number;
   size?: [number, number, number];
   base?: number;
+  /** Top of a ceiling lamp mounted under a roof/canopy, relative to the owning floor. */
+  ceiling_y?: number;
   /** LED strip: roll about its length (degrees) and standing upright (its length runs up from the base). */
   roll?: number;
   upright?: boolean;
@@ -1498,12 +1500,13 @@ export class FloorplanViewer {
       const room = zoneOf(fv.lightZones, ri);
       const [w, , h] = d.size ?? (d.lamp ? LAMP_SIZE[d.lamp] : [0.3, 0.3, 0.3]);
       const base = d.base ?? 0;
+      const ceiling = d.ceiling_y ?? H;
       const kinds: Record<LampModel, [number, LightKind]> = {
-        ceiling: [H - 0.12, "ceiling"],
-        downlight: [H - 0.03, "spot"],
-        spot: [H - h, "spot"],
-        panel: [H - 0.05, "ceiling"],
-        pendant: [Math.max(0.5, H - h), "pendant"],
+        ceiling: [ceiling - 0.12, "ceiling"],
+        downlight: [ceiling - 0.03, "spot"],
+        spot: [ceiling - h, "spot"],
+        panel: [ceiling - 0.05, "ceiling"],
+        pendant: [Math.max(0.5, ceiling - h), "pendant"],
         floor: [base + h - 0.15, "omni"],
         uplight: [base + h, "up"],
         table: [base + h - 0.1, "omni"],
@@ -2117,7 +2120,7 @@ export class FloorplanViewer {
     const shapeSig =
       this.wallMode +
       (this.lowQuality ? "L" : this.highQuality ? "H" : "M") +
-      lamps.map((d) => `${d.id},${d.lamp ?? d.model},${d.variant},${d.x},${d.z},${d.y},${d.rotation ?? 0},${d.roll ?? 0},${d.upright ? 1 : 0},${d.size?.join("/")},${d.base ?? 0},${d.pack ?? ""},${d.mirror ? 1 : 0}`).join(";");
+      lamps.map((d) => `${d.id},${d.lamp ?? d.model},${d.variant},${d.x},${d.z},${d.y},${d.rotation ?? 0},${d.roll ?? 0},${d.upright ? 1 : 0},${d.size?.join("/")},${d.base ?? 0},${d.ceiling_y ?? ""},${d.pack ?? ""},${d.mirror ? 1 : 0}`).join(";");
     const glows = lamps.map((d) => this.glowOf(d));
     const colorSig = lamps.map((d, i) => `${flash(d.id)},${glows[i] ? `${glows[i]!.level.toFixed(3)},${glows[i]!.color.map((c) => c.toFixed(3)).join("/")}` : "off"}`).join(";");
     if (shapeSig !== fv.lampShapeSig || !fv.lampMesh.geometry.getAttribute("position")) {
@@ -2130,7 +2133,7 @@ export class FloorplanViewer {
       const H = fv.floor.height;
       for (const d of lamps) {
         // hanging lamps (and ceiling cameras) would float above cut walls
-        const hanging = d.lamp === "strip" ? (d.base ?? H) > Math.min(fv.floor.cut_height, H) : d.lamp ? HANGING.has(d.lamp) : d.model === "camera_ceiling";
+        const hanging = d.lamp === "strip" ? (d.base ?? H) > Math.min(fv.floor.cut_height, H) : d.lamp ? HANGING.has(d.lamp) && (d.ceiling_y == null || d.ceiling_y > Math.min(fv.floor.cut_height, H)) : d.model === "camera_ceiling";
         if ((!d.lamp && !d.model) || (hanging && this.wallMode === "cut")) continue;
         const start = buf.count;
         const packed = d.pack ? packItem(d.pack) : undefined;
@@ -2300,16 +2303,17 @@ export class FloorplanViewer {
       }
       const glow = this.glowOf(d);
       if (d.floorId !== fv.floor.id || !d.lamp || !glow) continue;
-      if (HANGING.has(d.lamp) && this.wallMode === "cut") continue;
+      if (HANGING.has(d.lamp) && (d.ceiling_y == null || d.ceiling_y > Math.min(fv.floor.cut_height, H)) && this.wallMode === "cut") continue;
       const [w, dd, h] = d.size ?? LAMP_SIZE[d.lamp];
       const base = d.base ?? 0;
       const ang = (d.rotation ?? 0) * DEG;
+      const ceiling = d.ceiling_y ?? H;
       const y = {
-        ceiling: H - 0.07,
-        downlight: H - 0.03,
-        spot: H - h,
-        panel: H - 0.03,
-        pendant: Math.max(0.4, H - h) + 0.08,
+        ceiling: ceiling - 0.07,
+        downlight: ceiling - 0.03,
+        spot: ceiling - h,
+        panel: ceiling - 0.03,
+        pendant: Math.max(0.4, ceiling - h) + 0.08,
         floor: base + h - 0.15,
         uplight: base + h,
         table: base + h - 0.09,
@@ -3007,7 +3011,7 @@ export class FloorplanViewer {
     const H = fv.floor.height;
     const hanging = ["lamp_ceiling", "lamp_downlight", "lamp_spot", "lamp_panel", "lamp_pendant"].includes(f.type);
     const h = Math.max(0.1, f.type === "lamp_pendant" ? 0.3 : f.h);
-    const y0 = packItem(f.type) || f.type === "lamp_wall" || f.type === "led_strip"
+    const y0 = f.mount_y != null || packItem(f.type) || f.type === "lamp_wall" || f.type === "led_strip"
       ? mountBase(fv.floor, f)
       : hanging
         ? f.type === "lamp_pendant"
@@ -3849,10 +3853,11 @@ export function createViewer(host: HTMLElement, options?: ViewerOptions): Floorp
 /** Model of a lamp into a buffer (3D view and furniture previews); `H` is the ceiling height. */
 export function pushLampModel(
   buf: GeoBuffer,
-  d: Pick<DeviceMarker, "x" | "z" | "size" | "base" | "rotation" | "variant" | "roll" | "upright"> & { lamp: LampModel },
+  d: Pick<DeviceMarker, "x" | "z" | "size" | "base" | "ceiling_y" | "rotation" | "variant" | "roll" | "upright"> & { lamp: LampModel },
   H: number,
   shadeCol: number,
 ): void {
+  H = d.ceiling_y ?? H;
   const [w, dd, h] = d.size ?? LAMP_SIZE[d.lamp];
   const base = d.base ?? 0;
   const ang = (d.rotation ?? 0) * DEG;

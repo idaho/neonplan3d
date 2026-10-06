@@ -7,7 +7,8 @@
 import type { Building, Floor, RoofSection, RoofWindow, SolarField, Vec2 } from "./model.ts";
 import { outdoorGround } from "./model.ts";
 import { generateWalls } from "./geometry/walls.ts";
-import { sectionFrame, sectionOverhang, sectionProfile } from "./roof-sections.ts";
+import { sectionFrame, sectionOverhang, sectionProfile, sectionPolygon } from "./roof-sections.ts";
+import { polygonContains, polygonContainsPolygon } from "./geometry/polygon.ts";
 
 const DEG = Math.PI / 180;
 type V3 = [number, number, number];
@@ -43,6 +44,8 @@ export interface RoofFace {
   facing: Vec2;
   /** The ground in the garden: no edges, the field goes where it is put. */
   unbounded?: boolean;
+  /** Free roof footprint in plan coordinates; the face's rectangular frame is retained for saved fields. */
+  footprint?: Vec2[];
   /** A house wall: upright, on this floor (its modules hang flat on the facade). */
   wall?: { floorId: string };
 }
@@ -142,7 +145,11 @@ export function topFloor(b: Building): Floor | null {
 export function roofFaces(b: Building): RoofFace[] {
   const roof = b.settings.roof;
   if (!roof || roof.type === "none") return [];
-  if (roof.type === "custom") return (roof.sections ?? []).flatMap((s) => sectionFaces(s, sectionOverhang(b, s, s.overhang ?? roof.overhang)));
+  if (roof.type === "custom") return (roof.sections ?? []).flatMap((s) => {
+    const ov = sectionOverhang(b, s, s.overhang ?? roof.overhang);
+    const footprint = s.points?.length ? sectionPolygon(s, s.shape === "parapet" ? 0 : Math.max(0, Math.min(ov.a, ov.b, ov.u0, ov.u1))) : undefined;
+    return sectionFaces(s, ov).map((face) => footprint ? { ...face, footprint } : face);
+  });
   const floor = topFloor(b);
   if (!floor) return [];
   const xs = floor.rooms.flatMap((r) => r.points.map((p) => p[0]));
@@ -360,6 +367,7 @@ export function fieldModules(face: RoofFace, f: SolarField, withSkipped = false)
       const u1 = u0 + mw;
       const s1 = s0 + (face.flat || face.wall ? depth : mh);
       if (![[u0, s0], [u1, s0], [u1, s1], [u0, s1]].every(([u, s]) => inside(u, s))) continue;
+      if (face.footprint && !polygonContainsPolygon(face.footprint, [[u0, s0], [u1, s0], [u1, s1], [u0, s1]].map(([u, s]) => { const p = at(u, s, 0); return [p[0], p[2]]; }))) continue;
       if (face.wall && t > 0.001) {
         // on a wall, tilted: the upper edge stands off the wall (flipped: the lower edge), on brackets
         const away = LIFT + mh * Math.sin(t);
@@ -397,7 +405,7 @@ export function pointOnFace(face: RoofFace, p: Vec2): { u: number; s: number } |
   const s = (a[0] * d[1] - a[1] * d[0]) / det;
   if (s < 0 || s > face.ls) return null;
   const [lo, hi] = face.span(s);
-  return u >= lo && u <= hi ? { u, s } : null;
+  return u >= lo && u <= hi && onFace(face, u, s) ? { u, s } : null;
 }
 
 /** The face under a plan point: the highest one there (an upper roof hides a lower one). */
@@ -558,7 +566,8 @@ export function onFace(face: RoofFace, u: number, s: number): boolean {
   if (face.unbounded) return true;
   if (s < 0 || s > face.ls) return false;
   const [a, b] = face.span(s);
-  return u >= a && u <= b;
+  if (u < a || u > b) return false;
+  return !face.footprint || polygonContains(face.footprint, [face.o[0] + face.eu[0] * u + face.es[0] * s, face.o[2] + face.eu[2] * u + face.es[2] * s]);
 }
 
 /** Whether a point on a face (u, s) lies on one of the field's modules (by their outline on the face). */

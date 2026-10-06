@@ -5,8 +5,8 @@
 
 import { Color } from "three";
 import type { Building, Floor, RoofSection, SolarField, Vec2 } from "../model.ts";
-import { polygonArea } from "../model.ts";
 import { cutHole, sectionFloor, dormerHoles, dormerParent, effectiveDormer, offsetPolygon, sectionGeometry, sectionHeightAt, sectionPolygon, sectionFrame, sectionOverhang, sectionProfile, sectionUV, type Q, type SectionOverhang } from "../roof-sections.ts";
+import { polygonSignedArea } from "../geometry/polygon.ts";
 import { DEG, GeoBuffer, LineBuffer, pushPrism, shade } from "./geo.ts";
 import { fieldModules, roofFaces, windowCorners, type RoofFace } from "../solar.ts";
 
@@ -313,12 +313,13 @@ export function pushSection(
     const y = s.eave_a;
     const parapet = s.shape === "parapet";
     // a free shape takes its polygon (grown by the overhang), a plain section its rectangle; a parapet roof has no overhang
-    const poly =
+    let poly =
       s.points && s.points.length >= 3
         ? sectionPolygon(s, parapet ? 0 : Math.max(0, Math.min(ov.a, ov.b, ov.u0, ov.u1)))
         : parapet
           ? [fr.at(fr.u0, 0), fr.at(fr.u1, 0), fr.at(fr.u1, w), fr.at(fr.u0, w)]
           : [fr.at(U0, -oa), fr.at(U1, -oa), fr.at(U1, w + ob), fr.at(U0, w + ob)];
+    if (polygonSignedArea(poly) < 0) poly = [...poly].reverse();
     pushPrism(solid, poly, y - yOff, y - yOff + 0.25, ROOF, ROOF_TOP, { bottom: true });
     for (let i = 0; i < poly.length; i++) {
       const a = poly[i];
@@ -328,7 +329,7 @@ export function pushSection(
     }
     if (parapet) {
       // the parapet: a 0.4 m wall ring along the edge, 0.2 m thick, on the slab
-      const ccw = (p: Vec2[]) => (polygonArea(p) >= 0 ? p : [...p].reverse());
+      const ccw = (p: Vec2[]) => (polygonSignedArea(p) >= 0 ? p : [...p].reverse());
       const outer = ccw(poly);
       const inner = offsetPolygon(outer, -0.2);
       const n = outer.length;
@@ -367,13 +368,29 @@ export function pushSection(
     lines.seg(P(ua, va, ya), P(ub, vb, yb), open ? RIDGE : EAVE);
   }
   if (open) {
-    pushCanopyFrame(solid, lines, fr, pr, ov, P, yOff);
+    if (s.points?.length) pushPolygonCanopy(solid, lines, s, yOff);
+    else pushCanopyFrame(solid, lines, fr, pr, ov, P, yOff);
     return;
   }
   for (const [[ua, va, ya], [ub, vb, yb]] of ridges) lines.seg(P(ua, va, ya + 0.004), P(ub, vb, yb + 0.004), RIDGE);
   // walls up under the roof, from the section's base: the gable ends (not under a hip) …
   const base = s.base;
   if (attic) return;
+  if (s.points?.length) {
+    const boundary = sectionGeometry(s, { u0: 0, u1: 0, a: 0, b: 0 }).rim;
+    boundary.forEach((a, i) => {
+      let b = boundary[(i + 1) % boundary.length];
+      let start = a;
+      const inset = s.shape === "flat" || s.shape === "parapet" ? 0 : THICK;
+      const ya = a[2] - inset, yb = b[2] - inset;
+      if (Math.max(ya, yb) <= base + 0.001) return;
+      const mix = (t: number): Q => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, base + inset];
+      if (ya < base) start = mix((base - ya) / (yb - ya));
+      if (yb < base) b = mix((base - ya) / (yb - ya));
+      fan([P(start[0], start[1], base), P(b[0], b[1], base), P(b[0], b[1], b[2] - inset), P(start[0], start[1], start[2] - inset)], g);
+    });
+    return;
+  }
   if (gableProfile) {
     const poly = above(gableProfile, base - THICK);
     const ends = frontEnd === null ? [fr.u0, fr.u1] : [frontEnd === 0 ? fr.u0 : fr.u1];
@@ -395,6 +412,31 @@ export function pushSection(
  * Posts and beams of a canopy: a beam under each free edge of the roof, posts at its corners and at
  * most 3.5 m apart along the free sides; an edge against the house (no overhang) rests on the wall.
  */
+/** A free canopy follows its actual boundary, not the old bounding rectangle. */
+function pushPolygonCanopy(solid: GeoBuffer, lines: LineBuffer, s: RoofSection, yOff: number): void {
+  const POST = 0.12, BEAM = 0.18;
+  const fr = sectionFrame(s), geom = sectionGeometry(s, { u0: 0, u1: 0, a: 0, b: 0 });
+  geom.rim.forEach((a, i) => {
+    const b = geom.rim[(i + 1) % geom.rim.length], p = fr.at(a[0], a[1]), q = fr.at(b[0], b[1]);
+    const dx = q[0] - p[0], dz = q[1] - p[1], len = Math.hypot(dx, dz);
+    if (len < 1e-6) return;
+    const nx = -dz / len * POST / 2, nz = dx / len * POST / 2;
+    const beam: Vec2[] = [[p[0] + nx, p[1] + nz], [q[0] + nx, q[1] + nz], [q[0] - nx, q[1] - nz], [p[0] - nx, p[1] - nz]];
+    if (polygonSignedArea(beam) < 0) beam.reverse();
+    const height = (x: number, z: number) => a[2] + (b[2] - a[2]) * ((x - p[0]) * dx + (z - p[1]) * dz) / (len * len) - yOff - 0.03;
+    const from = solid.p.length;
+    pushPrism(solid, beam, 0, BEAM, FRAME, FRAME_TOP, { bottom: true });
+    for (let j = from; j < solid.p.length; j += 3) solid.p[j + 1] += height(solid.p[j], solid.p[j + 2]) - BEAM;
+    lines.seg([p[0], a[2] - yOff - BEAM, p[1]], [q[0], b[2] - yOff - BEAM, q[1]], EAVE);
+    const count = Math.max(1, Math.ceil(len / 3.5));
+    for (let k = 0; k < count; k++) {
+      const t = k / count, x = p[0] + dx * t, z = p[1] + dz * t, h = height(x, z) - BEAM;
+      if (h <= 0) continue;
+      pushPrism(solid, [[x - POST / 2, z - POST / 2], [x + POST / 2, z - POST / 2], [x + POST / 2, z + POST / 2], [x - POST / 2, z + POST / 2]], 0, h, FRAME, FRAME_TOP, { bottom: true });
+    }
+  });
+}
+
 function pushCanopyFrame(
   solid: GeoBuffer,
   lines: LineBuffer,

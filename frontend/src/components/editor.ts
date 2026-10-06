@@ -16,6 +16,8 @@ import { cameraMotionSensors, detectionKind } from "../markers.ts";
 import { deviceSensors, energySummary, flowSegments, gridPoint, proposeEnergySensors, type EnergyPrefs, type FlowSegment } from "../energy.ts";
 import { isStatusSensor, robotRoomSensor, TOGGLE_KINDS } from "../devices.ts";
 import { sectionFloor, dormerParent, effectiveDormer, proposeDormer, sectionGeometry, floorOutline, polygonBox, headroomLines, ridgeHeight, roofSectionsFromRooms, sectionFrame, wallTopUnder } from "../roof-sections.ts";
+import { validPolygon } from "../geometry/polygon.ts";
+import { ceilingSpots, spotSurfaceKey, type SpotSurface } from "../ceiling-spots.ts";
 import { bestFace, clampField, faceAt, faceCompass, fieldFace, fieldModules, GROUND, pointOnFace, proposeField, proposeGroundField, proposeWindow, proposeWallField, roofFaces, rowCounts, turnGroundField, fieldCenter, wallFaces, windowAsField, windowCorners, onFace, onField, rayOnFace, type RoofFace } from "../solar.ts";
 import type { SurfaceGrab, SurfaceRay } from "../viewer/viewer3d.ts";
 import { storedImageIds } from "../transfer.ts";
@@ -190,6 +192,8 @@ export class Fp3dEditor extends LitElement {
     _history: { state: true },
     _spots: { state: true },
     _outdoorId: { state: true },
+    _drawShape: { state: true },
+    _contourVertex: { state: true },
     _wallId: { state: true },
     _edgeHi: { state: true },
     _ctx: { state: true },
@@ -266,6 +270,8 @@ export class Fp3dEditor extends LitElement {
   private declare _history: Snapshot[] | null;
   /** Open "place spots" form of the selected room. */
   private declare _outdoorId: string | null;
+  private declare _drawShape: "rect" | "polygon";
+  private declare _contourVertex: { kind: "outdoor" | "roof"; id: string; index: number } | null;
   /** Selected free-standing wall. */
   private declare _wallId: string | null;
   /** Selected room wall (id from generateWalls), to set its height. */
@@ -295,7 +301,7 @@ export class Fp3dEditor extends LitElement {
   /** The package list of the selected room is open. */
   private declare _packages: boolean;
   private declare _rectSize: [number, number];
-  private declare _spots: { type: FurnitureType; rows: number; cols: number; entity: string | null } | null;
+  private declare _spots: { type: FurnitureType; rows: number; cols: number; entity: string | null; target: string } | null;
   private declare _tool: Tool;
   private declare _draft: Vec2[];
   private declare _cursor: Vec2 | null;
@@ -345,6 +351,8 @@ export class Fp3dEditor extends LitElement {
     this._history = null;
     this._spots = null;
     this._outdoorId = null;
+    this._drawShape = "polygon";
+    this._contourVertex = null;
     this._wallId = null;
     this._edgeHi = null;
     this._shiftX = 0;
@@ -1001,6 +1009,34 @@ export class Fp3dEditor extends LitElement {
       this.drag = { kind: "freewall", start, end: start };
       return;
     }
+    const contourHandle = target.closest("[data-contour-vertex], [data-contour-mid]");
+    if (contourHandle && this.isAdmin) {
+      const inserting = contourHandle.hasAttribute("data-contour-mid");
+      const [kind, id, rawIndex] = contourHandle.getAttribute(inserting ? "data-contour-mid" : "data-contour-vertex")!.split(":");
+      const roof = kind === "roof";
+      const sec = roof ? this._doc.settings.roof.sections?.find((s) => s.id === id) : undefined;
+      const area = !roof ? this.floor?.outdoor.find((a) => a.id === id) : undefined;
+      if (this._doc.settings.lock_plan || (sec && this.roofFixed(sec))) { this.drag = { kind: "pan", last: local }; return; }
+      const points = sec ? this.roofPoints(sec) : area?.points;
+      if (!points) return;
+      const base = this._doc;
+      let index = Number(rawIndex);
+      if (roof) this._roofId = id;
+      else this.selectItem("outdoor", id);
+      if (inserting) {
+        if (points.length >= 200) return;
+        const p = points[index], q = points[(index + 1) % points.length], next = [...points];
+        next.splice(++index, 0, [round((p[0] + q[0]) / 2), round((p[1] + q[1]) / 2)]);
+        if (!validPolygon(next)) return;
+        this.change((doc, floor) => {
+          if (roof) Object.assign(doc.settings.roof.sections!.find((s) => s.id === id)!, { points: next, ...polygonBox(next) });
+          else Object.assign(floor.outdoor.find((a) => a.id === id)!, { points: next, freeform: true });
+        }, base, false);
+      }
+      this._contourVertex = { kind: roof ? "roof" : "outdoor", id, index };
+      this.drag = { kind: roof ? "roofvertex" : "outvertex", id, index, base, moved: inserting };
+      return;
+    }
     if (this._tool === "roof" || this._tool === "energy") {
       const corner = target.closest("[data-roof-corner]")?.getAttribute("data-roof-corner");
       const vertex = target.closest("[data-roof-vertex]")?.getAttribute("data-roof-vertex");
@@ -1119,6 +1155,10 @@ export class Fp3dEditor extends LitElement {
         return;
       }
       if (this._tool === "roof") this._roofWinId = null;
+      if (this._tool === "roof" && this.drawingPolygon && (this._draft.length || !this._roofId) && this.isAdmin) {
+        this.drag = { kind: "tap", startScreen: local, last: local, panning: false };
+        return;
+      }
       const device = this._tool === "energy" ? target.closest(".fp3d-energy-item")?.getAttribute("data-furniture") : null;
       if (device) {
         // an energy device (inverter, battery, wallbox): selected and moved like furniture
@@ -1148,13 +1188,13 @@ export class Fp3dEditor extends LitElement {
       } else if (this.isAdmin) {
         this._roofId = null;
         const start = this.snap(world, undefined, e.altKey);
-        this.drag = { kind: "rect", start, end: start, roof: true };
+        this.drag = this.drawingPolygon ? { kind: "tap", startScreen: local, last: local, panning: false } : { kind: "rect", start, end: start, roof: true };
       } else this.drag = { kind: "pan", last: local };
       return;
     }
     if (this._tool === "rect" || this._tool === "outdoor" || this._tool === "hole") {
       const start = this.snap(world, undefined, e.altKey);
-      this.drag = { kind: "rect", start, end: start, outdoor: this._tool === "outdoor", hole: this._tool === "hole" };
+      this.drag = this.drawingPolygon ? { kind: "tap", startScreen: local, last: local, panning: false } : { kind: "rect", start, end: start, outdoor: this._tool === "outdoor", hole: this._tool === "hole" };
       return;
     }
     if (this._tool === "polygon" || this._tool === "measure") {
@@ -1475,23 +1515,14 @@ export class Fp3dEditor extends LitElement {
         const p = this.snap(world, undefined, e.altKey);
         const src = drag.base.floors.find((f) => f.id === this._floorId)?.outdoor.find((a) => a.id === drag.id);
         if (!src) return;
-        const rect = isAxisRect(src.points);
         this.change(
           (_, floor) => {
             const a = floor.outdoor.find((x) => x.id === drag.id);
             if (!a) return;
             const pts = src.points.map((q) => [...q] as Vec2);
             const i = drag.index;
-            const old = src.points[i];
             pts[i] = [round(p[0]), round(p[1])];
-            // a rectangle stays a rectangle: the corners sharing an x or a z with the dragged one follow
-            if (rect)
-              src.points.forEach((q, j) => {
-                if (j === i) return;
-                if (Math.abs(q[0] - old[0]) < 1e-6) pts[j][0] = round(p[0]);
-                if (Math.abs(q[1] - old[1]) < 1e-6) pts[j][1] = round(p[1]);
-              });
-            a.points = pts;
+            if (validPolygon(pts)) { a.points = pts; a.freeform = true; }
           },
           drag.base,
           false,
@@ -1556,9 +1587,13 @@ export class Fp3dEditor extends LitElement {
         this.change(
           (doc) => {
             const sec = doc.settings.roof.sections?.find((x) => x.id === drag.id);
-            if (!sec?.points || drag.index >= sec.points.length) return;
-            sec.points[drag.index] = [round(p[0]), round(p[1])];
-            Object.assign(sec, polygonBox(sec.points));
+            if (!sec) return;
+            const old = this.roofPoints(sec);
+            if (drag.index >= old.length) return;
+            const points = old.map((q, i) => i === drag.index ? [round(p[0]), round(p[1])] as Vec2 : q);
+            if (!validPolygon(points)) return;
+            sec.points = points;
+            Object.assign(sec, polygonBox(points));
           },
           drag.base,
           false,
@@ -1721,6 +1756,7 @@ export class Fp3dEditor extends LitElement {
       case "aim":
       case "resize":
       case "outdoor":
+      case "outvertex":
       case "solarmove":
       case "solarturn":
       case "roofmove":
@@ -1819,8 +1855,77 @@ export class Fp3dEditor extends LitElement {
     this._draft = [...draft, p];
   }
 
+  private get drawingPolygon(): boolean {
+    return this._tool === "polygon" || ((this._tool === "outdoor" || this._tool === "roof") && this._drawShape === "polygon");
+  }
+
+  private renderDrawShape() {
+    return html`<div class="fp3d-shape-controls">
+      <div class="fp3d-seg" role="group" aria-label=${this.t("contour_draw")}>
+        ${(["rect", "polygon"] as const).map((shape) => html`<button ?disabled=${!this.isAdmin} aria-pressed=${this._drawShape === shape} @click=${() => {
+          this._drawShape = shape; this._draft = []; this._cursor = null;
+          if (this._tool === "roof") this._roofId = null;
+        }}>${this.t(shape === "rect" ? "tool_rect" : "tool_polygon")}</button>`)}
+      </div>
+      ${this.drawingPolygon ? html`<span class="fp3d-sub">${this.t("contour_draw_hint")}</span>
+        <button class="fp3d-btn" ?disabled=${!this.isAdmin || this._draft.length < 3} @click=${() => this.closeDraft()}>${this.t("contour_finish")}</button>
+        <button class="fp3d-btn" title=${this.t("undo")} ?disabled=${!this._draft.length} @click=${() => this._draft = this._draft.slice(0, -1)}>↶</button>` : nothing}
+    </div>`;
+  }
+
+  /** Same corner rows for rooms, outdoor areas and roofs. Insertion lives on the plan's edge markers. */
+  private renderPointList(points: Vec2[], edit: (index: number, axis: 0 | 1, value: number) => void, remove: (index: number) => void, selected: number | null, open: boolean) {
+    return html`<details class="fp3d-points" ?open=${open}>
+      <summary>${this.t("points")} (${points.length})</summary>
+      ${points.map((p, i) => html`<div class="fp3d-point ${i === selected ? "fp3d-point-sel" : ""}">
+        <span class="fp3d-muted">${i + 1}</span>
+        ${this.num(this.t("x"), p[0], (v) => edit(i, 0, v))} ${this.num(this.t("z"), p[1], (v) => edit(i, 1, v))}
+        ${this.isAdmin ? html`<button class="fp3d-btn" title=${this.t("delete_point")} ?disabled=${points.length <= 3} @click=${() => remove(i)}>×</button>` : nothing}
+      </div>`)}
+    </details>`;
+  }
+
+  private renderContour(kind: "outdoor" | "roof", id: string, points: Vec2[], apply: (points: Vec2[]) => void) {
+    const set = (next: Vec2[]) => {
+      if (!this.isAdmin) return false;
+      if (!validPolygon(next)) { alert(this.t("contour_invalid")); return false; }
+      apply(next);
+      return true;
+    };
+    const selection = this._contourVertex;
+    return this.renderPointList(points, (index, axis, value) => {
+      const next = points.map((p) => [...p] as Vec2); next[index][axis] = round(value);
+      if (set(next)) this._contourVertex = { kind, id, index };
+    }, (index) => {
+      if (points.length > 3 && set(points.filter((_, j) => j !== index))) this._contourVertex = null;
+    }, selection?.kind === kind && selection.id === id ? selection.index : null, true);
+  }
+
+  private roofPoints(sec: RoofSection): Vec2[] {
+    return sec.points ?? [[Math.min(sec.x0, sec.x1), Math.min(sec.z0, sec.z1)], [Math.max(sec.x0, sec.x1), Math.min(sec.z0, sec.z1)], [Math.max(sec.x0, sec.x1), Math.max(sec.z0, sec.z1)], [Math.min(sec.x0, sec.x1), Math.max(sec.z0, sec.z1)]];
+  }
+
+  private renderContourActions(kind: "outdoor" | "roof") {
+    if (!this.isAdmin) return nothing;
+    return html`<div class="fp3d-actions">
+      ${kind === "roof" || this.outdoorArea?.type === "pergola" ? html`<button class="fp3d-btn" @click=${() => {
+        const surface = kind === "roof" ? this.roofSpotSurface(this.roofSection!) : this.pergolaSpotSurface(this.outdoorArea!);
+        this.openSpotForm(surface);
+      }}>${this.t("spots_place")}</button>` : nothing}
+      <button class="fp3d-btn" @click=${() => kind === "roof" ? this.duplicateRoofSection() : this.duplicateOutdoor()}>${this.t("duplicate")}</button>
+      <button class="fp3d-btn fp3d-danger" @click=${() => kind === "roof" ? this.deleteRoofSection() : this.deleteOutdoor()}>${this.t("delete")}</button>
+    </div>`;
+  }
+
   private closeDraft(): void {
-    if (this._draft.length >= 3 && polygonArea(this._draft) > 0.05) this.addRoom(this._draft);
+    if (this._tool === "outdoor" || this._tool === "roof") {
+      if (!validPolygon(this._draft)) { alert(this.t("contour_invalid")); return; }
+      if (this._tool === "outdoor") this.addOutdoor(this._draft, true);
+      else {
+        const box = polygonBox(this._draft);
+        this.addRoofSection([box.x0, box.z0], [box.x1, box.z1], this._draft);
+      }
+    } else if (this._draft.length >= 3 && polygonArea(this._draft) > 0.05) this.addRoom(this._draft);
     this._draft = [];
     this._cursor = null;
     this._guides = {};
@@ -1996,9 +2101,9 @@ export class Fp3dEditor extends LitElement {
     this._tool = "select";
   }
 
-  private addOutdoor(points: Vec2[]): void {
+  private addOutdoor(points: Vec2[], freeform = true): void {
     if (!this.floor) return;
-    const area: OutdoorArea = { id: uid("outdoor"), type: "lawn", points: points.map(([x, z]) => [round(x), round(z)]) };
+    const area: OutdoorArea = { id: uid("outdoor"), type: "lawn", points: points.map(([x, z]) => [round(x), round(z)]), ...(freeform ? { freeform: true } : {}) };
     this.change((_, floor) => floor.outdoor.push(area));
     this.selectItem("outdoor", area.id);
     this._tool = "select";
@@ -2058,7 +2163,8 @@ export class Fp3dEditor extends LitElement {
       e.preventDefault();
       this.duplicateRoom();
     } else if (e.key === "Delete" || (e.key === "Backspace" && (this._tool === "select" || this._tool === "furniture"))) {
-      if (this._deviceId) this.deleteItem("device", this._deviceId);
+      if (this._contourVertex && ((this._contourVertex.kind === "outdoor" && this._contourVertex.id === this._outdoorId) || (this._tool === "roof" && this._contourVertex.kind === "roof" && this._contourVertex.id === this._roofId))) this.deleteContourVertex();
+      else if (this._deviceId) this.deleteItem("device", this._deviceId);
       else if (this._outdoorId) this.deleteOutdoor();
       else if (this._wallId) this.deleteFreeWall();
       else if (this._openingId) this.deleteOpening();
@@ -2077,9 +2183,11 @@ export class Fp3dEditor extends LitElement {
       if (this.nudge(dx * step, dz * step)) e.preventDefault();
     } else if (e.key.toLowerCase() === "r" && !mod && this._furnitureId) {
       this.rotateFurniture(e.shiftKey ? -90 : 90);
-    } else if (e.key === "Backspace" && this._tool === "polygon") {
+    } else if (e.key === "Backspace" && this.drawingPolygon && this._draft.length) {
+      e.preventDefault();
       this._draft = this._draft.slice(0, -1);
-    } else if (e.key === "Enter" && this._tool === "polygon") {
+    } else if (e.key === "Enter" && this.drawingPolygon && this._draft.length) {
+      e.preventDefault();
       this.closeDraft();
     } else if (e.key === "Escape") {
       if (this._ctx) {
@@ -2278,7 +2386,7 @@ export class Fp3dEditor extends LitElement {
     this._roofId = null;
   }
 
-  private addRoofSection(lo: Vec2, hi: Vec2): void {
+  private addRoofSection(lo: Vec2, hi: Vec2, points?: Vec2[]): void {
     if (!this.isAdmin) return;
     // eaves on the walls of the rooms below (a garage), whatever floor the plan shows; over no room
     // (a terrace, a carport) a canopy: a flat pent roof on posts, 2.4 m above the ground floor
@@ -2302,6 +2410,7 @@ export class Fp3dEditor extends LitElement {
       base: top,
       overhang: canopy ? 0.15 : null,
       ...(canopy ? { open: true } : {}),
+      ...(points ? { points: points.map(([x, z]) => [round(x), round(z)] as Vec2) } : {}),
     };
     this.change((doc) => {
       doc.settings.roof.type = "custom";
@@ -2318,7 +2427,7 @@ export class Fp3dEditor extends LitElement {
     const outline = floorOutline(floor.rooms, floor.walls ?? [], this._doc.settings.wall_exterior, this._doc.settings.wall_interior);
     if (!outline) return;
     const points = outline.map(([x, z]) => [round(x), round(z)] as Vec2);
-    this.updateRoofSection({ shape: "flat", points, ...polygonBox(points) });
+    this.updateRoofSection({ points, ...polygonBox(points) });
   }
 
   /** A dormer on a side of the selected section, in its middle; then the dormer is selected. */
@@ -2352,6 +2461,7 @@ export class Fp3dEditor extends LitElement {
     const sec = this.roofSection;
     if (!sec || !this.isAdmin) return;
     const copy = { ...structuredClone(sec), id: uid("roof"), x0: round(sec.x0 + 1), x1: round(sec.x1 + 1), z0: round(sec.z0 + 1), z1: round(sec.z1 + 1) };
+    if (sec.points) copy.points = sec.points.map(([x, z]) => [round(x + 1), round(z + 1)]);
     this.change((doc) => (doc.settings.roof.sections = [...(doc.settings.roof.sections ?? []), copy]));
     this._roofId = copy.id;
   }
@@ -2363,7 +2473,7 @@ export class Fp3dEditor extends LitElement {
     return svg`<g class="fp3d-roof-layer">${sections.map((sec, i) => {
       const sel = sec.id === this._roofId;
       const fr = sectionFrame(sec);
-      const shape = sec.shape === "flat" && sec.points && sec.points.length >= 3 ? sec.points : null;
+      const shape = sec.points && sec.points.length >= 3 ? sec.points : null;
       // a dormer or cross gable shows as deep as it is drawn (its ridge meets the slope there)
       const parent = dormerParent(sections, sec);
       const dfr = parent ? sectionFrame(effectiveDormer(parent, sec)) : fr;
@@ -2382,17 +2492,8 @@ export class Fp3dEditor extends LitElement {
           <g class="fp3d-roof-ridge">${ridge}</g>
           <text x=${cx} y=${cy - 14}>${label}</text>
         </g>
-        ${sel && this.isAdmin && !this.roofFixed(sec) && shape
-          ? shape.map((p, k) => {
-              const [x, y] = this.toScreen(p);
-              return svg`<g class="fp3d-vertex" data-roof-vertex=${`${sec.id}:${k}`}><circle cx=${x} cy=${y} r="16" class="fp3d-hit" /><circle cx=${x} cy=${y} r="6" /></g>`;
-            })
-          : nothing}
-        ${sel && this.isAdmin && !this.roofFixed(sec) && !shape
-          ? ([[0, 0], [1, 0], [1, 1], [0, 1]] as const).map(([kx, kz]) => {
-              const [x, y] = this.toScreen([kx ? Math.max(sec.x0, sec.x1) : Math.min(sec.x0, sec.x1), kz ? Math.max(sec.z0, sec.z1) : Math.min(sec.z0, sec.z1)]);
-              return svg`<g class="fp3d-vertex" data-roof-corner=${`${sec.id}:${kx}:${kz}`}><circle cx=${x} cy=${y} r="16" class="fp3d-hit" /><circle cx=${x} cy=${y} r="6" /></g>`;
-            })
+        ${sel && this._tool === "roof" && this.isAdmin && !this.roofFixed(sec) && !this._draft.length
+          ? this.renderPolygonHandles(this.roofPoints(sec), "roof", sec.id, this._contourVertex?.kind === "roof" && this._contourVertex.id === sec.id ? this._contourVertex.index : null)
           : nothing}`;
     })}</g>`;
   }
@@ -3374,6 +3475,18 @@ export class Fp3dEditor extends LitElement {
   private renderRoofSectionForm(sec: RoofSection) {
     const admin = this.isAdmin;
     const set = (patch: Partial<RoofSection>) => this.updateRoofSection(patch);
+    const points = this.roofPoints(sec);
+    const rect = isAxisRect(points);
+    const box = polygonBox(points);
+    const setRect = (field: "x" | "z" | "w" | "d", value: number) => {
+      let { x0, z0, x1, z1 } = box;
+      if (field === "x") [x0, x1] = [value, value + x1 - x0];
+      if (field === "z") [z0, z1] = [value, value + z1 - z0];
+      if (field === "w") x1 = x0 + Math.max(0.05, value);
+      if (field === "d") z1 = z0 + Math.max(0.05, value);
+      const next: Vec2[] = [[x0, z0], [x1, z0], [x1, z1], [x0, z1]].map(([x, z]) => [round(x), round(z)]);
+      set({ points: next, ...polygonBox(next) });
+    };
     // side a is the top (ridge across the plan) or the left (ridge up and down the plan)
     const sides = sec.axis === "x" ? [this.t("roof_side_top"), this.t("roof_side_bottom")] : [this.t("roof_side_left"), this.t("roof_side_right")];
     const [sideA, sideB] = sec.flip ? [sides[1], sides[0]] : sides;
@@ -3412,6 +3525,8 @@ export class Fp3dEditor extends LitElement {
           ${this.t("roof_open")}</label
         >
         <div class="fp3d-form">
+          ${rect ? html`${this.num(this.t("x"), box.x0, (v) => setRect("x", v))} ${this.num(this.t("z"), box.z0, (v) => setRect("z", v))}
+            ${this.num(this.t("width"), box.x1 - box.x0, (v) => setRect("w", v), 0.01, 0.05)} ${this.num(this.t("depth"), box.z1 - box.z0, (v) => setRect("d", v), 0.01, 0.05)}` : nothing}
           ${flat
             ? num(this.t("roof_height"), sec.eave_a, (v) => set({ eave_a: v, eave_b: v }))
             : html`${num(`${this.t("roof_eave")} ${pent ? "" : sideA}`, sec.eave_a, (v) => set({ eave_a: v }))}
@@ -3441,13 +3556,16 @@ export class Fp3dEditor extends LitElement {
           <p class="fp3d-sub fp3d-wide">${this.t("roof_base_hint")}</p>
           ${num(this.t("roof_overhang"), sec.overhang ?? this._doc.settings.roof.overhang, (v) => set({ overhang: Math.min(2, v) }), 0.05, 0)}
         </div>
-        ${flat && admin
+        ${admin && !this.roofFixed(sec)
           ? html`<div class="fp3d-actions">
               <button class="fp3d-btn" title=${this.t("roof_outline_hint")} @click=${() => this.takeRoofOutline()}>${this.t("roof_outline")}</button>
               ${sec.points ? html`<button class="fp3d-btn" @click=${() => set({ points: null })}>${this.t("roof_rect")}</button>` : nothing}
             </div>
             <p class="fp3d-sub">${this.t(sec.points ? "roof_points_hint" : "roof_outline_hint")}</p>`
           : nothing}
+        ${this.renderContour("roof", sec.id, this.roofPoints(sec), (points) => set({ points, ...polygonBox(points) }))}
+        ${this.renderContourActions("roof")}
+        ${this.renderSpotForm(this.roofSpotSurface(sec))}
         <p class="fp3d-sub">${this.t("roof_ridge_height")}: ${formatNumber(this.hass, ridgeHeight(sec), 2)} m · ${this.t("roof_section_hint")}</p>
         ${admin
           ? html`<div class="fp3d-actions">
@@ -3458,8 +3576,6 @@ export class Fp3dEditor extends LitElement {
                 ? html`<button class="fp3d-btn" title=${this.t("roof_dormer_hint")} @click=${() => this.addDormer("a")}>+ ${this.t("roof_dormer")} ${sideA}</button>
                   ${pent ? nothing : html`<button class="fp3d-btn" title=${this.t("roof_dormer_hint")} @click=${() => this.addDormer("b")}>+ ${this.t("roof_dormer")} ${sideB}</button>`}`
                 : nothing}
-              <button class="fp3d-btn" @click=${() => this.duplicateRoofSection()}>${this.t("duplicate")}</button>
-              <button class="fp3d-btn fp3d-danger" @click=${() => this.deleteRoofSection()}>${this.t("delete")}</button>
             </div>`
           : nothing}
       </section>`;
@@ -3616,6 +3732,7 @@ export class Fp3dEditor extends LitElement {
   /** Select a room, an opening or a furniture item (only one at a time). */
   private selectItem(kind: "room" | "opening" | "furniture" | "device" | "outdoor" | "wall", id: string | null): void {
     this._notice = null;
+    if (kind !== "outdoor" || id !== this._outdoorId) this._contourVertex = null;
     // a selection made in the plan (or by a tool) opens the folded sidebar
     if (id) this._sideOpen = true;
     this._outdoorId = kind === "outdoor" ? id : null;
@@ -3963,6 +4080,20 @@ export class Fp3dEditor extends LitElement {
     });
   }
 
+  private deleteContourVertex(): void {
+    const selected = this._contourVertex;
+    if (!selected || !this.isAdmin) return;
+    const sec = selected.kind === "roof" ? this.roofSection : undefined;
+    const area = selected.kind === "outdoor" ? this.outdoorArea : undefined;
+    const points = sec ? this.roofPoints(sec) : area?.points;
+    if (!points || points.length <= 3) return;
+    const next = points.filter((_, i) => i !== selected.index);
+    if (!validPolygon(next)) { alert(this.t("contour_invalid")); return; }
+    if (sec) this.updateRoofSection({ points: next, ...polygonBox(next) });
+    else this.updateOutdoor({ points: next, freeform: true });
+    this._contourVertex = null;
+  }
+
   private deleteVertex(index: number): void {
     const room = this.room;
     if (!room || room.points.length <= 3) return;
@@ -4176,6 +4307,7 @@ export class Fp3dEditor extends LitElement {
               <button aria-pressed=${this._split} title=${this.t("split_3d_hint")} @click=${() => this.toggleSplit()}>${this.t("split_3d")}</button>
               ${this.isAdmin ? html`<button aria-pressed=${!!this._doc.settings.lock_plan} title=${this.t("lock_plan_hint")} @click=${() => this.toggleLockPlan()}>${this.t("lock_plan")}</button>` : nothing}
             </div>
+            ${(this._tool === "outdoor" || this._tool === "roof") ? this.renderDrawShape() : nothing}
             ${walls?.warnings.length ? html`<span class="fp3d-warn">${this.t("overlap_warning")}</span>` : nothing}
           </div>
           <div class="fp3d-stage-pair ${this._split ? "fp3d-split" : ""}" style=${this._split && !this.narrow ? `--fp3d-split:${Math.round(this._splitRatio * 100)}%` : ""}>
@@ -4504,14 +4636,11 @@ export class Fp3dEditor extends LitElement {
   }
 
 
-  /** Corner handles of the selected outdoor area (a rectangle stays a rectangle while dragging). */
+  /** Outdoor areas use the same numbered corners and edge insertion handles as rooms. */
   private renderOutdoorHandles(floor: Floor) {
     const a = this._outdoorId ? floor.outdoor.find((x) => x.id === this._outdoorId) : undefined;
     if (!a || !this.isAdmin || this._tool !== "select" || this._doc.settings.lock_plan) return nothing;
-    return svg`${a.points.map((p, i) => {
-      const [x, y] = this.toScreen(p);
-      return svg`<g class="fp3d-vertex" data-out-vertex=${`${a.id}:${i}`}><circle cx=${x} cy=${y} r="16" class="fp3d-hit" /><circle cx=${x} cy=${y} r="6" /></g>`;
-    })}`;
+    return this.renderPolygonHandles(a.points, "outdoor", a.id, this._contourVertex?.kind === "outdoor" && this._contourVertex.id === a.id ? this._contourVertex.index : null);
   }
 
   private renderOutdoor(floor: Floor) {
@@ -4586,14 +4715,11 @@ export class Fp3dEditor extends LitElement {
           ${this.t("outdoor_cut")}</label
         >
       </div>
+      ${this.renderContour("outdoor", a.id, a.points, (points) => this.updateOutdoor({ points, freeform: true }))}
+      ${this.renderContourActions("outdoor")}
+      ${a.type === "pergola" ? this.renderSpotForm(this.pergolaSpotSurface(a)) : nothing}
       ${a.slope ? html`<p class="fp3d-sub">${this.t("outdoor_slope_hint")}</p>` : nothing}
       <p class="fp3d-sub">${this.t("outdoor_hint")}</p>
-      ${admin
-        ? html`<div class="fp3d-actions">
-            <button class="fp3d-btn" @click=${() => this.duplicateOutdoor()}>${this.t("duplicate")}</button>
-            <button class="fp3d-btn fp3d-danger" @click=${() => this.deleteOutdoor()}>${this.t("delete")}</button>
-          </div>`
-        : nothing}
     </section>`;
   }
 
@@ -4822,8 +4948,18 @@ export class Fp3dEditor extends LitElement {
   }
 
   private renderHandles(room: Room) {
-    const pts = room.points;
+    return this.renderPolygonHandles(room.points, "room", room.id, this._vertex);
+  }
+
+  /** Shared lengths, numbered corners and + markers; room wall metadata keeps its existing handlers. */
+  private renderPolygonHandles(pts: Vec2[], kind: "room" | "outdoor" | "roof", id: string, selected: number | null) {
     const n = pts.length;
+    const mark = (insert: boolean, i: number, content: unknown) => {
+      const cls = insert ? "fp3d-mid" : i === selected ? "fp3d-vertex fp3d-vertex-sel" : "fp3d-vertex";
+      if (kind === "room") return insert ? svg`<g data-mid=${i} class=${cls}>${content}</g>` : svg`<g data-vertex=${i} class=${cls}>${content}</g>`;
+      const key = `${kind}:${id}:${i}`;
+      return insert ? svg`<g data-contour-mid=${key} class=${cls}>${content}</g>` : svg`<g data-contour-vertex=${key} class=${cls}>${content}</g>`;
+    };
     const edges = pts.map((a, i) => {
       const b = pts[(i + 1) % n];
       const [ax, ay] = this.toScreen(a);
@@ -4845,12 +4981,12 @@ export class Fp3dEditor extends LitElement {
       const screenLen = Math.hypot(bx - ax, by - ay);
       return svg`
         ${screenLen > 50 ? svg`<text class="fp3d-dim" x=${mx + nx * 16} y=${my + ny * 16 + 4}>${formatNumber(this.hass, len, 2)} m</text>` : nothing}
-        ${screenLen > 36 ? svg`<g data-mid=${i} class="fp3d-mid"><circle cx=${mx} cy=${my} r="14" class="fp3d-hit" /><circle cx=${mx} cy=${my} r="6" /><path d="M${mx - 3} ${my}h6M${mx} ${my - 3}v6" /></g>` : nothing}
+        ${screenLen > 36 && pts.length < 200 ? mark(true, i, svg`<circle cx=${mx} cy=${my} r="14" class="fp3d-hit" /><circle cx=${mx} cy=${my} r="6" /><path d="M${mx - 3} ${my}h6M${mx} ${my - 3}v6" />`) : nothing}
       `;
     });
     const vertices = pts.map((p, i) => {
       const [x, y] = this.toScreen(p);
-      return svg`<g data-vertex=${i} class=${i === this._vertex ? "fp3d-vertex fp3d-vertex-sel" : "fp3d-vertex"}><circle cx=${x} cy=${y} r="16" class="fp3d-hit" /><circle cx=${x} cy=${y} r="6" /></g>
+      return svg`${mark(false, i, svg`<circle cx=${x} cy=${y} r="16" class="fp3d-hit" /><circle cx=${x} cy=${y} r="6" />`)}
         <text class="fp3d-vertex-no" x=${x + 9} y=${y - 9}>${i + 1}</text>`;
     });
     return svg`<g>${edges}${vertices}</g>`;
@@ -4877,7 +5013,7 @@ export class Fp3dEditor extends LitElement {
         <text class="fp3d-dim" x=${(x0 + x1) / 2} y=${Math.min(y0, y1) - 8}>${formatNumber(this.hass, w, 2)} × ${formatNumber(this.hass, d, 2)} m</text>
       </g>`;
     }
-    if (this._tool !== "polygon" && this._tool !== "measure") return nothing;
+    if (!this.drawingPolygon && this._tool !== "measure") return nothing;
     const pts = [...this._draft, ...(this._cursor ? [this._cursor] : [])].map((p) => this.toScreen(p));
     return svg`<g pointer-events="none">
       ${pts.length > 1 ? svg`<polyline class="fp3d-draft" points=${pts.map((p) => p.join(",")).join(" ")} />` : nothing}
@@ -5172,20 +5308,7 @@ export class Fp3dEditor extends LitElement {
           : nothing}
       </div>
       ${this.renderEdgeHeights(room)} ${this.renderRoomClimate(room)}
-      <details class="fp3d-points" ?open=${!rect}>
-        <summary>${this.t("points")} (${room.points.length})</summary>
-        ${room.points.map(
-          (p, i) => html`<div class="fp3d-point ${i === this._vertex ? "fp3d-point-sel" : ""}">
-            <span class="fp3d-muted">${i + 1}</span>
-            ${this.num(this.t("x"), p[0], (v) => this.setPoint(i, 0, v))} ${this.num(this.t("z"), p[1], (v) => this.setPoint(i, 1, v))}
-            ${admin
-              ? html`<button class="fp3d-btn" title=${this.t("delete_point")} ?disabled=${room.points.length <= 3} @click=${() => this.deleteVertex(i)}>
-                  ×
-                </button>`
-              : nothing}
-          </div>`,
-        )}
-      </details>
+      ${this.renderPointList(room.points, (i, axis, value) => this.setPoint(i, axis, value), (i) => this.deleteVertex(i), this._vertex, !rect)}
       ${admin
         ? html`<div class="fp3d-actions">
             <button class="fp3d-btn fp3d-primary" @click=${() => (this._packages = !this._packages)}>${this.t("pkg_open")}</button>
@@ -5218,49 +5341,49 @@ export class Fp3dEditor extends LitElement {
   }
 
   /** Suggests about one spot per 1.2 m in each direction, and the room's first light. */
-  private openSpotForm(room: Room): void {
+  private roofSpotSurface(sec: RoofSection): SpotSurface {
+    return { id: sec.id, points: this.roofPoints(sec), roof: sec, floorId: sectionFloor(this._doc, sec)?.id ?? this._floorId ?? undefined };
+  }
+
+  private pergolaSpotSurface(a: OutdoorArea): SpotSurface {
+    return { id: a.id, points: a.points, pergola: a, floorId: this._floorId ?? undefined };
+  }
+
+  private openSpotForm(room: SpotSurface): void {
     const b = bounds(room.points);
-    const lights = this.hass ? areaEntities(this.hass, room.area_id).filter((id) => id.startsWith("light.")) : [];
+    const lights = this.hass ? areaEntities(this.hass, room.area_id ?? null).filter((id) => id.startsWith("light.")) : [];
     this._spots = {
       type: "lamp_downlight",
-      rows: Math.max(1, Math.round((b.z1 - b.z0) / 1.2)),
-      cols: Math.max(1, Math.round((b.x1 - b.x0) / 1.2)),
+      rows: Math.max(1, Math.min(12, Math.round((b.z1 - b.z0) / 1.2))),
+      cols: Math.max(1, Math.min(12, Math.round((b.x1 - b.x0) / 1.2))),
       entity: lights[0] ?? null,
+      target: spotSurfaceKey(room),
     };
   }
 
-  private placeSpots(room: Room): void {
+  private placeSpots(room: SpotSurface): void {
     const f = this._spots;
-    if (!f || !this.isAdmin) return;
-    const [w, d, h] = FURNITURE_SIZE[f.type];
-    const items = spotGrid(room, f.rows, f.cols).map(([x, z]) => ({
-      id: uid("furniture"),
-      type: f.type,
-      x,
-      z,
-      rotation: 0,
-      w,
-      d,
-      h,
-      variant: null,
-      // every spot of the grid follows the same light (spots on one dimmer); "none" = not linked
-      entity: f.entity ?? "none",
-      power: null,
-    }));
-    this.change((_, floor) => floor.furniture.push(...items));
+    if (!f || !this.isAdmin || f.target !== spotSurfaceKey(room)) return;
+    const floor = this._doc.floors.find((f) => f.id === (room.floorId ?? this._floorId));
+    if (!floor) return;
+    let items: Furniture[];
+    try { items = ceilingSpots(room, f, floor, () => uid("furniture")); }
+    catch { alert(this.t("spots_height_error")); return; }
+    this.change((doc) => doc.floors.find((f) => f.id === floor.id)!.furniture.push(...items));
     this._spots = null;
     this._notice = this.t("spots_placed", { n: items.length });
   }
 
-  private renderSpotForm(room: Room) {
-    const f = this._spots!;
+  private renderSpotForm(room: SpotSurface) {
+    const f = this._spots;
+    if (!f || f.target !== spotSurfaceKey(room)) return nothing;
     const count = spotGrid(room, f.rows, f.cols).length;
     const lights = this.entityOptions((id) => /^(light|switch|input_boolean)\./.test(id));
     const set = (patch: Partial<NonNullable<Fp3dEditor["_spots"]>>) => (this._spots = { ...f, ...patch });
     return html`<div class="fp3d-form fp3d-spot-form">
       <label class="fp3d-field fp3d-wide"
         >${this.t("spots_type")}
-        <select @change=${(e: Event) => set({ type: (e.target as HTMLSelectElement).value as FurnitureType })}>
+        <select ?disabled=${!this.isAdmin} @change=${(e: Event) => set({ type: (e.target as HTMLSelectElement).value as FurnitureType })}>
           ${(["lamp_downlight", "lamp_spot", "lamp_panel", "lamp_ceiling"] as FurnitureType[]).map(
             (t) => html`<option value=${t} ?selected=${t === f.type}>${this.t(`furn_${t}` as I18nKey)}</option>`,
           )}
@@ -5270,7 +5393,7 @@ export class Fp3dEditor extends LitElement {
       ${this.num(this.t("spots_rows"), f.rows, (v) => set({ rows: Math.max(1, Math.min(12, Math.round(v))) }), 1, 1)}
       ${this.entitySelect(this.t("furn_entity_light"), f.entity, undefined, lights, (v) => set({ entity: v === "none" ? null : v }))}
       <div class="fp3d-actions fp3d-wide">
-        <button class="fp3d-btn fp3d-primary" ?disabled=${!count} @click=${() => this.placeSpots(room)}>${this.t("spots_add", { n: count })}</button>
+        <button class="fp3d-btn fp3d-primary" ?disabled=${!count || !this.isAdmin} @click=${() => this.placeSpots(room)}>${this.t("spots_add", { n: count })}</button>
         <button class="fp3d-btn" @click=${() => (this._spots = null)}>${this.t("cancel")}</button>
       </div>
       <p class="fp3d-sub fp3d-wide">${this.t("spots_hint")}</p>
@@ -7095,12 +7218,13 @@ export class Fp3dEditor extends LitElement {
         padding: 4px 10px;
       }
       .fp3d-editor.fp3d-narrow {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
         grid-template-rows: minmax(360px, 62vh) auto;
         height: auto;
       }
       .fp3d-main {
         display: grid;
+        grid-template-columns: minmax(0, 1fr);
         grid-template-rows: auto 1fr;
         min-height: 0;
         min-width: 0;
@@ -7111,6 +7235,18 @@ export class Fp3dEditor extends LitElement {
         gap: 8px;
         align-items: center;
         padding: 10px 12px;
+      }
+      .fp3d-shape-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        flex-basis: 100%;
+      }
+      .fp3d-narrow .fp3d-toolbar > .fp3d-seg,
+      .fp3d-narrow .fp3d-shape-controls > .fp3d-seg {
+        max-width: 100%;
+        overflow-x: auto;
       }
       .fp3d-warn {
         color: var(--fp3d-warm);

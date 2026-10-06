@@ -4,6 +4,13 @@ All notable changes to NeonPlan 3D. The full notes in German and English are on 
 [releases page](https://github.com/Mastershort/neonplan3d/releases). Ideas and votes:
 [Discussions → Ideas](https://github.com/Mastershort/neonplan3d/discussions/categories/ideas).
 
+## 1.12.1 (local freeform branch)
+
+### New
+
+- **Place spots** uses the room raster form for every roof section/canopy and pergola too. Lamps are placed inside the outline, with mounting heights under the selected surface; custom heights are respected by models, light sources and halos. Ordinary room ceilings retain their default height.
+- Draw outdoor areas and roof sections as free polygon outlines, including concave L/U shapes. Free editing is the default, including existing rectangles. The corner list, numbered handles, edge lengths and + insertion markers are shared with rooms. Undo/redo and saved plans retain the contours. All section roof profiles are clipped to the chosen footprint; solar modules and picking respect its cut-outs.
+
 ## 1.12.0
 
 ### Fixed

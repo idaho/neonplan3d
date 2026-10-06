@@ -290,10 +290,51 @@ const shots = [
   { name: "site-demo-phone", query: "?site&lang=de", width: 390, height: 844 },
 ];
 
+const FREEFORM_SCRIPT = `
+  const b = structuredClone(e._doc), f = b.floors[0];
+  b.floors = [f];
+  Object.assign(f, { rooms: [{ id: 'free', name: 'Freiform-Haus', area_id: null, points: [[0,0],[8,0],[8,2.5],[3,2.5],[3,6],[0,6]], floor_material: 'wood' }], walls: [], openings: [], outdoor: [], furniture: [], placements: [] });
+  b.settings.roof = { type: 'none', pitch: 30, overhang: 0, sections: [], solar: [], windows: [], cables: [] };
+  e.setDoc(b); e._floorId = f.id; e._roomId = null; e._tool = 'outdoor'; e._split = false;
+  setTimeout(() => { const scale = Math.min(e._size.w / 16, e._size.h / 12); e._view = { scale, ox: e._size.w / 2 - 2 * scale, oy: e._size.h / 2 - 3 * scale }; }, 200);
+`;
+const CEILING_SPOTS_SCRIPT = FREEFORM_SCRIPT + `
+  e.change((b, f) => {
+    const points = [[-4,0],[-1,0],[-1,3.5],[-2,3.5],[-2,6],[-4,6]];
+    f.outdoor = [{ id: 'pergola_spots', type: 'pergola', points: [[9,0],[12,0],[12,4],[9,4]], height: 2.7 }];
+    b.settings.roof.type = 'custom';
+    b.settings.roof.sections = [{ id: 'canopy_spots', x0: -4, z0: 0, x1: -1, z1: 6, points, shape: 'pent', open: true, axis: 'z', eave_a: 2.8, eave_b: 2.8, pitch_a: 8, pitch_b: 8, base: 2.8, overhang: 0.15 }];
+  }); e._tool = 'roof'; e._roofId = 'canopy_spots'; e._split = true;
+`;
+shots.push(
+  { name: "editor-freeform-roof", query: "", width: 1500, height: 1000, editor: true, editorScript: FREEFORM_SCRIPT, freeformExercise: true, mockPrivatePacks: true },
+  { name: "editor-freeform-phone", query: "", width: 430, height: 1100, editor: true, editorScript: FREEFORM_SCRIPT, freeformExercise: true, mockPrivatePacks: true },
+  { name: "view-freeform-roof", query: "", width: 1280, height: 900, editor: true, editorScript: FREEFORM_SCRIPT, freeformExercise: true, mockPrivatePacks: true, houseView: true, then3d: "Alle Etagen", then3dAlso: ["Dach bleibt"], camera: { theta: 1.2, phi: 0.85, radius: 17, target: { x: 2, y: 1.5, z: 3 } } },
+  { name: "editor-freeform-legacy-rectangles", query: "", width: 1500, height: 1000, editor: true, mockPrivatePacks: true, rectangleExercise: true, editorScript: FREEFORM_SCRIPT + `
+    e.change((b, f) => {
+      f.outdoor = [{ id: 'legacy_out', type: 'terrace', points: [[-4,0],[-1,0],[-1,4],[-4,4]], freeform: false }];
+      b.settings.roof.type = 'custom'; b.settings.roof.sections = [{ id: 'legacy_roof', x0: 0, z0: 0, x1: 8, z1: 6, points: null, shape: 'gable', axis: 'x', eave_a: 3, eave_b: 3, pitch_a: 30, pitch_b: 30, base: 3, overhang: 0 }];
+    }); e._tool = 'select'; e.selectItem('outdoor', 'legacy_out');
+  ` },
+  { name: "editor-ceiling-spots", query: "", width: 1500, height: 1100, editor: true, editorScript: CEILING_SPOTS_SCRIPT, spotsExercise: true, mockPrivatePacks: true, showSpotForm: true },
+  { name: "editor-ceiling-spots-phone", query: "", width: 430, height: 1100, editor: true, editorScript: CEILING_SPOTS_SCRIPT, spotsExercise: true, mockPrivatePacks: true, showSpotForm: true },
+  { name: "view-canopy-spots", query: "", width: 1280, height: 900, editor: true, editorScript: CEILING_SPOTS_SCRIPT, spotsExercise: true, mockPrivatePacks: true, then3d: "Alle Etagen", houseView: true, camera: { theta: 1.6, phi: 1.25, radius: 20, target: { x: 3.5, y: 1.2, z: 3 } } },
+);
+
 const errors = [];
 const only = process.env.SHOTS?.split(",");
 for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
   const page = await browser.newPage();
+  if (shot.freeformExercise || shot.spotsExercise) page.on("dialog", async (dialog) => { errors.push(`${shot.name}: ${dialog.message()}`); await dialog.dismiss(); });
+  if (shot.mockPrivatePacks) {
+    await page.setRequestInterception(true);
+    page.on("request", (request) => {
+      const path = new URL(request.url()).pathname;
+      if (path === "/private/packs/starter.json" || path === "/private/packs/src/index.json") {
+        request.respond({ status: 200, contentType: "application/json", body: JSON.stringify(path.endsWith("index.json") ? [] : { id: "preview.empty", name: "Preview", publisher: "Preview", items: [] }) });
+      } else request.continue();
+    });
+  }
   page.on("pageerror", (e) => errors.push(`${shot.name}: ${e.message}`));
   page.on("console", (m) => m.type() === "error" && !m.location()?.url?.endsWith("favicon.ico") && errors.push(`${shot.name}: ${m.text()}`));
   await page.setViewport({ width: shot.width, height: shot.height, deviceScaleFactor: 1 });
@@ -377,6 +418,188 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       new Function("e", code)(e);
     }, shot.editorScript);
     await new Promise((r) => setTimeout(r, 1200 + (shot.afterWait ?? 0)));
+    if (shot.spotsExercise) {
+      await page.evaluate(async () => {
+        const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+        const settle = async () => { await e.updateComplete; await new Promise((r) => setTimeout(r, 150)); };
+        const open = async () => {
+          const actions = e.shadowRoot.querySelector('details.fp3d-points')?.nextElementSibling;
+          const names = [...(actions?.querySelectorAll('button') ?? [])].map((b) => b.textContent.trim());
+          if (names.join('|') !== 'Spots setzen|Duplizieren|Löschen') throw new Error('Contour actions do not match the intended ceiling workflow: ' + names.join('|'));
+          const button = [...e.shadowRoot.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Spots setzen');
+          if (!button) throw new Error('Missing Spots setzen action'); button.click(); await settle();
+          const labels = [...e.shadowRoot.querySelectorAll('.fp3d-spot-form label')];
+          for (const [text, value] of [['Spalten', '2'], ['Reihen', '3']]) {
+            const input = labels.find((l) => l.textContent.includes(text)).querySelector('input');
+            input.value = value; input.dispatchEvent(new Event('change')); await settle();
+          }
+          e._spots = { ...e._spots, entity: 'light.led_band' }; await settle();
+        };
+        const place = async () => {
+          const button = e.shadowRoot.querySelector('.fp3d-spot-form .fp3d-primary');
+          if (!button || button.disabled) throw new Error('Cannot place the lamp raster'); button.click(); await settle();
+        };
+        await open(); await place();
+        const f = e._doc.floors[0], first = f.furniture;
+        if (first.length !== 5 || !first.every((l) => l.entity === 'light.led_band' && l.mount_y > 0)) throw new Error('Canopy raster or heights incorrect');
+        if (new Set(first.map((l) => l.mount_y)).size < 2) throw new Error('Canopy lamps do not follow the slope');
+        // Placement is one undo step and redo keeps the same lamp ids.
+        const ids = first.map((l) => l.id).join(','); e.undo(); await settle();
+        if (e._doc.floors[0].furniture.length) throw new Error('Spot placement undo failed');
+        e.redo(); await settle(); if (e._doc.floors[0].furniture.map((l) => l.id).join(',') !== ids) throw new Error('Spot redo changed ids');
+        e._tool = 'select'; e.selectItem('outdoor', 'pergola_spots'); await settle();
+        await open(); await place();
+        if (e._doc.floors[0].furniture.length !== 11) throw new Error('Pergola raster not placed');
+        const added = e._doc.floors[0].furniture.slice(5);
+        if (!added.every((l) => Math.abs(l.mount_y + l.h - 2.5) < 0.001)) throw new Error('Pergola uses the room height instead of its own height');
+        e._tool = 'roof'; e._roofId = 'canopy_spots'; await settle(); await open();
+      });
+      await new Promise((r) => setTimeout(r, 1500));
+      await page.evaluate(async () => {
+        const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+        const saved = await e.hass.callWS({ type: 'neonplan3d/building/get' });
+        if (saved.building.floors[0].furniture.length !== 11) throw new Error('Lamp mounting data did not save');
+      });
+      console.log(`verified canopy/pergola raster, heights, links, undo/redo and save: ${shot.name}`);
+    }
+    if (shot.rectangleExercise) {
+      for (const kind of ['outdoor', 'roof']) {
+        if (kind === 'roof') await page.evaluate(() => {
+          const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+          e._tool = 'roof'; e._roofId = 'legacy_roof';
+        });
+        await new Promise((r) => setTimeout(r, 400));
+        const drag = await page.evaluate((kind) => {
+          const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+          const svg = e.shadowRoot.querySelector('svg.fp3d-plan'), r = svg.getBoundingClientRect(), scale = Math.min(r.width / 16, r.height / 12);
+          e._view = { scale, ox: r.width / 2 - 2 * scale, oy: r.height / 2 - 3 * scale };
+          const points = kind === 'roof' ? e.roofPoints(e.roofSection) : e.outdoorArea.points, p = points[0];
+          const world = (p) => [e._view.ox + p[0] * scale + r.left, e._view.oy + p[1] * scale + r.top];
+          const list = e.shadowRoot.querySelector('details.fp3d-points');
+          if (!list?.open || list.querySelectorAll('.fp3d-point').length !== 4) throw new Error('Legacy rectangle is not editable by default');
+          return { from: world(p), to: world([p[0], -0.5]) };
+        }, kind);
+        await new Promise((r) => setTimeout(r, 200));
+        await page.keyboard.down('Alt'); await page.mouse.move(...drag.from); await page.mouse.down();
+        await page.mouse.move(...drag.to, { steps: 5 }); await page.mouse.up(); await page.keyboard.up('Alt');
+        await new Promise((r) => setTimeout(r, 300));
+        await page.evaluate((kind) => {
+          const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+          const points = kind === 'roof' ? e.roofSection.points : e.outdoorArea.points;
+          if (!points || points[0][1] !== -0.5 || points[1][1] !== 0) throw new Error('Legacy rectangle still moves neighbouring corners: ' + kind);
+        }, kind);
+      }
+      console.log('verified independent editing of legacy rectangular outdoor areas and roofs');
+    }
+    if (shot.freeformExercise) {
+      await page.evaluate(() => {
+        const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+        const svg = e.shadowRoot.querySelector("svg.fp3d-plan"), r = svg.getBoundingClientRect();
+        if (e.narrow && r.width > window.innerWidth + 1) throw new Error("The phone's drawing canvas overflows the viewport");
+        if (e._drawShape !== 'polygon') throw new Error("Free drawing is not the default");
+      });
+      const draw = async (points) => {
+        for (const point of points) {
+          const at = await page.evaluate((p) => {
+            const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+            const svg = e.shadowRoot.querySelector("svg.fp3d-plan"), r = svg.getBoundingClientRect(), q = e.toScreen(p);
+            return [r.left + q[0], r.top + q[1]];
+          }, point);
+          await page.mouse.click(...at);
+        }
+        await page.keyboard.press("Enter");
+        await new Promise((r) => setTimeout(r, 400));
+      };
+      const insertAndDrag = async (kind) => {
+        const at = await page.evaluate((kind) => {
+          const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+          const mark = [...e.shadowRoot.querySelectorAll('[data-contour-mid]')].find((m) => m.getAttribute('data-contour-mid').startsWith(kind + ':'));
+          if (!mark) throw new Error('Missing + edge marker: ' + kind);
+          const r = mark.querySelector('circle:not(.fp3d-hit)').getBoundingClientRect();
+          return [r.left + r.width / 2, r.top + r.height / 2];
+        }, kind);
+        await page.mouse.click(...at);
+        await new Promise((r) => setTimeout(r, 200));
+        const drag = await page.evaluate((kind) => {
+          const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor"), selection = e._contourVertex;
+          const points = kind === 'roof' ? e.roofSection.points : e.outdoorArea.points;
+          if (points.length !== 7 || selection?.kind !== kind || selection.index !== 1) throw new Error('Edge insertion did not select the new vertex');
+          const r = e.shadowRoot.querySelector('svg.fp3d-plan').getBoundingClientRect(), p = points[1];
+          return { from: e.toScreen(p).map((n, i) => n + (i ? r.top : r.left)), to: e.toScreen([p[0], p[1] - 0.25]).map((n, i) => n + (i ? r.top : r.left)) };
+        }, kind);
+        await page.keyboard.down('Alt');
+        await page.mouse.move(...drag.from); await page.mouse.down();
+        await page.mouse.move(...drag.to, { steps: 5 }); await page.mouse.up();
+        await page.keyboard.up('Alt');
+        await new Promise((r) => setTimeout(r, 200));
+        await page.evaluate((kind) => {
+          const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+          const points = kind === 'roof' ? e.roofSection.points : e.outdoorArea.points;
+          if (points[1][1] !== -0.25 || points[0][1] !== 0) throw new Error(`Independent ${kind} vertex drag failed: ${JSON.stringify(points)}`);
+        }, kind);
+      };
+      await draw([[-4, 0], [-1, 0], [-1, 3], [-2, 3], [-2, 6], [-4, 6]]);
+      await insertAndDrag('outdoor');
+      await page.keyboard.press('Delete');
+      await new Promise((r) => setTimeout(r, 200));
+      await page.evaluate(() => {
+        const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+        if (e.outdoorArea.points.length !== 6) throw new Error('Delete removed the area instead of the selected corner');
+        // Undo delete, drag and insertion, leaving only the initial area creation in history.
+        e.undo(); e.undo(); e.undo();
+      });
+      await new Promise((r) => setTimeout(r, 200));
+      const outdoor = await page.evaluate(() => {
+        const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+        const a = e._doc.floors[0].outdoor[0];
+        if (!a?.freeform || a.points.length !== 6) throw new Error("Outdoor polygon was not drawn");
+        e.undo(); if (e._doc.floors[0].outdoor.length) throw new Error("Outdoor undo failed");
+        e.redo(); e.updateOutdoor({ type: 'terrace' });
+        e._tool = 'roof'; e._roofId = null;
+        return a.points;
+      });
+      await new Promise((r) => setTimeout(r, 300));
+      await page.evaluate(() => {
+        const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+        const r = e.shadowRoot.querySelector("svg.fp3d-plan").getBoundingClientRect(), scale = Math.min(r.width / 16, r.height / 12);
+        e._view = { scale, ox: r.width / 2 - 2 * scale, oy: r.height / 2 - 3 * scale };
+      });
+      await new Promise((r) => setTimeout(r, 200));
+      await draw([[0, 0], [8, 0], [8, 2.5], [3, 2.5], [3, 6], [0, 6]]);
+      await insertAndDrag('roof');
+      const roof = await page.evaluate(async () => {
+        const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+        if (e.roofSection.points.length !== 7) throw new Error("Roof polygon edge insertion failed");
+        const details = () => [...e.shadowRoot.querySelectorAll('details')].find((d) => d.querySelector('summary')?.textContent.includes('Eckpunkte'));
+        const settle = async () => { await e.updateComplete; await new Promise((r) => setTimeout(r, 100)); };
+        if (!details().open || !details().matches('.fp3d-points') || !details().querySelector('.fp3d-point')) throw new Error('Corner list does not match the rooms');
+        [...details().querySelectorAll('button[title="Punkt löschen"]')][1].click();
+        await settle();
+        if (e.roofSection.points.length !== 6) throw new Error(`Remove vertex failed (${e.roofSection.points.length} vertices)`);
+        const sec = e.roofSection;
+        const input = details().querySelector('input');
+        input.value = '-0.2'; input.dispatchEvent(new Event('change'));
+        await settle();
+        if (e.roofSection.points[0][0] !== -0.2 || e.roofSection.points[5][0] !== 0) throw new Error("Independent vertex edit failed");
+        e.undo();
+        await settle();
+        e.duplicateRoofSection();
+        const copy = e.roofSection;
+        if (copy.points.some((p, i) => p[0] !== sec.points[i][0] + 1 || p[1] !== sec.points[i][1] + 1)) throw new Error("Polygon duplicate did not move its vertices");
+        e.undo(); e._roofId = sec.id;
+        e.updateRoofSection({ shape: 'gable', open: false, overhang: 0, eave_a: 3, eave_b: 3, base: 3 });
+        return e.roofSection.points;
+      });
+      // Wait for the simulated backend save, then check the actual stored document.
+      await new Promise((r) => setTimeout(r, 1500));
+      const saved = await page.evaluate(async () => {
+        const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+        const { building } = await e.hass.callWS({ type: 'neonplan3d/building/get' });
+        return { outdoor: building.floors[0].outdoor[0]?.points, roof: building.settings.roof.sections[0]?.points };
+      });
+      if (JSON.stringify(saved) !== JSON.stringify({ outdoor, roof })) throw new Error(`${shot.name}: free contours did not persist`);
+      console.log(`verified drawing, vertex editing, undo/redo, duplication and save: ${shot.name}`);
+    }
     // DEBUG_EVAL="<code using e>" prints what the editor says (for looking into a scene)
     if (process.env.DEBUG_EVAL) {
       const out = await page.evaluate((code) => {
@@ -393,17 +616,31 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       await clickText("3D");
       await clickText(shot.then3d);
       for (const t of [shot.then3dAlso ?? []].flat()) await clickText(t);
+      if (shot.houseView) {
+        // A one-floor fixture has no "All floors" button; select the house view explicitly.
+        await page.evaluate(() => {
+          const panel = document.querySelector("neonplan3d-panel");
+          panel._floorId = null; panel._roomId = null;
+        });
+        await new Promise((r) => setTimeout(r, 400));
+      }
       if (shot.camera) {
         // turn the camera (radius, theta, phi around the house) for a view from another side
         await page.evaluate((cam) => {
           const v = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-view3d");
           const viewer = Object.values(v).find((x) => x && x.floors && x.floorMap);
-          const { target, ...rest } = cam;
+          const { target, houseView, ...rest } = cam;
+          if (houseView) { viewer.setFloor(null, false); viewer.setKeepRoof(true); }
           if (target) viewer.controls.view.target.set(target.x, target.y ?? 1, target.z);
           Object.assign(viewer.controls.view, rest);
           viewer.invalidate();
-        }, shot.camera);
+        }, { ...shot.camera, houseView: !!shot.houseView });
         await new Promise((r) => setTimeout(r, 1500));
+        if (shot.houseView) await page.evaluate(() => {
+          const v = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-view3d");
+          const viewer = Object.values(v).find((x) => x && x.floors && x.floorMap);
+          if (!viewer.roof?.group.visible || !viewer.roof.parts.length) throw new Error("The free roof is not visible in the house view");
+        });
       }
       // DEBUG_VIEW="<code using v>" prints what the panel's 3D view says after the switch
       if (process.env.DEBUG_VIEW) {
@@ -470,6 +707,13 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       const editor = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
       const side = editor.shadowRoot.querySelector(".fp3d-side");
       side.scrollTop = side.scrollHeight;
+    });
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  if (shot.showSpotForm) {
+    await page.evaluate(() => {
+      const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+      e.shadowRoot.querySelector('.fp3d-spot-form')?.scrollIntoView({ block: 'center' });
     });
     await new Promise((r) => setTimeout(r, 300));
   }

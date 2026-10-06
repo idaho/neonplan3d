@@ -1834,7 +1834,7 @@ export class Fp3dView3d extends LitElement {
           ? outdoorGround(floor, f.x, f.z)
           : 0;
     const room = floor.rooms.find((r) => r.points.length >= 3 && pointInPolygon([f.x, f.z], r.points));
-    const H = floor.height;
+    const H = !item && f.mount_y != null && ["ceiling", "downlight", "spot", "panel", "pendant"].includes(model) ? f.mount_y + f.h : floor.height;
     // pack lamps: the marker sits above the lamp (below it when it hangs from the ceiling)
     const y = item
       ? item.mount === "ceiling"
@@ -1875,6 +1875,7 @@ export class Fp3dView3d extends LitElement {
       upright: !!f.upright,
       size: [f.w, f.d, f.h],
       base,
+      ceiling_y: !item && f.mount_y != null ? H : undefined,
       pickable: !!entity,
       furnitureId: f.id,
       pack: item ? f.type : null,

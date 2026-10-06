@@ -2,8 +2,9 @@
 // proposal of sections from the rooms. No three.js here: the editor uses it as well.
 
 import type { Building, FreeWall, Room, RoofSection, Vec2 } from "./model.ts";
-import { pointInPolygon, polygonArea } from "./model.ts";
+import { pointInPolygon, polygonArea, signedArea } from "./model.ts";
 import { generateWalls } from "./geometry/walls.ts";
+import { clipConvex, polygonContains, polygonSegment, polygonSignedArea, polygonTriangles } from "./geometry/polygon.ts";
 
 const DEG = Math.PI / 180;
 
@@ -115,7 +116,13 @@ export function headroomLines(b: RoofHolder, level: number, headroom: number): [
       // only where the line really runs under the slope (between the eave and the ridge)
       if (v <= 0.01 || v >= fr.w - 0.01) continue;
       if (s.shape === "gable" && Math.abs(pr.y(v) - target) > 1e-6) continue;
-      out.push([fr.at(fr.u0, v), fr.at(fr.u1, v)]);
+      const a = fr.at(fr.u0, v), b = fr.at(fr.u1, v);
+      if (s.points?.length) {
+        for (const [lo, hi] of polygonSegment(s.points, a, b)) out.push([
+          [a[0] + (b[0] - a[0]) * lo, a[1] + (b[1] - a[1]) * lo],
+          [a[0] + (b[0] - a[0]) * hi, a[1] + (b[1] - a[1]) * hi],
+        ]);
+      } else out.push([a, b]);
     }
   }
   return out;
@@ -126,7 +133,7 @@ export function offsetPolygon(points: readonly Vec2[], d: number): Vec2[] {
   const n = points.length;
   if (n < 3 || Math.abs(d) < 1e-9) return points.map((p) => [p[0], p[1]]);
   // outward is to the right of a counter-clockwise edge (z down the plan), the left of a clockwise one
-  const sign = polygonArea(points) >= 0 ? 1 : -1;
+  const sign = signedArea(points) >= 0 ? 1 : -1;
   const out: Vec2[] = [];
   for (let i = 0; i < n; i++) {
     const p = points[(i + n - 1) % n];
@@ -250,6 +257,29 @@ export interface SectionGeometry {
  * viewer builds, the editor draws the ridges of, and the attic walls end under.
  */
 export function sectionGeometry(s: RoofSection, ov: SectionOverhang): SectionGeometry {
+  const raw = rectangularSectionGeometry(s, ov);
+  if (!s.points || s.points.length < 3) return raw;
+  const poly = sectionPolygon(s, Math.max(0, Math.min(ov.u0, ov.u1, ov.a, ov.b))).map(([x, z]) => sectionUV(s, x, z));
+  const triangles = polygonTriangles(poly);
+  const faces = raw.faces.flatMap((face) => triangles.map((ids) => clipConvex(face, ids.map((i) => poly[i]))))
+    .filter((face) => face.length >= 3 && Math.abs(polygonSignedArea(face)) > 1e-8);
+  const at = (a: Q, b: Q, t: number): Q => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  const ridges: [Q, Q][] = raw.ridges.flatMap(([a, b]) => polygonSegment(poly, a, b).map(([lo, hi]) => [at(a, b, lo), at(a, b, hi)] as [Q, Q]));
+  // Split every perimeter edge where it crosses a roof plane, so its fascia follows hips and ridges.
+  const rim: Q[] = [];
+  poly.forEach((a, i) => {
+    const b = poly[(i + 1) % poly.length];
+    const cuts = [0, ...raw.faces.flatMap((face) => polygonSegment(face.map(([u, v]) => [u, v]), a, b).flat())].filter((t) => t < 1 - 1e-8).sort((p, q) => p - q);
+    for (let j = 0; j < cuts.length; j++) {
+      if (j && cuts[j] - cuts[j - 1] < 1e-8) continue;
+      const t = cuts[j], u = a[0] + (b[0] - a[0]) * t, v = a[1] + (b[1] - a[1]) * t;
+      rim.push([u, v, sectionHeightAt(raw, u, v) ?? sectionProfile(s).y(v)]);
+    }
+  });
+  return { faces, rim, ridges, gable: null };
+}
+
+function rectangularSectionGeometry(s: RoofSection, ov: SectionOverhang): SectionGeometry {
   const fr = sectionFrame(s);
   const pr = sectionProfile(s);
   const w = fr.w;
@@ -340,7 +370,7 @@ export function sectionGeometry(s: RoofSection, ov: SectionOverhang): SectionGeo
 export function sectionHeightAt(geom: SectionGeometry, u: number, v: number): number | null {
   let best: number | null = null;
   for (const f of geom.faces) {
-    if (!pointInPolygon([u, v], f.map((q) => [q[0], q[1]] as Vec2))) continue;
+    if (!polygonContains(f.map((q) => [q[0], q[1]] as Vec2), [u, v])) continue;
     // the plane through three corners that are not in a line
     const [p0, p1] = f;
     const p2 = f.slice(2).find((q) => Math.abs((p1[0] - p0[0]) * (q[1] - p0[1]) - (p1[1] - p0[1]) * (q[0] - p0[0])) > 1e-9);
