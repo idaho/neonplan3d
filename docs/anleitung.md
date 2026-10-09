@@ -386,7 +386,11 @@ Ein einfaches Haus bekommt unter **Einstellungen → Dach** ein Flach- oder Satt
 
 #### Dachfenster
 
-Unter den Dachflächen legt **+ Dachfenster** ein Fenster in eine Dachfläche (Standard 78 × 118 cm). Es lässt sich im Grundriss verschieben, auch auf eine andere Dachfläche, und hat wie ein normales Fenster **Rollladen**, **Kontakt** und **Kippkontakt**: Offen klappt der Flügel oben angeschlagen nach außen, gekippt ein Stück, und der Rollladen fährt von oben über die Scheibe.
+Im Dachfensterformular wählst du den **Angelpunkt**: **Oben**, **Mittig** oder **Unten**. Bei mittigem Angelpunkt schwingt die untere Hälfte nach außen und die obere nach innen; bei unterem Angelpunkt öffnet die obere Kante nach außen. Motor- und Kippstellung verwenden denselben Angelpunkt. Bestehende Fenster bleiben standardmäßig oben angeschlagen.
+
+Wie durch normale Fenster fällt Sonnenlicht durch Dachfenster als warmer Lichtfleck auf den Boden des darunterliegenden Raums. Sonnenstand, Nordausrichtung, Dachneigung, Wolken und Rollladenstellung bestimmen Richtung und Stärke; ein geschlossener Rollladen lässt kein Sonnenlicht durch.
+
+Unter den Dachflächen legt **+ Dachfenster** ein Fenster in eine Dachfläche (Standard 78 × 118 cm). Es lässt sich im Grundriss verschieben, auch auf eine andere Dachfläche, und hat wie ein normales Fenster **Rollladen**, **Kontakt** und **Kippkontakt**: Der Flügel öffnet am gewählten Angelpunkt, gekippt ein Stück, und der Rollladen fährt von oben über die Scheibe.
 
 Zu jedem Dachfenster gehören ein **Name** (optional), **Rollladen**, **Kontakt** und **Kippkontakt** – und ein **Fenstermotor**: Velux, Roto oder Fakro melden die Fensterstellung als Cover, der Flügel öffnet in 3D so weit, wie der Motor steht. Offen oder gekippt leuchtet der Rahmen warm wie bei einem Wandfenster. Liegt das Fenster in einer Dachfläche, schneidet es ein Loch in die Schräge, so sieht man aus dem Dachgeschoss hinaus.
 
@@ -450,7 +454,7 @@ Die 3D-Ansicht hat drei Ebenen:
 |---|---|
 | **Wände hoch** / **Schnitt** | Wände in voller Höhe, die vorderen als getöntes Glas, oder alle Wände in Hüfthöhe geschnitten – hohe Möbel (Schrank, Treppe, Hochschrank) werden mitgeschnitten, damit sie nichts dahinter verdecken |
 | **Auseinander** / **Gestapelt** | In der Hausansicht: Etagen auseinandergezogen oder aufeinander |
-| **Dach bleibt** | In der Hausansicht: Das Dach bleibt beim Heranzoomen liegen, statt sich zu heben und auszublenden (im Editor gilt das im Werkzeug Dach und Energie immer) |
+| **Dach bleibt** | In der Hausansicht: Das Dach bleibt beim Heranzoomen liegen, statt sich zu heben und auszublenden (im Editor gilt das im Werkzeug Dach und Energie immer). Wie bei den Wänden werden zur Kamera gerichtete Dachflächen durchsichtig; abgewandte Flächen bleiben geschlossen. Das gilt unabhängig vom Zoom. |
 | **Abgedunkelt** / **Gestapelt** / **Einzeln** | Bei einer offenen Etage: Was mit den Etagen darunter passiert |
 | **Normal** / **Temp.** / **Feuchte** / **CO₂** / **Werte** | Heatmap: Böden in der Farbe des Raumwerts; **Werte** färbt nichts, sondern schreibt Temperatur, Feuchte und CO₂ als Zahlen unter die Raumnamen |
 | **Raumnamen** | Namen der Räume ein- oder ausblenden |

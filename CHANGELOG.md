@@ -4,6 +4,17 @@ All notable changes to NeonPlan 3D. The full notes in German and English are on 
 [releases page](https://github.com/Mastershort/neonplan3d/releases). Ideas and votes:
 [Discussions → Ideas](https://github.com/Mastershort/neonplan3d/discussions/categories/ideas).
 
+## 1.12.2
+
+### Changed
+
+- Camera-facing roof surfaces turn into tinted glass using the same facing threshold and transparency as walls, independent of zoom. Kept roofs stay on the house without lifting; ordinary roofs retain their zoom-driven lift and fade. Solar hologram anchors follow the roof position.
+- Roof windows cast warm sun patches onto the room below, respecting roof orientation, sun position, clouds and live blind position just like wall windows.
+- Gable and knee walls of roofs also turn transparent toward the camera; outward-facing geometry prevents duplicated or reversed gables from blocking the view.
+- Roof walls retain wall-style outlines, including knee-wall corners and base edges. Roof transparency blends smoothly as the viewing angle changes instead of switching abruptly.
+- Roof solar modules, cell outlines and production animations no longer show through the roof when viewed from underneath. Modules stay opaque and visible from above, independently of roof transparency.
+- Roof windows support top, middle and bottom pivots for their live opening and tilt animation. Existing windows remain top-hung by default.
+
 ## 1.12.1
 
 ### New

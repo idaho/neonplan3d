@@ -7,8 +7,10 @@ import { Color } from "three";
 import type { Building, Floor, RoofSection, SolarField, Vec2 } from "../model.ts";
 import { polygonArea } from "../model.ts";
 import { cutHole, sectionFloor, dormerHoles, dormerParent, effectiveDormer, offsetPolygon, sectionGeometry, sectionHeightAt, sectionPolygon, sectionFrame, sectionOverhang, sectionProfile, sectionUV, type Q, type SectionOverhang } from "../roof-sections.ts";
-import { DEG, GeoBuffer, LineBuffer, pushPrism, shade } from "./geo.ts";
+import { DEG, EDGE_BASE, EDGE_SOFT, EDGE_TOP, GeoBuffer, LineBuffer, pushPrism, shade } from "./geo.ts";
 import { fieldModules, roofFaces, windowCorners, type RoofFace } from "../solar.ts";
+import { moduleNormal, type SolarFacing } from "./solar-facing.ts";
+import { roofWindowSash } from "./roof-window.ts";
 
 const ROOF = 0x1a2338;
 const ROOF_TOP = 0x222d48;
@@ -33,6 +35,25 @@ const WINDOW_WARM = shade(0xffb347, 0.95);
 const WINDOW_GLASS = new Color(0x2b6b8f);
 const WINDOW_BLIND = new Color(0x3a4258);
 
+/** One double-sided wall with an outward normal, so its camera-facing side matches wall glass. */
+function pushRoofWall(solid: GeoBuffer, points: number[][], color: Color, inside: Vec2, lines: LineBuffer): void {
+  if (points.length < 3) return;
+  const [a, b, c] = points;
+  const nx = (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]);
+  const nz = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const outward = nx * (a[0] - inside[0]) + nz * (a[2] - inside[1]);
+  const poly = outward < 0 ? [...points].reverse() : points;
+  for (let i = 1; i + 1 < poly.length; i++) solid.tri(poly[0], poly[i], poly[i + 1], color);
+  const base = Math.min(...poly.map((p) => p[1]));
+  // Outline the wall itself, not its triangulation, so transparent knee walls remain readable.
+  for (let i = 0; i < poly.length; i++) {
+    const p = poly[i], q = poly[(i + 1) % poly.length];
+    const bottom = Math.abs(p[1] - base) < 1e-6 && Math.abs(q[1] - base) < 1e-6;
+    const vertical = Math.hypot(p[0] - q[0], p[2] - q[2]) < 1e-6;
+    lines.seg(p, q, bottom ? EDGE_BASE : vertical ? EDGE_SOFT : EDGE_TOP);
+  }
+}
+
 /** Live state of a roof window: how far its sash is open (1 = open, tilt counts less) and how far its blind is down. */
 export interface RoofWindowState {
   open: number;
@@ -48,6 +69,8 @@ export interface RoofGeometry {
   lines: LineBuffer;
   /** See-through roof panels of canopies (drawn with their own, fainter material). */
   glass: GeoBuffer;
+  /** Roof modules are separate from glass roofs and hidden when viewed from below. */
+  solar?: { solid: GeoBuffer; lines: LineBuffer; facing: SolarFacing };
   /** Roof sections in this part (sections roof only). */
   sections?: string[];
   /** False for canopies: they stand on posts on their floor and do not lift off with the roof when the floors are pulled apart. */
@@ -70,7 +93,7 @@ export function buildRoof(b: Building, windows: ReadonlyMap<string, RoofWindowSt
   return parts;
 }
 
-/** Roof windows: frame and glass in the slope; the sash swings out at the top when open, the blind comes down. */
+/** Roof windows: frame and glass in the slope; the sash uses its selected pivot, the blind comes down. */
 function pushRoofWindows(b: Building, parts: RoofGeometry[], states: ReadonlyMap<string, RoofWindowState>): void {
   const windows = b.settings.roof?.windows ?? [];
   if (!windows.length || !parts.length) return;
@@ -91,18 +114,9 @@ function pushRoofWindows(b: Building, parts: RoofGeometry[], states: ReadonlyMap
     const frame = st.open > 0.02 || st.tilt > 0.02 ? WINDOW_WARM : WINDOW_FRAME;
     const ring = [a, c, d, e].map((p) => up(p, 0.06));
     for (let i = 0; i < 4; i++) part.lines.seg(ring[i], ring[(i + 1) % 4], frame);
-    // the sash, hinged at the top: its lower edge swings out along the normal (open up to 30°, as far
-    // as a motor reports; tilted 12°)
+    // The sash rotates around the selected pivot (open up to 30° by motor position; tilted 12°).
     const angle = (st.open > 0.02 ? 30 * Math.min(1, st.open) : st.tilt > 0.5 ? 12 : 0) * DEG;
-    const h = Math.hypot(d[0] - c[0], d[1] - c[1], d[2] - c[2]);
-    const swing = (top: number[]) => {
-      const es = face.es;
-      return [top[0] - es[0] * h * Math.cos(angle) + face.n[0] * h * Math.sin(angle), top[1] - es[1] * h * Math.cos(angle) + face.n[1] * h * Math.sin(angle), top[2] - es[2] * h * Math.cos(angle) + face.n[2] * h * Math.sin(angle)];
-    };
-    const top0 = up(e, 0.065);
-    const top1 = up(d, 0.065);
-    const bot0 = swing(top0);
-    const bot1 = swing(top1);
+    const [bot0, bot1, top1, top0] = roofWindowSash([a, c, d, e].map((p) => up(p, 0.065)), face.n, face.es, w.hinge, angle);
     part.solid.tri(bot0, bot1, top1, WINDOW_GLASS);
     part.solid.tri(bot0, top1, top0, WINDOW_GLASS);
     for (const [p, q] of [[bot0, bot1], [bot1, top1], [top1, top0], [top0, bot0]]) part.lines.seg(p, q, frame);
@@ -129,17 +143,21 @@ function pushSolar(b: Building, parts: RoofGeometry[]): void {
     if (!face) continue;
     const part = face.section ? parts.find((p) => p.sections?.includes(face.section!)) : parts[0];
     // faces have heights above the ground; parts count from their floor's level plus their base
-    if (part) pushModules(part.solid, part.lines, face, field, part.floor.elevation + part.base);
+    if (part) {
+      const solar = part.solar ??= { solid: new GeoBuffer(), lines: new LineBuffer(), facing: { normals: [], points: [], lineNormals: [], linePoints: [] } };
+      pushModules(solar.solid, solar.lines, face, field, part.floor.elevation + part.base, solar.facing);
+    }
   }
 }
 
 /** The modules of a field (glass, frame, cell grid, frames on flat ground), lowered by `dy` into local coordinates. */
-export function pushModules(solid: GeoBuffer, lines: LineBuffer, face: RoofFace, field: SolarField, dy: number): void {
+export function pushModules(solid: GeoBuffer, lines: LineBuffer, face: RoofFace, field: SolarField, dy: number, facing?: SolarFacing): void {
   const L = (p: number[]): number[] => [p[0], p[1] - dy, p[2]];
   const look = PANEL_LOOKS[field.look === "blue" ? "blue" : "black"];
   const cu = field.portrait === false ? 10 : 6;
   const cv = field.portrait === false ? 6 : 10;
   for (const m of fieldModules(face, field)) {
+    const start = solid.p.length, lineStart = lines.p.length;
     const [a, c, d, e] = m.corners.map(L);
     // both sides: on a floor (garden, walls) only front faces are drawn, and a module leans either way
     solid.tri(a, c, d, look.glass);
@@ -154,6 +172,11 @@ export function pushModules(solid: GeoBuffer, lines: LineBuffer, face: RoofFace,
     for (let i = 1; i < cu; i++) lines.seg(up(mix(a, c, i / cu)), up(mix(e, d, i / cu)), look.cells);
     for (let j = 1; j < cv; j++) lines.seg(up(mix(a, e, j / cv)), up(mix(c, d, j / cv)), look.cells);
     for (const [p, q] of m.posts) lines.seg(L(p), L(q), PANEL_POST);
+    if (facing) {
+      const normal = moduleNormal(a, c, d, face.n);
+      for (let i = start; i < solid.p.length; i += 3) { facing.normals.push(...normal); facing.points.push(...a); }
+      for (let i = lineStart; i < lines.p.length; i += 3) { facing.lineNormals.push(...normal); facing.linePoints.push(...a); }
+    }
   }
 }
 
@@ -214,8 +237,7 @@ function buildSingleRoof(b: Building): RoofGeometry | null {
   const hw = half - inset;
   const rw = hw * Math.tan(roof.pitch * DEG);
   for (const u of [u0 + inset, u1 - inset]) {
-    solid.tri(P(u, -hw, -THICK), P(u, hw, -THICK), P(u, 0, rw - THICK), g);
-    solid.tri(P(u, hw, -THICK), P(u, -hw, -THICK), P(u, 0, rw - THICK), g);
+    pushRoofWall(solid, [P(u, -hw, -THICK), P(u, hw, -THICK), P(u, 0, rw - THICK)], g, [(x0 + x1) / 2, (z0 + z1) / 2], lines);
   }
   lines.seg(P(u0, 0, rise + 0.004), P(u1, 0, rise + 0.004), RIDGE);
   return { floor, base: floor.height, solid, lines, glass: new GeoBuffer() };
@@ -374,20 +396,21 @@ export function pushSection(
   // walls up under the roof, from the section's base: the gable ends (not under a hip) …
   const base = s.base;
   if (attic) return;
+  const inside = fr.at((fr.u0 + fr.u1) / 2, w / 2);
   if (gableProfile) {
     const poly = above(gableProfile, base - THICK);
     const ends = frontEnd === null ? [fr.u0, fr.u1] : [frontEnd === 0 ? fr.u0 : fr.u1];
-    if (poly.length >= 3) for (const u of ends) fan(poly.map(([v, y]) => P(u, v, y)), g);
+    if (poly.length >= 3) for (const u of ends) pushRoofWall(solid, poly.map(([v, y]) => P(u, v, y)), g, inside, lines);
   }
   // … and the knee walls along the eaves where the roof starts above the walls (a high back wall of a pent roof)
   if (s.shape !== "flat" && s.shape !== "parapet") {
     for (const v of [0, w]) {
       const y = pr.y(v) - THICK;
-      if (y > base + 0.02) fan([P(fr.u0, v, base), P(fr.u1, v, base), P(fr.u1, v, y), P(fr.u0, v, y)], g);
+      if (y > base + 0.02) pushRoofWall(solid, [P(fr.u0, v, base), P(fr.u1, v, base), P(fr.u1, v, y), P(fr.u0, v, y)], g, inside, lines);
     }
   } else if (s.eave_a > base + 0.02) {
     for (const [ua, va, ub, vb] of [[fr.u0, 0, fr.u1, 0], [fr.u1, 0, fr.u1, w], [fr.u1, w, fr.u0, w], [fr.u0, w, fr.u0, 0]])
-      fan([P(ua, va, base), P(ub, vb, base), P(ub, vb, s.eave_a), P(ua, va, s.eave_a)], g);
+      pushRoofWall(solid, [P(ua, va, base), P(ub, vb, base), P(ub, vb, s.eave_a), P(ua, va, s.eave_a)], g, inside, lines);
   }
 }
 

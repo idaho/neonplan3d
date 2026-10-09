@@ -4,6 +4,7 @@
 import { AdditiveBlending, BufferGeometry, DoubleSide, Float32BufferAttribute, MeshBasicMaterial } from "three";
 import type { SolarField } from "../model.ts";
 import { fieldModules, type RoofFace } from "../solar.ts";
+import { moduleNormal, solarFacingGeometry } from "./solar-facing.ts";
 
 /** Vertex range of a field in the overlay geometry (its level is written there). */
 export interface SolarRange {
@@ -24,6 +25,7 @@ export function buildSolarLive(entries: readonly { face: RoofFace; field: SolarF
   const cells: number[] = [];
   const phase: number[] = [];
   const ranges: SolarRange[] = [];
+  const normals: number[] = [], points: number[] = [];
   for (const { face, field } of entries) {
     const start = p.length / 3;
     const cu = field.portrait === false ? 10 : 6;
@@ -32,6 +34,7 @@ export function buildSolarLive(entries: readonly { face: RoofFace; field: SolarF
     const ph = (hash(field.id) % 1000) / 1000;
     for (const m of fieldModules(face, field)) {
       const [a, c, d, e] = m.corners.map((q) => [q[0] + face.n[0] * 0.006, q[1] + face.n[1] * 0.006 - dy, q[2] + face.n[2] * 0.006]);
+      const normal = moduleNormal(a, c, d, face.n);
       const quad = [
         [a, 0, 0],
         [c, 1, 0],
@@ -44,6 +47,7 @@ export function buildSolarLive(entries: readonly { face: RoofFace; field: SolarF
         uv.push(u, v);
         cells.push(cu, cv);
         phase.push(ph);
+        normals.push(...normal); points.push(...a);
       }
     }
     const count = p.length / 3 - start;
@@ -56,7 +60,7 @@ export function buildSolarLive(entries: readonly { face: RoofFace; field: SolarF
   g.setAttribute("aCells", new Float32BufferAttribute(cells, 2));
   g.setAttribute("aPhase", new Float32BufferAttribute(phase, 1));
   g.setAttribute("aLevel", new Float32BufferAttribute(new Float32Array(p.length / 3), 1));
-  return { geometry: g, ranges };
+  return { geometry: solarFacingGeometry(g, normals, points), ranges };
 }
 
 /** Write the fields' levels (0..1) into the overlay; returns true when any module is alive. */

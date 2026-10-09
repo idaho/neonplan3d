@@ -50,6 +50,9 @@ import { roofUnderAt } from "../roof-sections.ts";
 import { buildFloorGeometry, SLAB, stairHoles, type FloorGeometry } from "./build.ts";
 import { OrbitControls, type OrbitView } from "./controls.ts";
 import { makeFoldable, type FoldMasks } from "./fold.ts";
+import { roofPresentation, makeRoofGlass } from "./roof-visibility.ts";
+import { appendRoofSun } from "./roof-sun.ts";
+import { makeSolarFacing, solarFacingGeometry } from "./solar-facing.ts";
 import { pushCameraModel, pushPackGlow, pushPackLamp, screenRect, pushFridgeDoors } from "./furniture.ts";
 import { mountBase, packItem, setPacks, type FurniturePack } from "../packs.ts";
 import { withVehicles } from "../parking.ts";
@@ -505,7 +508,7 @@ export class FloorplanViewer {
   private readonly haloTexture: CanvasTexture;
   /** Roof over the top floor (house view only), its opacity and the camera distance of the house view. */
   /** The roof: one group with a part per floor it sits on (each part follows its floor). */
-  private roof: { group: Group; parts: { group: Group; floorId: string; base: number; lift: boolean }[]; solid: MeshBasicMaterial; lines: LineBasicMaterial; glass: MeshBasicMaterial; live: MeshBasicMaterial; lives: SolarLive[] } | null = null;
+  private roof: { group: Group; parts: { group: Group; floorId: string; base: number; lift: boolean }[]; solid: MeshBasicMaterial; lines: LineBasicMaterial; solar: MeshBasicMaterial; solarLines: LineBasicMaterial; glass: MeshBasicMaterial; live: MeshBasicMaterial; lives: SolarLive[] } | null = null;
   /** The hologram's anchor: a point on the solar field (building coordinates) and the field's normal. */
   private anchors: { p: [number, number, number]; n: [number, number, number]; floorId: string; size: number; roof: boolean; views: "house" | "all" }[] = [];
   /** Told where the anchor lies on screen after every frame, how large the hologram should be and whether its front faces the camera. */
@@ -514,7 +517,8 @@ export class FloorplanViewer {
   private solarLevels = new Map<string, number>();
   private solarActive = false;
   private roofO = 0;
-  /** The roof stays put while the camera comes close (no lift, no fade): the editor's roof tool, or a choice of the viewer. */
+  private readonly roofDirection = { value: new Vector3(0, 1, 1) };
+  /** Kept roofs stay put; camera-facing roof surfaces become glass like walls. */
   private keepRoof = false;
   /** Robot vacuums: their info from Home Assistant, how they move, and their meshes. */
   private robots = new Map<string, { info: RobotInfo; motion: RobotMotion; group: Group; led: MeshBasicMaterial }>();
@@ -818,6 +822,7 @@ export class FloorplanViewer {
     this.roofWindowsKey = key;
     this.roofWindows = states;
     this.buildRoofMesh();
+    for (const fv of this.floors) this.buildSun(fv);
     this.invalidate();
   }
 
@@ -1000,7 +1005,7 @@ export class FloorplanViewer {
     this.theme = theme;
     this.themeUniform.value = themeIndex(theme);
     const blending = lineBlending(theme);
-    const lineMats = [...this.floors.map((f) => f.materials.lines), ...(this.roof ? [this.roof.lines] : [])];
+    const lineMats = [...this.floors.map((f) => f.materials.lines), ...(this.roof ? [this.roof.lines, this.roof.solarLines] : [])];
     for (const m of lineMats) {
       m.blending = blending;
       m.needsUpdate = true;
@@ -1846,6 +1851,8 @@ export class FloorplanViewer {
       this.roof.group.traverse((o) => ((o as Mesh).geometry as BufferGeometry | undefined)?.dispose());
       this.roof.solid.dispose();
       this.roof.lines.dispose();
+      this.roof.solar.dispose();
+      this.roof.solarLines.dispose();
       this.roof.glass.dispose();
       this.roof.live.dispose();
       this.scene.remove(this.roof.group);
@@ -1856,16 +1863,24 @@ export class FloorplanViewer {
     // the living overlays of the roof fields, each on the part its face belongs to
     const faces = new Map(roofFaces(this.building!).map((f) => [f.key, f]));
     const fields = this.building!.settings.roof?.solar ?? [];
-    const live = solarLiveMaterial(this.flowTime);
+    const live = makeSolarFacing(solarLiveMaterial(this.flowTime));
     const lives: SolarLive[] = [];
     const group = new Group();
-    const solid = themed(new MeshBasicMaterial({ vertexColors: true, transparent: true, side: DoubleSide }), this.themeUniform);
+    const solid = themed(makeRoofGlass(new MeshBasicMaterial({ vertexColors: true, transparent: true, side: DoubleSide, depthWrite: false }), this.roofDirection), this.themeUniform);
     const lines = themed(new LineBasicMaterial({ vertexColors: true, transparent: true, blending: lineBlending(this.theme), depthWrite: false }), this.themeUniform, true);
+    const solar = themed(makeSolarFacing(new MeshBasicMaterial({ vertexColors: true, transparent: true, side: DoubleSide })), this.themeUniform);
+    const solarLines = themed(makeSolarFacing(new LineBasicMaterial({ vertexColors: true, transparent: true, blending: lineBlending(this.theme), depthWrite: false })), this.themeUniform, true);
     // canopies: faint see-through panels that do not hide what is below
     const glass = themed(new MeshBasicMaterial({ vertexColors: true, transparent: true, side: DoubleSide, depthWrite: false }), this.themeUniform);
     const parts = geos.map((geo) => {
       const part = new Group();
-      part.add(new Mesh(geo.solid.geometry(), solid), new LineSegments(geo.lines.geometry(), lines));
+      const geometry = geo.solid.geometry();
+      geometry.computeVertexNormals();
+      part.add(new Mesh(geometry, solid), new LineSegments(geo.lines.geometry(), lines));
+      if (geo.solar) {
+        const { facing } = geo.solar;
+        part.add(new Mesh(solarFacingGeometry(geo.solar.solid.geometry(), facing.normals, facing.points), solar), new LineSegments(solarFacingGeometry(geo.solar.lines.geometry(), facing.lineNormals, facing.linePoints), solarLines));
+      }
       if (geo.glass.count) part.add(new Mesh(geo.glass.geometry(), glass));
       const entries = fields.flatMap((field) => {
         const face = faces.get(field.face);
@@ -1886,7 +1901,7 @@ export class FloorplanViewer {
     });
     group.renderOrder = 8;
     this.scene.add(group);
-    this.roof = { group, parts, solid, lines, glass, live, lives };
+    this.roof = { group, parts, solid, lines, solar, solarLines, glass, live, lives };
     this.placeRoof();
   }
 
@@ -1897,8 +1912,7 @@ export class FloorplanViewer {
   private placeRoof(dt = 1000): boolean {
     const roof = this.roof;
     if (!roof) return false;
-    const zoom = this.keepRoof ? 1 : Math.min(1, Math.max(0, (this.controls.view.radius / this.houseRadius - 0.62) / 0.3));
-    const target = this.floorId === null && this.wallMode !== "cut" ? 0.94 * zoom : 0;
+    const target = this.floorId === null && this.wallMode !== "cut" ? roofPresentation(this.controls.view.radius, this.houseRadius, this.keepRoof).opacity : 0;
     const k = 1 - Math.exp(-dt / FLOOR_TAU);
     const before = this.roofO;
     this.roofO += (target - this.roofO) * k;
@@ -1910,11 +1924,14 @@ export class FloorplanViewer {
       if (!fv) continue;
       // floors pulled apart: the roof lifts off its floor the same way (it follows the floor's own glide)
       const apart = fv.ty > 0 ? Math.min(1, fv.y / fv.ty) : this.explode && this.floorId === null ? 1 : 0;
-      part.group.position.y = fv.floor.elevation + fv.y + part.base + (1 - this.roofO) * 2.2 + (part.lift ? apart * ROOF_GAP : 0);
+      part.group.position.y = fv.floor.elevation + fv.y + part.base + roofPresentation(this.controls.view.radius, this.houseRadius, this.keepRoof, this.roofO).lift + (part.lift ? apart * ROOF_GAP : 0);
     }
     roof.solid.opacity = this.roofO;
-    roof.solid.depthWrite = this.roofO > 0.9;
+    roof.solid.depthWrite = false;
     roof.lines.opacity = this.roofO;
+    roof.solar.opacity = this.roofO;
+    roof.solar.depthWrite = this.roofO > 0.9;
+    roof.solarLines.opacity = this.roofO;
     roof.glass.opacity = this.roofO * 0.28;
     roof.live.opacity = this.roofO;
     return this.roofO !== before && this.roofO !== target;
@@ -2182,7 +2199,7 @@ export class FloorplanViewer {
     const north = (this.building?.settings.north ?? 0) * DEG;
     // clouds take most of the sunlight
     const cloud = this.weather?.cloud ?? 0;
-    const sig = sun ? `${sun.elevation.toFixed(1)},${sun.azimuth.toFixed(1)},${north},${cloud.toFixed(2)},${[...fv.openings.values()].map((o) => (o.cover ?? 0).toFixed(2)).join(",")}` : "";
+    const sig = sun ? `${sun.elevation.toFixed(1)},${sun.azimuth.toFixed(1)},${north},${cloud.toFixed(2)},${[...fv.openings.values()].map((o) => (o.cover ?? 0).toFixed(2)).join(",")},${this.roofWindowsKey}` : "";
     if (sig === fv.sunSig) return;
     fv.sunSig = sig;
     const buf = new GeoBuffer();
@@ -2240,6 +2257,7 @@ export class FloorplanViewer {
         }
       }
     }
+    if (sun && this.building) appendRoofSun(buf, this.building, fv.floor, sun, cloud, this.roofWindows, fv.geo.holes);
     fv.sunMesh.geometry.dispose();
     fv.sunMesh.geometry = buf.geometry();
     fv.sunMesh.visible = buf.count > 0;
@@ -3433,6 +3451,7 @@ export class FloorplanViewer {
     const dx = cam.x - t.x;
     const dz = cam.z - t.z;
     const l = Math.hypot(dx, dz) || 1;
+    this.roofDirection.value.set(dx / l, (cam.y - t.y) / Math.hypot(l, cam.y - t.y), dz / l);
     for (const fv of this.floors) {
       // in a room, its floor's interior walls turn into glass as well
       const inRoom = this.roomId !== null && fv.floor.rooms.some((r) => r.id === this.roomId);
@@ -3525,7 +3544,7 @@ export class FloorplanViewer {
           return;
         }
         // the roof lifts and fades when the camera comes close: an anchor on it rides up with it
-        const p = new Vector3(a.p[0], a.p[1] + (fv?.y ?? 0) + (a.roof ? (1 - this.roofO) * 2.2 : 0), a.p[2]);
+        const p = new Vector3(a.p[0], a.p[1] + (fv?.y ?? 0) + (a.roof ? roofPresentation(this.controls.view.radius, this.houseRadius, this.keepRoof, this.roofO).lift : 0), a.p[2]);
         const toCamera = this.camera.position.clone().sub(p);
         const dist = toCamera.length();
         const facing = toCamera.normalize().dot(new Vector3(a.n[0], a.n[1], a.n[2])) >= 0;

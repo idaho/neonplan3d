@@ -429,6 +429,8 @@ export interface RoofWindow {
   /** Size in metres (null = 0.78 × 1.18, a common size). */
   w?: number | null;
   h?: number | null;
+  /** Pivot along the slope; omitted on older plans means top-hung. */
+  hinge?: "top" | "middle" | "bottom";
   cover?: EntityRef;
   contact?: EntityRef;
   tilt?: EntityRef;
