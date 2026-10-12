@@ -2,6 +2,7 @@
 // Units are metres; x grows to the right, z grows downwards (as in the 2D editor).
 
 import { packItem } from "./packs.ts";
+import { furniturePlanOutline } from "./furniture-transform.ts";
 import type { LampModel } from "./viewer/viewer3d.ts";
 
 export type Vec2 = [number, number];
@@ -928,7 +929,19 @@ export function roomTiles(floor: Floor, areas: { area_id: string; name: string }
  * Resizes a furniture item by dragging one corner (`corner`: signs of the corner in the item's own
  * frame) to a plan point; the opposite corner stays in place. Sizes snap to `grid`.
  */
-export function resizeFurniture(f: Furniture, corner: [1 | -1, 1 | -1], p: Vec2, grid: number): Pick<Furniture, "x" | "z" | "w" | "d"> {
+export function resizeFurniture(f: Furniture, corner: [1 | -1, 1 | -1], p: Vec2, grid: number): Pick<Furniture, "x" | "z" | "w" | "d"> & Partial<Pick<Furniture, "h">> {
+  if (f.rotation_x || f.rotation_z) {
+    // A tilted projection mixes all three dimensions. Scale uniformly from its opposite
+    // projected corner; independent dimensions remain available in the numeric fields.
+    const points = furnitureFootprint(f), [sx, sz] = corner;
+    const width = Math.max(...points.map(p => p[0])) - Math.min(...points.map(p => p[0]));
+    const depth = Math.max(...points.map(p => p[1])) - Math.min(...points.map(p => p[1]));
+    const ax = f.x - sx * width / 2, az = f.z - sz * depth / 2;
+    const raw = ((p[0] - ax) * sx * width + (p[1] - az) * sz * depth) / (width * width + depth * depth);
+    const longest = Math.max(f.w, f.d, f.h);
+    const scale = Math.max(0.1 / Math.min(f.w, f.d, f.h), Math.round(raw * longest / grid) * grid / longest);
+    return { x: ax + sx * width * scale / 2, z: az + sz * depth * scale / 2, w: f.w * scale, d: f.d * scale, h: f.h * scale };
+  }
   const a = (f.rotation * Math.PI) / 180;
   const c = Math.cos(a);
   const s = Math.sin(a);
@@ -1478,8 +1491,9 @@ export function bounds(points: readonly Vec2[]): { x0: number; z0: number; x1: n
   return { x0, z0, x1, z1 };
 }
 
-/** Corners of a furniture item in world x/z (rotated rectangle). */
+/** Projected furniture bounds in world x/z; old Y-only plans keep their exact rectangle. */
 export function furnitureFootprint(f: Furniture): Vec2[] {
+  if (f.rotation_x || f.rotation_z) return furniturePlanOutline(f);
   const a = (f.rotation * Math.PI) / 180;
   const c = Math.cos(a);
   const s = Math.sin(a);

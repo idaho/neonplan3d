@@ -18,6 +18,20 @@ test("wall furniture height stays relative to the raised room floor", () => {
   assert.ok(Math.abs(hit.y1 - 2) < 1e-6);
 });
 
+test("wall view uses tilted height and width instead of the unrotated box", () => {
+  const f = newFloor("f", "Floor", 2.8), r = room("r", 0, 0, 4, 3);
+  Object.assign(r, { wall_offset: 0.1, floor_offset: 0.3 });
+  f.rooms = [r];
+  const m = { ...item("cab", "kitchen_wall", 2, 0.2, 0, 0.6, 0.35, 1.2, 1), rotation_z: 90 };
+  f.furniture = [m];
+  const before = structuredClone(m);
+  const [hit] = furnitureOnWall(roomEdgeFrame(r, 0), f, r);
+  assert.ok(Math.abs(hit.s1 - hit.s0 - 1.2) < 1e-9);
+  assert.ok(Math.abs(hit.y0 - 1.3) < 1e-9);
+  assert.ok(Math.abs(hit.y1 - 1.9) < 1e-9);
+  assert.deepEqual(m, before);
+});
+
 test("wall frame: the normal points into the room, s runs to the right seen from inside", () => {
   const r = room("r", 0, 0, 4, 3);
   const top = roomEdgeFrame(r, 0);

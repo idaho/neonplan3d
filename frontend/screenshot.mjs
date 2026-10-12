@@ -454,7 +454,14 @@ shots.push({
     e.moveSetOnWall(frame, ['a','b'], 0.2, 0.1);
     if (parts().some(m => Math.abs(m.mount_y - 1.3) > 0.001)) throw new Error('Wall block counted room elevation twice');
     e.moveOnWall(frame, 'a', 0, 1.1);
-    if (parts()[0].mount_y !== 1.1) throw new Error('Wall height is not relative to room floor');
+    const part = parts()[0], angle = 20 * Math.PI / 180;
+    const projectedBottom = part.mount_y + part.h / 2 - (part.h * Math.cos(angle) + part.d * Math.sin(angle)) / 2;
+    if (Math.abs(projectedBottom - 1.1) > 0.001) throw new Error('Tilted wall height is not relative to room floor');
+    const projectedHeight = part.h * Math.cos(angle) + part.d * Math.sin(angle);
+    const originalWidth = part.w;
+    e.resizeOnWall(frame, 'a', null, null, null, projectedBottom + projectedHeight * 1.5);
+    if (Math.abs(parts()[0].w - originalWidth * 1.5) > 0.001) throw new Error('Tilted wall resize must scale uniformly');
+    e.undo();
     e.selectItem('furniture', 'a'); e.fit();
   `,
 });
@@ -1029,8 +1036,20 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
     await new Promise((r) => setTimeout(r, 300));
   }
   if (shot.focusRotation) {
-    const values = await page.evaluate(() => {
+    const values = await page.evaluate(async () => {
       const editor = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+      const settle = async () => { await editor.updateComplete; await new Promise(r => setTimeout(r, 150)); };
+      const f = editor.furnitureItem;
+      const before = structuredClone(f);
+      const polygon = editor.shadowRoot.querySelector('[data-furniture="' + f.id + '"] .fp3d-furn-projected');
+      if (!polygon || polygon.points.numberOfItems < 4) throw new Error('Missing XYZ plan projection');
+      const outline = polygon.getAttribute('points');
+      editor.updateFurniture({ rotation_x: 90 }); await settle();
+      const changed = editor.shadowRoot.querySelector('[data-furniture="' + f.id + '"] .fp3d-furn-projected');
+      if (changed.getAttribute('points') === outline) throw new Error('XYZ plan projection did not update');
+      for (const key of ['x','z','w','d','h','mount_y']) if (editor.furnitureItem[key] !== before[key]) throw new Error('Rotation changed ' + key);
+      editor.undo(); await settle();
+      if (editor.furnitureItem.rotation_x !== before.rotation_x) throw new Error('Rotation undo failed');
       const labels = [...editor.shadowRoot.querySelectorAll("label.fp3d-field")];
       const x = labels.find((label) => label.textContent.includes("Drehung X"));
       const z = labels.find((label) => label.textContent.includes("Drehung Z"));

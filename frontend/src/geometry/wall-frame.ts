@@ -4,6 +4,7 @@
 
 import { furnitureFootprint, pointInPolygon, roomLevel, type Floor, type Furniture, type Opening, type Room, type Vec2 } from "../model.ts";
 import { mountBase } from "../packs.ts";
+import { furnitureHeightBounds } from "../furniture-transform.ts";
 import { pointOnRoomEdge } from "./walls.ts";
 
 export interface WallFrame {
@@ -97,7 +98,8 @@ export function furnitureOnWall(f: WallFrame, floor: Floor, room: Room): WallIte
     if (!inRoom && centre.d <= 0) continue;
     if (centre.d <= 0 || d > WALL_REACH || d < -0.3 || s1 < 0.02 || s0 > f.length - 0.02) continue;
     const y0 = mountBase(floor, m) - roomLevel(floor, room);
-    out.push({ kind: "furniture", id: m.id, s0, s1, y0, y1: y0 + m.h, d });
+    const [bottom, top] = furnitureHeightBounds(m);
+    out.push({ kind: "furniture", id: m.id, s0, s1, y0: y0 + bottom, y1: y0 + top, d });
   }
   return out;
 }

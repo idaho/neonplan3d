@@ -33,6 +33,7 @@ import { roomAt, roomLevelAt, roomLevel, roomWallLevel, roomHeight } from "../mo
 import type { SurfaceGrab, SurfaceRay } from "../viewer/viewer3d.ts";
 import { storedImageIds } from "../transfer.ts";
 import { fromWall, furnitureOnWall, openingsOnWall, roomEdgeFrame, slideAlong, toWall, type WallFrame } from "../geometry/wall-frame.ts";
+import { furnitureHeightBounds } from "../furniture-transform.ts";
 import { type CarLinks, type Background, OUTDOOR_TOP, sidelightLayout, DEFAULT_WEATHER_EFFECTS, WEATHER_EFFECTS,
   normalizeBuilding,
   furnitureFootprint,
@@ -6002,7 +6003,7 @@ export class Fp3dEditor extends LitElement {
         const m = floor.furniture.find((x) => x.id === id);
         if (!m) return;
         Object.assign(m, slideAlong(frame, m, ds));
-        if (y0 !== null) m.mount_y = Math.round(Math.min(MAX_MOUNT_Y, Math.max(0, y0)) * 1000) / 1000;
+        if (y0 !== null) m.mount_y = Math.round(Math.min(MAX_MOUNT_Y, Math.max(0, y0 - furnitureHeightBounds(m)[0])) * 1000) / 1000;
       },
       base,
       history,
@@ -6011,6 +6012,7 @@ export class Fp3dEditor extends LitElement {
 
   /** Which of a piece's own sizes runs along the wall (w facing it, d standing sideways), null when it stands at a slant. */
   private alongAxis(frame: WallFrame, f: Furniture): "w" | "d" | null {
+    if (f.rotation_x || f.rotation_z) return null;
     const a = (this.wallTurn(frame, f) * Math.PI) / 180;
     if (Math.abs(Math.sin(a)) < 0.05) return "w";
     if (Math.abs(Math.cos(a)) < 0.05) return "d";
@@ -6026,6 +6028,16 @@ export class Fp3dEditor extends LitElement {
       (_, floor) => {
         const m = floor.furniture.find((x) => x.id === id);
         if (!m) return;
+        if (m.rotation_x || m.rotation_z) {
+          const [bottom, top] = furnitureHeightBounds(m);
+          const mount = mountBase(floor, m) - roomLevelAt(floor, m.x, m.z);
+          const lower = y0 ?? mount + bottom, upper = y1 ?? mount + top;
+          if (upper - lower < 0.03 || top - bottom < 1e-6) return;
+          const scale = (upper - lower) / (top - bottom);
+          m.w *= scale; m.d *= scale; m.h *= scale;
+          m.mount_y = Math.max(0, lower - furnitureHeightBounds(m)[0]);
+          return;
+        }
         const axis = this.alongAxis(frame, m);
         if (s0 !== null && s1 !== null && axis && s1 - s0 >= 0.05) {
           const c = furnitureFootprint(m).map((q) => toWall(frame, q).s);
@@ -6097,7 +6109,8 @@ export class Fp3dEditor extends LitElement {
         (() => {
           const c = furnitureFootprint(selF).map((q) => toWall(frame, q));
           const y0 = mountBase(floor, selF) - roomLevel(floor, room);
-          return { kind: "furniture" as const, id: selF.id, s0: Math.min(...c.map((q) => q.s)), s1: Math.max(...c.map((q) => q.s)), y0, y1: y0 + selF.h, d: Math.min(...c.map((q) => q.d)) };
+          const [bottom, top] = furnitureHeightBounds(selF);
+          return { kind: "furniture" as const, id: selF.id, s0: Math.min(...c.map((q) => q.s)), s1: Math.max(...c.map((q) => q.s)), y0: y0 + bottom, y1: y0 + top, d: Math.min(...c.map((q) => q.d)) };
         })())
       : null;
     const lift = !!selF && canLift(selF);
@@ -8432,6 +8445,9 @@ export class Fp3dEditor extends LitElement {
       const sel = f.id === this._furnitureId && !many;
       const [cx, cy] = this.toScreen([f.x, f.z]);
       const big = Math.min(f.w, f.d) * k > 44;
+      const tilted = !!(f.rotation_x || f.rotation_z);
+      const footprint = tilted ? furnitureFootprint(f) : [];
+      const outline = footprint.map(p => this.toScreen(p).join(",")).join(" ");
       // the handle sits in front of the item; dragging it turns the item
       const a = (f.rotation * Math.PI) / 180;
       const reach = f.d / 2 + Math.max(0.3, 26 / k);
@@ -8439,16 +8455,18 @@ export class Fp3dEditor extends LitElement {
       const [fx, fy] = this.toScreen([f.x - Math.sin(a) * (f.d / 2), f.z + Math.cos(a) * (f.d / 2)]);
       const lit = isLamp(f.type) && !!f.entity && f.entity !== "none" && this.hass?.states[f.entity]?.state === "on";
       return svg`<g data-furniture=${f.id} class=${`fp3d-furn${sel || member ? " fp3d-furn-sel" : ""}${lit ? " fp3d-furn-lit" : ""}${(ENERGY_DEVICES as readonly string[]).includes(f.type) ? " fp3d-energy-item" : ""}`}>
-        <g transform="translate(${cx} ${cy}) rotate(${f.rotation}) scale(${f.mirror ? -k : k} ${k})">
+        ${tilted ? svg`<polygon class="fp3d-furn-body fp3d-furn-projected" points=${outline} />` : svg`<g transform="translate(${cx} ${cy}) rotate(${f.rotation}) scale(${f.mirror ? -k : k} ${k})">
           <rect class="fp3d-furn-body" x=${-f.w / 2} y=${-f.d / 2} width=${f.w} height=${f.d} />
           <g class="fp3d-furn-sym">${furnitureSymbol(f.type, f.w, f.d)}</g>
           <line class="fp3d-furn-front" x1=${-f.w / 2} y1=${f.d / 2} x2=${f.w / 2} y2=${f.d / 2} />
-        </g>
+        </g>`}
         ${big ? svg`<text x=${cx} y=${cy + 4}>${furnitureName(this.hass, f.type)}</text>` : nothing}
       </g>
       ${sel && this.isAdmin && !f.locked
         ? ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as const).map(([sx, sz]) => {
-            const [x, y] = this.toScreen([f.x + (sx * f.w * Math.cos(a)) / 2 - (sz * f.d * Math.sin(a)) / 2, f.z + (sx * f.w * Math.sin(a)) / 2 + (sz * f.d * Math.cos(a)) / 2]);
+            const [x, y] = this.toScreen(tilted
+              ? [sx < 0 ? Math.min(...footprint.map(p => p[0])) : Math.max(...footprint.map(p => p[0])), sz < 0 ? Math.min(...footprint.map(p => p[1])) : Math.max(...footprint.map(p => p[1]))]
+              : [f.x + (sx * f.w * Math.cos(a)) / 2 - (sz * f.d * Math.sin(a)) / 2, f.z + (sx * f.w * Math.sin(a)) / 2 + (sz * f.d * Math.cos(a)) / 2]);
             return svg`<g class="fp3d-resize" data-resize=${`${f.id}:${sx}:${sz}`}>
               <circle cx=${x} cy=${y} r="14" class="fp3d-hit" />
               <rect x=${x - 5} y=${y - 5} width="10" height="10" rx="2" />
