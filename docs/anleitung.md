@@ -138,6 +138,10 @@ Ohne Auswahl zeigt die Seitenleiste die Etagen:
 
 ### 4.3 Räume zeichnen
 
+**Individuelle Raumhöhen (Branch `feature/split-level-rooms`):** Im ausgewählten Raum lassen sich **Höhe über Boden (m)** und **Raumhöhe (m)** unabhängig einstellen. Die Bodenhöhe ist absolut zur Gebäude-Referenz, nicht zur Etage. Die Raumhöhe beginnt am eigenen Raumboden. Ohne eigene Werte erbt der Raum beide Werte der Etage; **Etagenhöhen übernehmen** setzt diese Vorgaben zurück. Beispiel für eine gemeinsame Deckenhöhe von 3 m: Raum A liegt auf 0 m und ist 3 m hoch, Raum B liegt auf 0,6 m und ist 2,4 m hoch. Explizite absolute Raum-Bodenhöhen bleiben beim Ändern der Etagenhöhe unverändert. Dachabschnitte bleiben eigenständige Bauteile und lassen sich weiterhin separat in ihrer Höhe einstellen.
+
+**Durchbrüche und Stufen:** Räume mit unterschiedlichem Bodenniveau können weiterhin einen gemeinsamen Durchbruch haben. Im Durchbruchsformular **Stufen am Durchbruch** wählen: ohne Stufen, im tieferen oder im höheren der beiden benannten Räume. Anzahl und Gesamttiefe sind einstellbar; die Breite folgt automatisch der tatsächlichen Durchbruchsbreite. Im tieferen Raum steigen die Stufen zum Durchbruch hin an. Im höheren Raum wird der Boden ausgespart, und die Stufen führen vom niedrigen Durchbruch zum höheren Boden. Passt die Tiefe nicht vollständig in den gewählten Raum, werden die Stufen nicht gebaut und eine Warnung erscheint. Bei zu wenig gemeinsamer lichter Höhe die Raumhöhe oder Bodenhöhe anpassen. Stufen sind eine Darstellung der Verbindung, keine automatische Kollisionserkennung für Möbel oder Türflügel.
+
 - **Rechteck:** In den Plan tippen und ziehen.
 - **Freie Form:** Punkt für Punkt setzen. Ein Tipp auf den ersten Punkt oder **Enter** schließt den Raum, **Esc** bricht ab. Beim Zeichnen steht an jeder Kante ihre Länge, auch an der gerade gezogenen.
 - **Ecken verschieben:** Mit **Auswählen** einen Raum antippen und die Ecken ziehen. Das **+** auf einer Kante fügt einen neuen Punkt ein.

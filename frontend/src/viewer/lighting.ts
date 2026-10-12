@@ -7,7 +7,8 @@
 
 import type { Floor, Vec2 } from "../model.ts";
 import { outdoorSurface } from "./outdoor.ts";
-import { outdoorStanding, pointInPolygon } from "../model.ts";
+import { outdoorStanding, pointInPolygon, roomLevel, roomHeight, floorTop } from "../model.ts";
+import { roomTransition, wallLevels } from "../room-levels.ts";
 import type { Wall } from "../geometry/walls.ts";
 import type { OpeningInfo } from "./build.ts";
 import { LOWER_OFFSET } from "./geo.ts";
@@ -109,7 +110,8 @@ export function buildLightSurface(
         // neighbouring room behind the wall (#300) and lie twice in a passage (#290)
         const a1 = Math.min(a + cell, x1);
         const b1 = Math.min(b + cell, z1);
-        quad([a, LIFT, b], [a, LIFT, b1], [a1, LIFT, b1], [a1, LIFT, b], [0, 1, 0], ri, -1);
+        const y = roomLevel(floor, r) + LIFT;
+        quad([a, y, b], [a, y, b1], [a1, y, b1], [a1, y, b], [0, 1, 0], ri, -1);
       }
     }
   });
@@ -136,12 +138,11 @@ export function buildLightSurface(
   }
 
   // walls: the face towards each room
-  const cut = Math.min(floor.cut_height, floor.height);
+  const cut = Math.min(floor.cut_height, floorTop(floor) - floor.elevation);
   const blockers: Blocker[] = [];
   walls.forEach((w, wi) => {
     // rows of light cells up to the wall's own height
-    const H = Math.min(floor.height, w.height ?? floor.height);
-    const c = Math.min(cut, H - 0.02);
+    const H = wallLevels(floor, w).top;
     const dx = w.b[0] - w.a[0];
     const dz = w.b[1] - w.a[1];
     const len = Math.hypot(dx, dz);
@@ -156,13 +157,17 @@ export function buildLightSurface(
     // leaves in the lit face matches the window (a cell is lit or dark as a whole)
     const marks = (vals: number[], lo: number, hi: number) =>
       [lo, hi, ...vals.filter((v) => v > lo + 0.005 && v < hi - 0.005)].sort((a, b) => a - b).filter((v, i, a) => i === 0 || v > a[i - 1] + 0.005);
-    const rows = marks([c, (c + H) / 2, ...gaps.flatMap((g) => [g.y0 + 0.01, g.y1 - 0.01])], 0.02, H - 0.02);
     const cols = marks(gaps.flatMap((g) => [g.s0, g.s1]), 0, len);
     for (const side of [1, -1] as const) {
       const roomId = side > 0 ? w.roomLeft : w.roomRight;
       // the outer face of an exterior wall belongs to the outside zone (facade lighting)
       const ri = roomId ? floor.rooms.findIndex((r) => r.id === roomId) : w.exterior ? outside : -1;
       if (ri < 0) continue;
+      const owner = roomId ? floor.rooms[ri] : null;
+      const base = owner ? roomLevel(floor, owner) : wallLevels(floor, w).bottom;
+      const top = owner ? base + Math.min(roomHeight(floor, owner), w.height ?? Infinity) : H;
+      const c = Math.min(cut, top - 0.02);
+      const rows = marks([c, (c + top) / 2, ...gaps.flatMap((g) => [g.y0 + 0.01, g.y1 - 0.01])], base + 0.02, top - 0.02);
       const face = (side > 0 ? w.left : w.right) + FACE_GAP;
       const n: Vec2 = [nLeft[0] * side, nLeft[1] * side];
       const at = (s: number, y: number) => [w.a[0] + u[0] * s + n[0] * face, y, w.a[1] + u[1] * s + n[1] * face];
@@ -195,6 +200,18 @@ export function buildLightSurface(
       }
     }
   });
+
+  for (const opening of floor.openings) {
+    const t = roomTransition(floor, opening, walls), s = t?.stair;
+    if (!t || !s) continue;
+    const ri = floor.rooms.findIndex((r) => r.id === s.room.id);
+    const at = (u: number, n: number, y: number) => [t.start[0] + t.axis[0] * u + s.toward[0] * n, y, t.start[1] + t.axis[1] * u + s.toward[1] * n];
+    for (let i = 0; i < s.count; i++) {
+      const a = s.face + s.depth * i / s.count, b = s.face + s.depth * (i + 1) / s.count;
+      const y = (s.recess ? t.low + (t.high - t.low) * (i + 1) / s.count : t.high - (t.high - t.low) * i / s.count) + LIFT;
+      quad(at(0, a, y), at(t.width, a, y), at(t.width, b, y), at(0, b, y), [0, 1, 0], ri, -1);
+    }
+  }
 
   // doors between two rooms
   const doors: LightSurface["doors"] = [];

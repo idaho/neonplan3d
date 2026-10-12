@@ -88,8 +88,19 @@ def _finite_angle(value: float) -> float:
 
 _ANGLE = vol.All(vol.Coerce(float), _finite_angle, vol.Range(min=-360, max=360))
 
+
+def _finite_number(value: float) -> float:
+    if not isfinite(value):
+        raise vol.Invalid("height must be finite")
+    return value
 ROOM_SCHEMA = vol.Schema(
     {
+        vol.Optional("elevation", default=None): vol.Any(
+            None, vol.All(vol.Coerce(float), _finite_number, vol.Range(min=-50, max=200))
+        ),
+        vol.Optional("height", default=None): vol.Any(
+            None, vol.All(vol.Coerce(float), _finite_number, vol.Range(min=1, max=20))
+        ),
         # room climate read from chosen sensors (None = automatic, "none" = no value)
         vol.Optional("climate", default=None): vol.Any(
             None,
@@ -146,6 +157,14 @@ _OPENING_STYLES += ["standard", "bars", "glass_wall"]
 
 OPENING_SCHEMA = vol.Schema(
     {
+        vol.Optional("steps", default=None): vol.Any(
+            None,
+            {
+                vol.Required("side"): vol.In(["room", "other"]),
+                vol.Required("count"): vol.All(int, vol.Range(min=1, max=30)),
+                vol.Required("depth"): vol.All(vol.Coerce(float), _finite_number, vol.Range(min=0.1, max=10)),
+            },
+        ),
         vol.Required("id"): _ID,
         vol.Required("room_id"): _ID,
         vol.Required("edge"): vol.All(int, vol.Range(min=0, max=MAX_POINTS)),

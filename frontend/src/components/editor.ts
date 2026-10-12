@@ -21,6 +21,8 @@ import { sectionFloor, dormerParent, effectiveDormer, proposeDormer, sectionGeom
 import { bestFace, clampField, faceAt, faceCompass, fieldFace, fieldModules, GROUND, moveField, pointOnFace, proposeField, proposeGroundField, proposeWindow, proposeWallField, roofFaces, rowCounts, turnGroundField, fieldCenter, wallFaces, windowAsField, windowCorners, onFace, onField, rayOnFace, type RoofFace } from "../solar.ts";
 import { validPolygon } from "../geometry/polygon.ts";
 import { ceilingSpots, spotSurfaceKey, type SpotSurface } from "../ceiling-spots.ts";
+import { roomTransition } from "../room-levels.ts";
+import { roomAt, roomLevelAt, roomLevel, roomHeight } from "../model.ts";
 import type { SurfaceGrab, SurfaceRay } from "../viewer/viewer3d.ts";
 import { storedImageIds } from "../transfer.ts";
 import { type CarLinks, type Background, OUTDOOR_TOP, sidelightLayout, DEFAULT_WEATHER_EFFECTS, WEATHER_EFFECTS,
@@ -596,7 +598,7 @@ export class Fp3dEditor extends LitElement {
                 inputmode="decimal"
                 step="0.05"
                 min="0"
-                .value=${this.unit === "imperial" ? formatImperial(f.mount_y ?? mountBase(this.floor!, f)) : String(Math.round((f.mount_y ?? mountBase(this.floor!, f)) * 100) / 100)}
+                .value=${this.unit === "imperial" ? formatImperial(f.mount_y ?? (mountBase(this.floor!, f) - roomLevelAt(this.floor!, f.x, f.z))) : String(Math.round((f.mount_y ?? (mountBase(this.floor!, f) - roomLevelAt(this.floor!, f.x, f.z))) * 100) / 100)}
                 @change=${(e: Event) => {
                   const v = this.readLen((e.target as HTMLInputElement).value);
                   if (v !== null && v >= 0) this.updateFurniture({ mount_y: Math.round(v * 1000) / 1000 });
@@ -613,7 +615,7 @@ export class Fp3dEditor extends LitElement {
     if (d) {
       const kind = kindOf(d.entity_id);
       const light = kind === "light";
-      const auto = kind ? defaultHeight(kind, this.floor?.height ?? 2.5, light ? (d.mount ?? "ceiling") : null) : 1;
+      const auto = kind ? defaultHeight(kind, this.floor ? roomHeight(this.floor, roomAt(this.floor, d.x, d.z)) : 2.5, light ? (d.mount ?? "ceiling") : null) : 1;
       return html`<div class="fp3d-3d-bar">
         <span>${entityName(this.hass, d.entity_id)}</span>
         ${light
@@ -4118,9 +4120,9 @@ export class Fp3dEditor extends LitElement {
     const [w, d, h0] = furnitureSize(type);
     // stairs reach up to the next floor
     const above = this._doc.floors.filter((f) => f.elevation > floor.elevation).sort((p, q) => p.elevation - q.elevation)[0];
-    const h = STAIR_TYPES.has(type) ? round(above ? above.elevation - floor.elevation : floor.height + 0.25) : h0;
     const room = this.room;
     const [x, z] = room ? centroid(room.points) : this.toWorld(this._size.w / 2, this._size.h / 2);
+    const h = STAIR_TYPES.has(type) ? Math.max(0.2, round(above ? above.elevation + roomLevelAt(above, x, z) - floor.elevation - roomLevel(floor, room) : roomHeight(floor, room) + 0.25)) : h0;
     let rotation = 0;
     if (type === "parking" && room) {
       // a parking spot runs into the room from its garage door, else along the room's longer side
@@ -4551,7 +4553,7 @@ export class Fp3dEditor extends LitElement {
               @contextmenu=${this.onContextMenu}
             >
               ${this.renderBackground(floor)} ${this.renderGrid()} ${this.renderGhost()} ${walls ? this.renderWalls(walls.walls) : nothing}
-              ${floor ? this.renderOutdoor(floor) : nothing} ${floor ? this.renderRooms(floor) : nothing} ${floor ? this.renderFurniture(floor) : nothing}
+              ${floor ? this.renderOutdoor(floor) : nothing} ${floor ? this.renderRooms(floor) : nothing} ${floor ? this.renderLevelSteps(floor) : nothing} ${floor ? this.renderFurniture(floor) : nothing}
               ${floor ? this.renderFreeWalls(floor) : nothing}
               ${floor && walls ? this.renderOpenings(floor, walls.walls) : nothing} ${floor ? this.renderMeter(floor) : nothing}
               ${floor && this._tool === "select" ? this.renderDevices(floor) : nothing}
@@ -4851,7 +4853,7 @@ export class Fp3dEditor extends LitElement {
 
   /** Height list per wall of a room in the room form (always open); hovering a row lights the wall up. */
   private renderEdgeHeights(room: Room) {
-    const H = this.floor!.height;
+    const H = roomHeight(this.floor!, room);
     const n = room.points.length;
     // which edges are outer walls (their default thickness is the exterior one)
     const s = this._doc.settings;
@@ -5666,6 +5668,10 @@ export class Fp3dEditor extends LitElement {
             ${this.len(this.t("width"), b.x1 - b.x0, (v) => this.setRect("w", v), 0.01, 0.05)}
             ${this.len(this.t("depth"), b.z1 - b.z0, (v) => this.setRect("d", v), 0.01, 0.05)}`
           : nothing}
+        ${this.num(this.t("elevation"), room.elevation ?? this.floor!.elevation, (v) => this.updateRoom({ elevation: Math.max(-50, Math.min(200, v)) }), 0.05)}
+        ${this.num(this.t("height"), roomHeight(this.floor!, room), (v) => this.updateRoom({ height: Math.max(1, Math.min(20, v)) }), 0.05, 1)}
+        <button class="fp3d-btn fp3d-field-btn" ?disabled=${!admin} @click=${() => this.updateRoom({ elevation: null, height: null })}>${this.t("room_inherit_heights")}</button>
+        <p class="fp3d-sub fp3d-wide">${this.t("room_levels_hint")}</p>
       </div>
       <div class="fp3d-form">
         <label class="fp3d-field" title=${this.t("room_ceiling_hint")}
@@ -5908,6 +5914,50 @@ export class Fp3dEditor extends LitElement {
     >`;
   }
 
+  private renderLevelSteps(floor: Floor) {
+    if (!floor.openings.some((o) => o.steps)) return nothing;
+    const walls = generateWalls(floor.rooms, { exterior: this._doc.settings.wall_exterior, interior: this._doc.settings.wall_interior }, floor.walls ?? []).walls;
+    return svg`${floor.openings.map((o) => {
+      const t = roomTransition(floor, o, walls), s = t?.stair;
+      if (!t || !s) return nothing;
+      const P = (u: number, n: number) => this.toScreen([t.start[0] + t.axis[0] * u + s.toward[0] * n, t.start[1] + t.axis[1] * u + s.toward[1] * n]);
+      const poly = [P(0, s.face), P(t.width, s.face), P(t.width, s.face + s.depth), P(0, s.face + s.depth)];
+      return svg`<g data-opening=${o.id} class="fp3d-level-steps"><polygon points=${poly.map((p) => p.join(',')).join(' ')} />
+        ${Array.from({ length: s.count + 1 }, (_, i) => { const a = P(0, s.face + s.depth * i / s.count), b = P(t.width, s.face + s.depth * i / s.count); return svg`<line x1=${a[0]} y1=${a[1]} x2=${b[0]} y2=${b[1]} />`; })}
+      </g>`;
+    })}`;
+  }
+
+  private renderOpeningSteps(o: Opening) {
+    const floor = this.floor;
+    if (!floor || o.type === "window") return nothing;
+    const walls = generateWalls(floor.rooms, { exterior: this._doc.settings.wall_exterior, interior: this._doc.settings.wall_interior }, floor.walls ?? []).walls;
+    const t = roomTransition(floor, o, walls);
+    if (!t?.other) return nothing;
+    const rise = t.high - t.low;
+    if (rise < 0.001 && !o.steps) return nothing;
+    const choose = (side: "room" | "other" | "") => {
+      const count = Math.max(1, Math.min(30, Math.ceil(rise / 0.18)));
+      this.updateOpening({ steps: side ? { side, count: o.steps?.count ?? count, depth: o.steps?.depth ?? Math.min(10, count * 0.28) } : null });
+    };
+    return html`<section>
+      <h3>${this.t("steps_title")}</h3>
+      <label class="fp3d-field">${this.t("steps_side")}
+        <select ?disabled=${!this.isAdmin || rise < 0.001} @change=${(e: Event) => choose((e.target as HTMLSelectElement).value as "room" | "other" | "")}>
+          <option value="" ?selected=${!o.steps}>${this.t("steps_none")}</option>
+          ${([['room', t.room], ['other', t.other]] as const).map(([side, room]) => html`<option value=${side} ?selected=${o.steps?.side === side}>${room.name} · ${this.t(rise < 0.001 ? "steps_equal" : roomLevel(floor, room) === t.low ? "steps_lower" : "steps_higher")}</option>`)}
+        </select>
+      </label>
+      ${o.steps && rise > 0.001 ? html`<div class="fp3d-form">
+        ${this.num(this.t("steps_count"), o.steps.count, (v) => this.updateOpening({ steps: { ...o.steps!, count: Math.max(1, Math.min(30, Math.round(v))) } }), 1, 1)}
+        ${this.num(this.t("steps_depth"), o.steps.depth, (v) => this.updateOpening({ steps: { ...o.steps!, depth: Math.max(0.1, Math.min(10, v)) } }), 0.05, 0.1)}
+      </div>` : nothing}
+      <p class="fp3d-sub">${this.t("steps_hint")}</p>
+      ${o.steps && rise > 0.001 && !t.stair ? html`<p class="fp3d-warn">${this.t("steps_fit_warning")}</p>` : nothing}
+      ${t.ceiling - t.threshold - o.sill < o.height - 0.02 ? html`<p class="fp3d-warn">${this.t("steps_height_warning")}</p>` : nothing}
+    </section>`;
+  }
+
   private renderOpeningForm(o: Opening) {
     const admin = this.isAdmin;
     const window = o.type === "window";
@@ -6059,6 +6109,7 @@ export class Fp3dEditor extends LitElement {
             >`
           : nothing}
       </div>
+      ${this.renderOpeningSteps(o)}
       <p class="fp3d-sub">${this.t(window ? "opening_hint" : garage ? "garage_hint" : "door_hint")}</p>
       ${admin
         ? html`<div class="fp3d-actions"><button class="fp3d-btn fp3d-danger" @click=${() => this.deleteOpening()}>${this.t("delete")}</button></div>`
@@ -6122,7 +6173,7 @@ export class Fp3dEditor extends LitElement {
               >`
           : nothing}
         ${canLift(f) && this.floor
-          ? html`${this.len(this.t("mount_height"), f.mount_y ?? mountBase(this.floor, f), (v) => this.updateFurniture({ mount_y: Math.max(0, v) }), 0.01, 0)}
+          ? html`${this.len(this.t("mount_height"), f.mount_y ?? (mountBase(this.floor, f) - roomLevelAt(this.floor, f.x, f.z)), (v) => this.updateFurniture({ mount_y: Math.max(0, v) }), 0.01, 0)}
               ${f.mount_y != null ? html`<button class="fp3d-btn fp3d-field-btn" ?disabled=${!admin} @click=${() => this.updateFurniture({ mount_y: null })}>${this.t("height_auto")}</button>` : nothing}`
           : nothing}
       </div>
@@ -7080,7 +7131,7 @@ export class Fp3dEditor extends LitElement {
     const kind = kindOf(pl.entity_id);
     const light = kind === "light";
     const mount = pl.mount ?? "ceiling";
-    const auto = kind ? defaultHeight(kind, this.floor?.height ?? 2.5, light ? mount : null) : 1;
+    const auto = kind ? defaultHeight(kind, this.floor ? roomHeight(this.floor, roomAt(this.floor, pl.x, pl.z)) : 2.5, light ? mount : null) : 1;
     return html`<section>
       <div class="fp3d-h3row"><h3>${this.t("device")}</h3>${this.fixButton("device", pl.entity_id)}</div>
       <p class="fp3d-dev-title">
@@ -8029,6 +8080,15 @@ export class Fp3dEditor extends LitElement {
       .fp3d-vertex,
       .fp3d-mid {
         cursor: grab;
+      }
+      .fp3d-level-steps polygon {
+        fill: rgba(55, 224, 255, 0.1);
+        stroke: var(--fp3d-accent);
+        stroke-width: 1;
+      }
+      .fp3d-level-steps line {
+        stroke: var(--fp3d-accent);
+        stroke-width: 1;
       }
       .fp3d-hit {
         fill: transparent;

@@ -17,6 +17,10 @@ export interface RoomClimate {
 export type WallHeight = number | null | (number | null)[];
 
 export interface Room {
+  /** Absolute position of the room floor; null inherits the floor's elevation. */
+  elevation?: number | null;
+  /** Clear height above this room's own floor; null inherits the floor's height. */
+  height?: number | null;
   /** Room temperature, humidity and CO2: chosen sensors instead of the automatic pick. */
   climate?: RoomClimate | null;
   id: string;
@@ -60,6 +64,8 @@ export type OpeningType = "door" | "window" | "garage";
 export type EntityRef = string | null;
 
 export interface Opening {
+  /** Optional level transition at an interior doorway, on the owner's or neighbour's side. */
+  steps?: { side: "room" | "other"; count: number; depth: number } | null;
   id: string;
   room_id: string;
   /** Room edge the opening sits on (points[edge] -> points[edge + 1]); 0 in a free wall. */
@@ -744,8 +750,8 @@ export const LEVEL_HEIGHT = 2.75;
 /** Where a new floor goes: at its Home Assistant level if known, otherwise on top. */
 export function floorElevation(floors: Floor[], level: number | null | undefined): number {
   if (level != null && Number.isFinite(level)) return Math.round(level * LEVEL_HEIGHT * 100) / 100;
-  const top = floors.reduce<Floor | null>((t, f) => (!t || f.elevation > t.elevation ? f : t), null);
-  return top ? Math.round((top.elevation + top.height + 0.25) * 100) / 100 : 0;
+  const top = floors.reduce<Floor | null>((t, f) => (!t || floorTop(f) > floorTop(t) ? f : t), null);
+  return top ? Math.round((floorTop(top) + 0.25) * 100) / 100 : 0;
 }
 
 /**
@@ -1005,10 +1011,10 @@ export function builtinBase(f: Pick<Furniture, "type" | "h"> & { variant?: strin
 }
 
 export function surfaceHeight(floor: Floor, x: number, z: number): number {
-  let top = 0;
+  let top = roomLevelAt(floor, x, z);
   for (const f of floor.furniture) {
     if (!(SURFACES.has(f.type) || packItem(f.type)?.surface) || !pointInPolygon([x, z], furnitureFootprint(f))) continue;
-    top = Math.max(top, f.h);
+    top = Math.max(top, roomLevelAt(floor, f.x, f.z) + (f.mount_y ?? 0) + f.h);
   }
   return top;
 }
@@ -1322,6 +1328,33 @@ export function pointInPolygon(p: Vec2, points: readonly Vec2[]): boolean {
     if (zi > p[1] !== zj > p[1] && p[0] < ((xj - xi) * (p[1] - zi)) / (zj - zi) + xi) inside = !inside;
   }
   return inside;
+}
+
+/** Room heights expressed in the floor group's local coordinates. */
+export function roomLevel(floor: Floor, room?: Room | null): number {
+  return (room?.elevation ?? floor.elevation) - floor.elevation;
+}
+
+export function roomHeight(floor: Floor, room?: Room | null): number {
+  return room?.ceiling_height ?? room?.height ?? floor.height;
+}
+
+export function roomAt(floor: Floor, x: number, z: number): Room | undefined {
+  return floor.rooms.find((r) => pointInPolygon([x, z], r.points));
+}
+
+export function roomLevelAt(floor: Floor, x: number, z: number): number {
+  return roomLevel(floor, roomAt(floor, x, z));
+}
+
+export function roomCeilingAt(floor: Floor, x: number, z: number): number {
+  const room = roomAt(floor, x, z);
+  return roomLevel(floor, room) + roomHeight(floor, room);
+}
+
+export function floorTop(floor: Floor): number {
+  const rooms = floor.rooms.filter((r) => r.points.length >= 3);
+  return rooms.length ? Math.max(...rooms.map((r) => (r.elevation ?? floor.elevation) + roomHeight(floor, r))) : floor.elevation + floor.height;
 }
 
 /** 3D model of each lamp type. */

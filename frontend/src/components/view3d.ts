@@ -80,7 +80,7 @@ import "./quick-menu.ts";
 import { load3d } from "../load3d.ts";
 import { detectionKind, scaleGlow, buildMarkers, cameraMotionSensors, openMoreInfo, stateText, toggleEntity } from "../markers.ts";
 import { roofUnderAt, sectionCutsBelow } from "../roof-sections.ts";
-import { centroid, furnitureFootprint, isLamp, LAMP_MODEL, LIFT_SPOTS, outdoorGround, pointInPolygon, spotDepth, surfaceHeight, type Building, type Furniture, type StartView } from "../model.ts";
+import { roomCeilingAt, roomLevelAt, centroid, furnitureFootprint, isLamp, LAMP_MODEL, LIFT_SPOTS, outdoorGround, pointInPolygon, spotDepth, surfaceHeight, type Building, type Furniture, type StartView } from "../model.ts";
 import { floorCounts, floorInfoText, personsInRooms } from "../presence.ts";
 import { controls, tokens } from "../styles.ts";
 import type { HassEntity, HomeAssistant } from "../types.ts";
@@ -2121,8 +2121,7 @@ export class Fp3dView3d extends LitElement {
   /** The ceiling height on a floor at a point: the floor height, a room's own ceiling (#30), or lower under a roof slope (#168). */
   private ceilingAt(floor: Building["floors"][number], x: number, z: number): number {
     // a room with a ceiling of its own (#30)
-    const own = floor.rooms.find((r) => r.ceiling_height && r.points.length >= 3 && pointInPolygon([x, z], r.points))?.ceiling_height;
-    const room = own ? Math.min(floor.height, own) : floor.height;
+const room = roomCeilingAt(floor, x, z);
     const b = this.building;
     if (!b || !(b.settings.roof.sections ?? []).some((sec) => sectionCutsBelow(sec, floor.elevation + floor.height))) return room;
     const under = roofUnderAt(b, x, z);
@@ -2140,22 +2139,22 @@ export class Fp3dView3d extends LitElement {
     const base0 = model === "strip" && !inRoom
       ? outdoorGround(floor, f.x, f.z) + (f.mount_y ?? 0)
       : f.mount_y != null && !item
-      ? f.mount_y
+      ? roomLevelAt(floor, f.x, f.z) + f.mount_y
       : item || model === "wall" || model === "strip"
       ? mountBase(floor, f)
       : model === "table"
         ? surfaceHeight(floor, f.x, f.z)
         : model === "bollard" || model === "garden"
-          ? outdoorGround(floor, f.x, f.z)
-          : 0;
+          ? inRoom ? roomLevelAt(floor, f.x, f.z) : outdoorGround(floor, f.x, f.z)
+          : roomLevelAt(floor, f.x, f.z);
     const room = floor.rooms.find((r) => r.points.length >= 3 && pointInPolygon([f.x, f.z], r.points));
     // under a sloped roof the ceiling is the roof's underside: lamps hung from it follow the slope (#168)
     const ceiling = this.ceilingAt(floor, f.x, f.z);
     const hung = (item ? item.mount === "ceiling" : ["ceiling", "downlight", "spot", "panel", "pendant"].includes(model)) && f.mount_y == null;
-    const slopeDrop = hung ? floor.height - ceiling : 0;
+    const slopeDrop = hung ? roomCeilingAt(floor, f.x, f.z) - ceiling : 0;
     const base = item && hung ? Math.max(0, base0 - slopeDrop) : base0;
     // a spot lowered by hand hangs from its own "ceiling" (under a wall cabinet, #311)
-    const top = LIFT_SPOTS.has(f.type) && f.mount_y != null ? Math.min(floor.height, f.mount_y + spotDepth(f.type, f.h)) : slopeDrop > 0.01 ? ceiling : undefined;
+    const top = LIFT_SPOTS.has(f.type) && f.mount_y != null ? roomLevelAt(floor, f.x, f.z) + f.mount_y + spotDepth(f.type, f.h) : ceiling;
     const H = top ?? floor.height;
     // pack lamps: the marker sits above the lamp (below it when it hangs from the ceiling)
     const y = item

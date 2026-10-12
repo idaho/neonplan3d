@@ -383,6 +383,22 @@ shots.push(
   { name: "editor-inventory-rotation-phone", query: "", width: 430, height: 1000, editor: true, editorScript: ROTATION_SCRIPT, focusRotation: true, mockPrivatePacks: true },
   { name: "view-inventory-rotation", query: "", width: 1280, height: 800, editor: true, editorScript: ROTATION_SCRIPT, mockPrivatePacks: true, then3d: "Erdgeschoss", camera: { theta: 1.3, phi: 1.1, radius: 7, target: { x: 2.4, y: 1.1, z: 2 } } },
 );
+const ROOM_LEVELS_SCRIPT = `
+  const b = structuredClone(e._doc), f = b.floors[0]; b.floors = [f];
+  const room = (id, name, x0, x1) => ({ id, name, area_id: null, points: [[x0,0],[x1,0],[x1,4],[x0,4]], floor_material: 'wood' });
+  Object.assign(f, { elevation: 0, height: 2.6, rooms: [room('low','Tiefer Raum',0,4),room('high','Höherer Raum',4,8)], walls: [], outdoor: [], placements: [],
+    openings: [{ id: 'level_passage', room_id: 'low', edge: 1, offset: 2, width: 1.4, type: 'door', style: 'passage', sill: 0, height: 2.3, hinge: 'left', leaves: 1, swing: 'in', cover: null, contact: null, contact2: null, tilt: null }],
+    furniture: [{ id: 'low_chair', type: 'chair', x: 1.5, z: 1.5, w: 0.5, d: 0.5, h: 0.85, rotation: 0, variant: null }, { id: 'high_chair', type: 'chair', x: 6.5, z: 1.5, w: 0.5, d: 0.5, h: 0.85, rotation: 0, variant: null }, { id: 'high_lamp', type: 'lamp_downlight', x: 6, z: 3, w: 0.14, d: 0.14, h: 0.05, rotation: 0, variant: null, entity: 'light.led_band' }] });
+  b.settings.roof = { type: 'none', pitch: 30, overhang: 0, sections: [], solar: [], windows: [] };
+  e.setDoc(b); e._floorId = f.id; e._tool = 'select'; e._split = true; e._wall3d = 'auto'; e.selectItem('room','high');
+  setTimeout(() => e.fit(), 300);
+`;
+shots.push(
+  { name: "editor-room-levels-low", query: "", width: 1500, height: 1100, editor: true, editorScript: ROOM_LEVELS_SCRIPT, roomLevelsSide: "room", mockPrivatePacks: true },
+  { name: "editor-room-levels-high", query: "", width: 1500, height: 1100, editor: true, editorScript: ROOM_LEVELS_SCRIPT, roomLevelsSide: "other", mockPrivatePacks: true },
+  { name: "editor-room-levels-phone", query: "", width: 430, height: 1100, editor: true, editorScript: ROOM_LEVELS_SCRIPT, roomLevelsSide: "other", mockPrivatePacks: true },
+  { name: "view-room-levels-high", query: "", width: 1280, height: 900, editor: true, editorScript: ROOM_LEVELS_SCRIPT, roomLevelsSide: "other", mockPrivatePacks: true, then3d: "Alle Etagen", camera: { theta: 0.9, phi: 0.8, radius: 12, target: { x: 4, y: 1.2, z: 2 } } },
+);
 
 const errors = [];
 const only = process.env.SHOTS?.split(",");
@@ -662,6 +678,41 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       });
       if (JSON.stringify(saved) !== JSON.stringify({ outdoor, roof })) throw new Error(`${shot.name}: free contours did not persist`);
       console.log(`verified drawing, vertex editing, undo/redo, duplication and save: ${shot.name}`);
+    }
+    if (shot.roomLevelsSide) {
+      await page.evaluate(async (side) => {
+        const e = document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');
+        const settle = async () => { await e.updateComplete; await new Promise((r) => setTimeout(r, 150)); };
+        const setNumber = async (label, value) => {
+          const field = [...e.shadowRoot.querySelectorAll('label.fp3d-field')].find((l) => l.textContent.trim() === label);
+          const input = field?.querySelector('input'); if (!input) throw new Error('Missing field: ' + label);
+          input.value = String(value); input.dispatchEvent(new Event('change')); await settle();
+        };
+        e.selectItem('room', 'low'); await settle(); await setNumber('Raumhöhe (m)', 4);
+        e.selectItem('room', 'high'); await settle(); await setNumber('Höhe über Boden (m)', 0.6); await setNumber('Raumhöhe (m)', 3.4);
+        if (e._doc.floors[0].height !== 2.6 || e._doc.floors[0].elevation !== 0) throw new Error('Room editing changed floor defaults');
+        const reset = [...e.shadowRoot.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Etagenhöhen übernehmen');
+        if (!reset) throw new Error('Missing inheritance reset'); reset.click(); await settle();
+        if (e.room.elevation !== null || e.room.height !== null) throw new Error('Room defaults did not reset');
+        e.undo(); await settle();
+        if (e.room.elevation !== 0.6 || e.room.height !== 3.4) throw new Error('Undo did not restore independent room heights');
+        e.selectItem('opening', 'level_passage'); await settle();
+        const label = [...e.shadowRoot.querySelectorAll('label.fp3d-field')].find((l) => l.textContent.includes('Stufen in diesem Raum'));
+        const select = label?.querySelector('select'); if (!select) throw new Error('Missing stair side selector');
+        select.value = side; select.dispatchEvent(new Event('change')); await settle();
+        await setNumber('Anzahl Stufen', 3); await setNumber('Gesamttiefe (m)', 1);
+        const before = JSON.stringify(e._doc); e.undo(); await settle(); e.redo(); await settle();
+        if (JSON.stringify(e._doc) !== before) throw new Error('Level/step undo and redo did not preserve data');
+        const svg = e.shadowRoot.querySelector('.fp3d-level-steps');
+        if (!svg || svg.querySelectorAll('line').length !== 4) throw new Error('The editor does not show all treads');
+      }, shot.roomLevelsSide);
+      await new Promise((r) => setTimeout(r, 1500));
+      await page.evaluate(async (side) => {
+        const e = document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');
+        const saved = (await e.hass.callWS({ type: 'neonplan3d/building/get' })).building.floors[0];
+        if (saved.rooms[1].elevation !== 0.6 || saved.rooms[1].height !== 3.4 || saved.openings[0].steps.side !== side) throw new Error('Room levels and steps did not save');
+      }, shot.roomLevelsSide);
+      console.log('verified independent heights, stair side, undo/redo and save: ' + shot.name);
     }
     // DEBUG_EVAL="<code using e>" prints what the editor says (for looking into a scene)
     if (process.env.DEBUG_EVAL) {

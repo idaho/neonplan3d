@@ -5,7 +5,7 @@ import { defaultHeight, entityName, isActive, isUnavailable, kindOf, lightGlow, 
 import { formatNumber, translate, type I18nKey } from "./i18n.ts";
 import { iconSvg, mdiIcon } from "./icons.ts";
 import type { Building } from "./model.ts";
-import { pointInPolygon } from "./model.ts";
+import { pointInPolygon, roomHeight, roomLevel } from "./model.ts";
 import type { HassEntity, HomeAssistant } from "./types.ts";
 import type { DeviceMarker } from "./viewer/viewer3d.ts";
 
@@ -78,7 +78,9 @@ export function buildMarkers(hass: HomeAssistant, building: Building): DeviceMar
         roomId: room?.id ?? null,
         x: pl.x,
         z: pl.z,
-        y: pl.y ?? defaultHeight(kind, floor.height, pl.mount ?? null),
+        y: roomLevel(floor, room) + (pl.y ?? defaultHeight(kind, roomHeight(floor, room), pl.mount ?? null)),
+        base: roomLevel(floor, room),
+        top: roomLevel(floor, room) + roomHeight(floor, room),
         lamp: kind === "light" ? (pl.mount ?? "ceiling") : null,
         model: kind === "camera" ? (pl.mount === "ceiling" ? "camera_ceiling" : "camera_wall") : undefined,
         motion: kind === "camera" ? cameraMotion(hass, pl.entity_id) : undefined,

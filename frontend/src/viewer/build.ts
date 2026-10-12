@@ -11,8 +11,9 @@
 //   fold = 48 + b    top face of the lower part at the cut height: visible while bucket b is cut
 
 import { Color, type BufferGeometry } from "three";
-import type { Floor, Opening, Room, SolarField, Vec2 } from "../model.ts";
-import { furnitureFootprint, isLamp, pointInPolygon, polygonArea, STAIR_TYPES } from "../model.ts";
+import type { Floor, Opening, SolarField, Vec2 } from "../model.ts";
+import { roomLevel, roomLevelAt, floorTop, furnitureFootprint, isLamp, pointInPolygon, polygonArea, STAIR_TYPES } from "../model.ts";
+import { outsideBays, roomTransition, subtractBay, wallLevels } from "../room-levels.ts";
 import { generateWalls, locateOpening, openingHost, type Wall } from "../geometry/walls.ts";
 import { clipConvex, isConvex } from "../geometry/area.ts";
 import { holeInRoom, insetHole, mergeHoles } from "../geometry/holes.ts";
@@ -120,10 +121,11 @@ export function buildFloorGeometry(
   roofUnder?: (x: number, z: number) => number | null,
 ): FloorGeometry {
   const { walls, open: openRooms } = generateWalls(floor.rooms, { exterior: wallExterior, interior: wallInterior }, floor.walls ?? []);
+  const transitions = floor.openings.map((o) => roomTransition(floor, o, walls)).filter((t) => t !== null);
   // the top of a wall at a point: its own height, or the roof above when that is lower
   const topAt = (x: number, z: number, H: number): number => {
     const r = roofUnder ? roofUnder(x, z) : null;
-    return r === null ? H : Math.max(0.05, Math.min(H, r));
+    return r === null ? H : Math.min(H, r);
   };
   // the lowest wall top along a stretch of a wall (sampled), for openings and the top edge line
   const lowestTop = (a: Vec2, ax: Vec2, s0: number, s1: number, H: number): number => {
@@ -145,6 +147,9 @@ export function buildFloorGeometry(
   for (const room of floor.rooms) {
     if (room.points.length < 3) continue;
     const poly = ccw(room.points);
+    const level = roomLevel(floor, room);
+    const bays = transitions.filter((t) => t.stair?.recess && t.stair.room.id === room.id).map((t) => t.stair!.bay);
+    cutHoles.push(...bays);
     const look = FLOOR_LOOK[room.floor_material] ?? FLOOR_LOOK.wood;
     const top = new Color(look.color);
     // an opening snapped to the room's edge is still cut, a few millimetres in from it
@@ -162,16 +167,21 @@ export function buildFloorGeometry(
       const a = all[i];
       const b = all[j];
       const c = all[l];
-      floorBuf.tri([a[0], 0, a[1]], [c[0], 0, c[1]], [b[0], 0, b[1]], top, top, top, [a[0], a[1], c[0], c[1], b[0], b[1]], ALWAYS, look.tile);
+      let fragments = [[a, b, c]];
+      for (const bay of bays) fragments = fragments.flatMap((p) => subtractBay(p, bay));
+      for (const p of fragments) for (let k = 1; k + 1 < p.length; k++) {
+        const [a, b, c] = [p[0], p[k], p[k + 1]];
+        floorBuf.tri([a[0], level, a[1]], [c[0], level, c[1]], [b[0], level, b[1]], top, top, top, [a[0], a[1], c[0], c[1], b[0], b[1]], ALWAYS, look.tile);
+      }
     }
     roomTris.push({ roomId: room.id, start, end: floorBuf.count, color: look.color });
     const slab = new Color(NEON.slab);
     const sides = (ring: Vec2[]) => {
       for (let i = 0; i < ring.length; i++) {
-        const a = ring[i];
-        const b = ring[(i + 1) % ring.length];
-        floorBuf.tri([a[0], -SLAB, a[1]], [a[0], 0, a[1]], [b[0], 0, b[1]], slab);
-        floorBuf.tri([a[0], -SLAB, a[1]], [b[0], 0, b[1]], [b[0], -SLAB, b[1]], slab);
+        for (const [a, b] of outsideBays(ring[i], ring[(i + 1) % ring.length], bays)) {
+          floorBuf.tri([a[0], level - SLAB, a[1]], [a[0], level, a[1]], [b[0], level, b[1]], slab);
+          floorBuf.tri([a[0], level - SLAB, a[1]], [b[0], level, b[1]], [b[0], level - SLAB, b[1]], slab);
+        }
       }
     };
     sides(poly);
@@ -182,8 +192,8 @@ export function buildFloorGeometry(
         const a = h[i];
         const b = h[(i + 1) % h.length];
         // a bright rim like the walls' tops, so the opening reads from above
-        holeLines.seg([a[0], 0.006, a[1]], [b[0], 0.006, b[1]], EDGE_TOP);
-        holeLines.seg([a[0], -SLAB, a[1]], [b[0], -SLAB, b[1]], EDGE_SOFT);
+        holeLines.seg([a[0], level + 0.006, a[1]], [b[0], level + 0.006, b[1]], EDGE_TOP);
+        holeLines.seg([a[0], level - SLAB, a[1]], [b[0], level - SLAB, b[1]], EDGE_SOFT);
       }
     }
   }
@@ -231,8 +241,12 @@ export function buildFloorGeometry(
     const roomLeft = wall.free ? ax[0] * (hp[1][0] - hp[0][0]) + ax[1] * (hp[1][1] - hp[0][1]) > 0 : wall.roomLeft === o.room_id;
     const nLeft: Vec2 = [-ax[1], ax[0]];
     const toRoom: Vec2 = roomLeft ? nLeft : [-nLeft[0], -nLeft[1]];
-    const top = Math.min(lowestTop(wall.a, ax, s0, s0 + width, wallHeight(wall, floor.height)) - 0.02, o.sill + o.height);
-    const sill = Math.max(0, Math.min(o.sill, top - 0.1));
+    const transition = transitions.find((t) => t.opening.id === o.id);
+    const baseline = transition?.threshold ?? roomLevel(floor, host.room);
+    const ceiling = Math.min(transition?.ceiling ?? Infinity, wallLevels(floor, wall).top);
+    if (transition?.other && ceiling - baseline < 0.12) continue;
+    const top = Math.min(lowestTop(wall.a, ax, s0, s0 + width, ceiling) - 0.02, baseline + o.sill + o.height);
+    const sill = Math.min(baseline + o.sill, top - 0.1);
     // looking at the wall from the room, "right" is (toRoom.z, -toRoom.x)
     const right: Vec2 = [toRoom[1], -toRoom[0]];
     const startIsLeft = ax[0] * right[0] + ax[1] * right[1] > 0;
@@ -257,13 +271,14 @@ export function buildFloorGeometry(
   }
 
   // ---------------------------------------------------------------- wall solids
-  const cut = Math.min(floor.cut_height, floor.height);
+  const cut = Math.min(floor.cut_height, floorTop(floor) - floor.elevation);
   const wallBuf = new GeoBuffer();
   for (const wall of walls) {
     const b = wallBucket.get(wall)!;
     const ax = unit([wall.b[0] - wall.a[0], wall.b[1] - wall.a[1]]);
     const list = (spans.get(wall) ?? []).sort((p, q) => p.s0 - q.s0);
-    const H = wallHeight(wall, floor.height);
+    const levels = wallLevels(floor, wall);
+    const H = levels.top;
     // pieces along the axis, cut at every opening edge: each piece leaves out all the openings above it
     // (two windows one above the other, a window over a door), the wall fills what remains
     const pieces: { t0: number; t1: number; ranges: [number, number][] }[] = [];
@@ -275,7 +290,7 @@ export function buildFloorGeometry(
       const mid = Number.isFinite(t0) && Number.isFinite(t1) ? (t0 + t1) / 2 : Number.isFinite(t0) ? t0 + 1 : t1 - 1;
       const covering = list.filter((sp) => sp.s0 < mid && sp.s1 > mid).map((sp) => [sp.sill, sp.top] as [number, number]).sort((a, b) => a[0] - b[0]);
       const ranges: [number, number][] = [];
-      let y = -SLAB;
+      let y = levels.bottom - SLAB;
       for (const [a, b] of covering) {
         // the slab under a doorway ends just below the floor: a top at floor level fights with the room
         // floors over the gap and flickers as a strip in every passage (#290)
@@ -330,16 +345,34 @@ export function buildFloorGeometry(
   lines.p.push(...holeLines.p);
   lines.c.push(...holeLines.c);
   lines.f.push(...holeLines.f);
+  // Stair treads span the resolved opening width, and remain attached to the opening when it moves.
+  for (const t of transitions) {
+    const s = t.stair;
+    if (!s) continue;
+    const at = (u: number, n: number): Vec2 => [t.start[0] + t.axis[0] * u + s.toward[0] * n, t.start[1] + t.axis[1] * u + s.toward[1] * n];
+    const color = FLOOR_LOOK[s.room.floor_material]?.color ?? FLOOR_LOOK.wood.color;
+    for (let i = 0; i < s.count; i++) {
+      const a = s.face + s.depth * i / s.count, b = s.face + s.depth * (i + 1) / s.count;
+      const y = s.recess ? t.low + (t.high - t.low) * (i + 1) / s.count : t.high - (t.high - t.low) * i / s.count;
+      const poly = ccw([at(0, a), at(t.width, a), at(t.width, b), at(0, b)]);
+      pushPrism(wallBuf, poly, t.low - 0.02, y, color, color, { bottom: true });
+      const p = at(0, a), q = at(t.width, a);
+      lines.seg([p[0], y + 0.003, p[1]], [q[0], y + 0.003, q[1]], EDGE_TOP);
+    }
+    const landing = ccw([at(0, -t.wall.left - t.wall.right), at(t.width, -t.wall.left - t.wall.right), at(t.width, s.face), at(0, s.face)]);
+    pushPrism(wallBuf, landing, t.threshold - 0.02, t.threshold, color, color, { bottom: true });
+  }
   const spansOf = (w: Wall, keep: (sp: Span) => boolean) => (spans.get(w) ?? []).filter(keep);
   for (const e of outline.edges) {
     const b = wallBucket.get(e.wall)!;
     // base line along the floor: not across doorways
-    for (const [p, q] of subtractSpans(e, spansOf(e.wall, (sp) => sp.sill <= 0.005))) lines.seg([p[0], 0.004, p[1]], [q[0], 0.004, q[1]], EDGE_BASE);
+    const base = wallLevels(floor, e.wall).bottom;
+    for (const [p, q] of subtractSpans(e, spansOf(e.wall, (sp) => sp.sill <= base + 0.005))) lines.seg([p[0], base + 0.004, p[1]], [q[0], base + 0.004, q[1]], EDGE_BASE);
     // cut line: not where an opening crosses the cut height
     for (const [p, q] of subtractSpans(e, spansOf(e.wall, (sp) => sp.sill < cut && sp.top > cut))) lines.seg([p[0], cut, p[1]], [q[0], cut, q[1]], EDGE_CUT, CUT_OFFSET + b);
     // top line: not where an opening reaches the top; a wall below the cut height keeps its top line;
     // under a roof it follows the slope in short steps
-    const H = wallHeight(e.wall, floor.height);
+    const H = wallLevels(floor, e.wall).top;
     for (const [p, q] of subtractSpans(e, spansOf(e.wall, (sp) => sp.top >= H - 0.021))) {
       if (!roofUnder) {
         lines.seg([p[0], H, p[1]], [q[0], H, q[1]], EDGE_TOP, H <= cut + 1e-6 ? LOWER_OFFSET + b : b);
@@ -356,13 +389,13 @@ export function buildFloorGeometry(
     }
   }
   for (const c of outline.corners) {
-    const H = topAt(c.p[0], c.p[1], wallHeight(c.wall, floor.height));
-    lines.segSplit([c.p[0], 0.004, c.p[1]], [c.p[0], H, c.p[1]], EDGE_SOFT, Math.min(cut, H), wallBucket.get(c.wall)!);
+    const H = topAt(c.p[0], c.p[1], wallLevels(floor, c.wall).top);
+    lines.segSplit([c.p[0], wallLevels(floor, c.wall).bottom + 0.004, c.p[1]], [c.p[0], H, c.p[1]], EDGE_SOFT, Math.min(cut, H), wallBucket.get(c.wall)!);
   }
   for (const list of spans.values()) for (const sp of list) pushOpeningLines(lines, sp, cut);
 
   // ---------------------------------------------------------------- furniture and shadows
-  const shadow = buildShadow(outline.edges, floor.rooms, spans);
+  const shadow = buildShadow(outline.edges, floor, spans);
   pushOutdoor(wallBuf, lines, floor);
   for (const s of solar) pushModules(wallBuf, lines, s.face, s.field, floor.elevation);
 
@@ -373,7 +406,11 @@ export function buildFloorGeometry(
     const start = wallBuf.count;
     const l0 = lines.p.length / 6;
     const base = mountBase(floor, f);
-    pushFurniture(wallBuf, lines, shadow, f, base);
+    const level = roomLevelAt(floor, f.x, f.z), s0 = shadow.p.length;
+    pushFurniture(wallBuf, lines, shadow, f, base - level);
+    for (let i = start * 9 + 1; i < wallBuf.p.length; i += 3) wallBuf.p[i] += level;
+    for (let i = l0 * 6 + 1; i < lines.p.length; i += 3) lines.p[i] += level;
+    for (let i = s0 + 1; i < shadow.p.length; i += 3) shadow.p[i] += level;
     // a wardrobe or a stair reaching above the cut height is cut with the walls, so it hides nothing behind it
     if (base + f.h > cut + 0.05 || f.rotation_x || f.rotation_z) {
       cutAbove(wallBuf, start, cut, FURN_OFFSET);
@@ -570,13 +607,16 @@ function subtractSpans(e: OutlineEdge, list: Span[]): [Vec2, Vec2][] {
 }
 
 /** Strips on the floor along every wall face that borders a room (not across doorways). */
-function buildShadow(edges: OutlineEdge[], rooms: readonly Room[], spans: Map<Wall, Span[]>): GeoBuffer {
+function buildShadow(edges: OutlineEdge[], floor: Floor, spans: Map<Wall, Span[]>): GeoBuffer {
   const buf = new GeoBuffer();
   const dark = new Color(SHADOW_DARK, SHADOW_DARK, SHADOW_DARK);
   const clear = new Color(1, 1, 1);
-  const y = 0.002;
   for (const e of edges) {
-    for (const [a, b] of subtractSpans(e, (spans.get(e.wall) ?? []).filter((sp) => sp.sill <= 0.005))) {
+    const dx = e.b[0] - e.a[0], dz = e.b[1] - e.a[1], l = Math.hypot(dx, dz) || 1;
+    const probe: Vec2 = [(e.a[0] + e.b[0]) / 2 + dz / l * 0.05, (e.a[1] + e.b[1]) / 2 - dx / l * 0.05];
+    const owner = floor.rooms.find((r) => pointInPolygon(probe, r.points));
+    const level = roomLevel(floor, owner), y = level + 0.002;
+    for (const [a, b] of subtractSpans(e, (spans.get(e.wall) ?? []).filter((sp) => sp.sill <= level + 0.005))) {
       const dx = b[0] - a[0];
       const dz = b[1] - a[1];
       const l = Math.hypot(dx, dz);
@@ -584,7 +624,7 @@ function buildShadow(edges: OutlineEdge[], rooms: readonly Room[], spans: Map<Wa
       // footprints are counter-clockwise, so the right normal points away from the wall
       const n: Vec2 = [dz / l, -dx / l];
       const probe: Vec2 = [(a[0] + b[0]) / 2 + n[0] * 0.05, (a[1] + b[1]) / 2 + n[1] * 0.05];
-      if (!rooms.some((r) => r.points.length >= 3 && pointInPolygon(probe, r.points))) continue;
+      if (!floor.rooms.some((r) => r.points.length >= 3 && pointInPolygon(probe, r.points))) continue;
       const a2: Vec2 = [a[0] + n[0] * SHADOW_WIDTH, a[1] + n[1] * SHADOW_WIDTH];
       const b2: Vec2 = [b[0] + n[0] * SHADOW_WIDTH, b[1] + n[1] * SHADOW_WIDTH];
       // the layer is drawn double-sided, so the winding does not matter
@@ -602,7 +642,7 @@ export function stairHoles(floors: readonly Floor[], floor: Floor): Vec2[][] {
   const below = floors.filter((f) => f.elevation < floor.elevation).sort((p, q) => q.elevation - p.elevation)[0];
   if (!below) return mergeHoles(own);
   const stairs = below.furniture
-    .filter((f) => (STAIR_TYPES.has(f.type) || packItem(f.type)?.hole) && below.elevation + f.h >= floor.elevation - 0.3)
+    .filter((f) => (STAIR_TYPES.has(f.type) || packItem(f.type)?.hole) && below.elevation + mountBase(below, f) + f.h >= floor.elevation + roomLevelAt(floor, f.x, f.z) - 0.3)
     .map(furnitureFootprint);
   // overlapping openings become one outline (an L-shaped stairwell made of two)
   return mergeHoles([...own, ...stairs]);

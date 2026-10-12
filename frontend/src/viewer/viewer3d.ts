@@ -46,7 +46,7 @@ import {
 import type { Building, Floor, Furniture, Room, StartView } from "../model.ts";
 import { furnitureTransform, rotateFurniturePositions } from "../furniture-transform.ts";
 import { recolorLamps, SHADE_SENTINEL, shadeFactors } from "./lamp-colors.ts";
-import { centroid, pointInPolygon, openingStyle, WALL_LAMP_Y } from "../model.ts";
+import { roomCeilingAt, roomLevel, roomLevelAt, floorTop, centroid, pointInPolygon, openingStyle, WALL_LAMP_Y } from "../model.ts";
 import { roofRider, roofUnderAt, sectionCutsBelow } from "../roof-sections.ts";
 import { buildFloorGeometry, SLAB, stairHoles, type FloorGeometry } from "./build.ts";
 import { OrbitControls, type OrbitView } from "./controls.ts";
@@ -758,7 +758,7 @@ export class FloorplanViewer {
     const xs = room.points.map((p) => p[0]);
     const zs = room.points.map((p) => p[1]);
     const size = new Vector3(Math.max(...xs) - Math.min(...xs), fv.floor.cut_height, Math.max(...zs) - Math.min(...zs));
-    this.controls.flyTo({ target: new Vector3(cx, fv.floor.elevation + fv.ty + 0.3, cz), radius: Math.max(4, this.distanceFor(size) * 1.05), phi: 0.72 });
+    this.controls.flyTo({ target: new Vector3(cx, fv.floor.elevation + fv.ty + roomLevel(fv.floor, room) + 0.3, cz), radius: Math.max(4, this.distanceFor(size) * 1.05), phi: 0.72 });
   }
 
   setWallMode(mode: WallMode): void {
@@ -1561,7 +1561,7 @@ export class FloorplanViewer {
         downlight: [ceiling - 0.03, "spot"],
         spot: [ceiling - h, "spot"],
         panel: [ceiling - 0.05, "ceiling"],
-        pendant: [Math.max(0.5, ceiling - h), "pendant"],
+        pendant: [Math.max(base + 0.5, ceiling - h), "pendant"],
         floor: [base + h - 0.15, "omni"],
         uplight: [base + h, "up"],
         table: [base + h - 0.1, "omni"],
@@ -1729,7 +1729,7 @@ export class FloorplanViewer {
       // an attic floor: its walls end under the roof sections above it
       // every floor whose ceiling lies above a section's base is cut by the slopes – the attic, and the
       // floor below it when the slope already starts there (a roof that reaches down past the ceiling)
-      const sloped = (b.settings.roof.sections ?? []).some((s) => sectionCutsBelow(s, floor.elevation + floor.height));
+      const sloped = (b.settings.roof.sections ?? []).some((s) => sectionCutsBelow(s, floorTop(floor)));
       const roofUnder = sloped
         ? (x: number, z: number) => {
             const y = roofUnderAt(b, x, z);
@@ -2218,7 +2218,7 @@ export class FloorplanViewer {
         const packed = d.pack ? packItem(d.pack) : undefined;
         const [pw, pd, ph] = d.size ?? [0.3, 0.3, 0.3];
         // shades get the sentinel colour and are recoloured below
-        if (d.model) pushCameraModel(buf, d.model, d.x, d.model === "camera_ceiling" ? H : d.y, d.z, d.rotation ?? 0);
+        if (d.model) pushCameraModel(buf, d.model, d.x, d.model === "camera_ceiling" ? (d.top ?? H) : d.y, d.z, d.rotation ?? 0);
         else if (packed) pushPackLamp(buf, packed, { x: d.x, z: d.z, rotation: d.rotation ?? 0, rotation_x: d.rotation_x, rotation_z: d.rotation_z, w: pw, d: pd, h: ph, mirror: d.mirror }, d.base ?? 0, SHADE_SENTINEL);
         else pushLampModel(buf, { ...d, lamp: d.lamp! }, d.top ?? H, SHADE_SENTINEL);
         // keyed by the furniture: two lamps may share one light (one switch for two strips)
@@ -2278,6 +2278,9 @@ export class FloorplanViewer {
       const reach = 1 / Math.tan(el);
       for (const info of fv.geo.openings) {
         if (info.opening.type !== "window" || !info.exterior) continue;
+        const room = fv.floor.rooms.find((r) => r.id === info.opening.room_id);
+        if (!room || room.points.length < 3) continue;
+        const ground = roomLevel(fv.floor, room);
         const out: [number, number] = [-info.toRoom[0], -info.toRoom[1]];
         const facing = out[0] * toSun[0] + out[1] * toSun[1];
         if (facing < 0.05) continue;
@@ -2285,10 +2288,10 @@ export class FloorplanViewer {
         const top = info.top - (st?.cover ?? 0) * (info.top - info.sill);
         if (top - info.sill < 0.05) continue;
         const at = (s: number, y: number) => {
-          const d = Math.min(7, y * reach);
+          const d = Math.min(7, (y - ground) * reach);
           return [
             info.start[0] + info.axis[0] * s + info.toRoom[0] * info.faceRoom - toSun[0] * d,
-            0.02,
+            ground + 0.02,
             info.start[1] + info.axis[1] * s + info.toRoom[1] * info.faceRoom - toSun[1] * d,
           ];
         };
@@ -2297,9 +2300,7 @@ export class FloorplanViewer {
         const far = near.clone().multiplyScalar(0.45);
         // the patch stays inside the window's room: it is laid in small cells, and only cells whose
         // centre lies in the room are drawn (so it never crosses walls or leaves the house)
-        const room = fv.floor.rooms.find((r) => r.id === info.opening.room_id);
-        if (!room || room.points.length < 3) continue;
-        const rows = Math.max(1, Math.ceil(Math.min(7, top * reach) / 0.25));
+        const rows = Math.max(1, Math.ceil(Math.min(7, (top - ground) * reach) / 0.25));
         const cols = Math.max(1, Math.ceil(info.width / 0.3));
         for (let i = 0; i < rows; i++) {
           const y0 = info.sill + ((top - info.sill) * i) / rows;
@@ -2353,7 +2354,7 @@ export class FloorplanViewer {
         const near = d.motion ? new Color(0.9, 0.12, 0.16) : new Color(0.04, 0.22, 0.28);
         const far = new Color(0, 0, 0);
         const n = Math.max(4, Math.round(half / 0.15));
-        const y = 0.015;
+        const y = roomLevelAt(fv.floor, d.x, d.z) + 0.015;
         // the wedge ends at the first wall in each direction: a camera does not see through walls
         const walls = fv.geo.walls2d;
         const reachAt = (t: number): number => {
@@ -2395,7 +2396,7 @@ export class FloorplanViewer {
         downlight: Ht - 0.03,
         spot: Ht - h,
         panel: Ht - 0.03,
-        pendant: Math.max(0.4, Ht - h) + 0.08,
+        pendant: Math.max(base + 0.4, Ht - h) + 0.08,
         floor: base + h - 0.15,
         uplight: base + h,
         table: base + h - 0.09,
@@ -2723,7 +2724,7 @@ export class FloorplanViewer {
   }
 
   private buildOpenings(fv: FloorView): void {
-    const parts = buildOpeningParts(fv.geo.openings, fv.openings, Math.min(fv.floor.cut_height, fv.floor.height));
+    const parts = buildOpeningParts(fv.geo.openings, fv.openings, Math.min(fv.floor.cut_height, floorTop(fv.floor) - fv.floor.elevation));
     fv.frameTris = parts.frameTris;
     fv.glassTris = parts.glassTris;
     fv.blindTris = parts.blindTris;
@@ -2768,8 +2769,8 @@ export class FloorplanViewer {
       const y0 = fv.floor.elevation + fv.ty;
       for (const room of fv.floor.rooms) {
         for (const [x, z] of room.points) {
-          box.expandByPoint(new Vector3(x, y0, z));
-          box.expandByPoint(new Vector3(x, y0 + fv.floor.height, z));
+          box.expandByPoint(new Vector3(x, y0 + roomLevel(fv.floor, room), z));
+          box.expandByPoint(new Vector3(x, y0 + floorTop(fv.floor) - fv.floor.elevation, z));
         }
       }
     }
@@ -3117,7 +3118,7 @@ export class FloorplanViewer {
     if (!fv || !f) return;
     const x = this.grab?.id === f.id ? this.grab.x : f.x;
     const z = this.grab?.id === f.id ? this.grab.z : f.z;
-    const H = fv.floor.height;
+    const H = roomCeilingAt(fv.floor, f.x, f.z);
     // a spot lowered by hand stands at its height above the floor like a wall item
     const hanging = ["lamp_ceiling", "lamp_downlight", "lamp_spot", "lamp_panel", "lamp_pendant"].includes(f.type) && f.mount_y == null;
     const h = Math.max(0.1, f.type === "lamp_pendant" ? 0.3 : f.h);
@@ -3353,7 +3354,7 @@ export class FloorplanViewer {
       if (r.group.parent !== fv.group) fv.group.add(r.group);
       if (dt > 0) active = stepRobot(r.motion, r.info, dt) || active;
       else active ||= r.info.mode === "cleaning" || r.info.mode === "returning";
-      r.group.position.set(r.motion.pos[0], 0, r.motion.pos[1]);
+      r.group.position.set(r.motion.pos[0], roomLevelAt(fv.floor, r.motion.pos[0], r.motion.pos[1]), r.motion.pos[1]);
       r.group.rotation.y = r.motion.heading;
     }
     if (!active) this.robotLast = 0;
@@ -3437,7 +3438,7 @@ export class FloorplanViewer {
     const ceiling = d.model === "camera_ceiling";
     // tilt below the horizon; the orbit's polar angle then is 90 degrees minus the tilt (kept inside the orbit's limits)
     const tilt = Math.min(1.45, Math.max(0.22, (d.tilt ?? (ceiling ? 65 : 20)) * DEG));
-    const y = fv.floor.elevation + fv.ty + (ceiling ? fv.floor.height - 0.1 : d.y);
+    const y = fv.floor.elevation + fv.ty + (ceiling ? (d.top ?? fv.floor.height) - 0.1 : d.y);
     const dir = new Vector3(-Math.sin(a) * Math.cos(tilt), -Math.sin(tilt), Math.cos(a) * Math.cos(tilt));
     this.controls.flyTo({ target: new Vector3(d.x, y, d.z).addScaledVector(dir, 3.15), radius: 3, phi: Math.PI / 2 - tilt, theta: Math.atan2(Math.sin(a), -Math.cos(a)) }, 900);
     return true;
@@ -3697,7 +3698,7 @@ export class FloorplanViewer {
           this.place(rp.pin, null);
           continue;
         }
-        v.set(rp.cx, y, rp.cz).project(this.camera);
+        v.set(rp.cx, y + roomLevel(fv.floor, rp.room), rp.cz).project(this.camera);
         const off = v.z > 1 || Math.abs(v.x) > 1.1 || Math.abs(v.y) > 1.1;
         this.place(rp.pin, off ? null : `translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px) translate(-50%, -50%)`);
       }
