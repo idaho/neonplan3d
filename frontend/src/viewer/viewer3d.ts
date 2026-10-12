@@ -1549,12 +1549,13 @@ export class FloorplanViewer {
       const room = zoneOf(fv.lightZones, ri);
       const [w, , h] = d.size ?? (d.lamp ? LAMP_SIZE[d.lamp] : [0.3, 0.3, 0.3]);
       const base = d.base ?? 0;
+      const ceiling = d.top ?? H;
       const kinds: Record<LampModel, [number, LightKind]> = {
-        ceiling: [H - 0.12, "ceiling"],
-        downlight: [H - 0.03, "spot"],
-        spot: [H - h, "spot"],
-        panel: [H - 0.05, "ceiling"],
-        pendant: [Math.max(0.5, H - h), "pendant"],
+        ceiling: [ceiling - 0.12, "ceiling"],
+        downlight: [ceiling - 0.03, "spot"],
+        spot: [ceiling - h, "spot"],
+        panel: [ceiling - 0.05, "ceiling"],
+        pendant: [Math.max(0.5, ceiling - h), "pendant"],
         floor: [base + h - 0.15, "omni"],
         uplight: [base + h, "up"],
         table: [base + h - 0.1, "omni"],
@@ -2182,7 +2183,7 @@ export class FloorplanViewer {
     const shapeSig =
       this.wallMode +
       (this.lowQuality ? "L" : this.highQuality ? "H" : "M") +
-      lamps.map((d) => `${d.id},${d.lamp ?? d.model},${d.variant},${d.x},${d.z},${d.y},${d.rotation ?? 0},${d.roll ?? 0},${d.upright ? 1 : 0},${d.size?.join("/")},${d.base ?? 0},${d.pack ?? ""},${d.mirror ? 1 : 0}`).join(";");
+      lamps.map((d) => `${d.id},${d.lamp ?? d.model},${d.variant},${d.x},${d.z},${d.y},${d.rotation ?? 0},${d.roll ?? 0},${d.upright ? 1 : 0},${d.size?.join("/")},${d.base ?? 0},${d.top ?? ""},${d.pack ?? ""},${d.mirror ? 1 : 0}`).join(";");
     const glows = lamps.map((d) => this.glowOf(d));
     const colorSig = lamps.map((d, i) => `${flash(d.id)},${glows[i] ? `${glows[i]!.level.toFixed(3)},${glows[i]!.color.map((c) => c.toFixed(3)).join("/")}` : "off"}`).join(";");
     if (shapeSig !== fv.lampShapeSig || !fv.lampMesh.geometry.getAttribute("position")) {
@@ -3098,7 +3099,7 @@ export class FloorplanViewer {
     // a spot lowered by hand stands at its height above the floor like a wall item
     const hanging = ["lamp_ceiling", "lamp_downlight", "lamp_spot", "lamp_panel", "lamp_pendant"].includes(f.type) && f.mount_y == null;
     const h = Math.max(0.1, f.type === "lamp_pendant" ? 0.3 : f.h);
-    const y0 = packItem(f.type) || f.type === "lamp_wall" || f.type === "led_strip"
+    const y0 = f.mount_y != null || packItem(f.type) || f.type === "lamp_wall" || f.type === "led_strip"
       ? mountBase(fv.floor, f)
       : hanging
         ? f.type === "lamp_pendant"
@@ -3978,10 +3979,11 @@ export function createViewer(host: HTMLElement, options?: ViewerOptions): Floorp
 /** Model of a lamp into a buffer (3D view and furniture previews); `H` is the ceiling height. */
 export function pushLampModel(
   buf: GeoBuffer,
-  d: Pick<DeviceMarker, "x" | "z" | "size" | "base" | "rotation" | "variant" | "roll" | "upright"> & { lamp: LampModel },
+  d: Pick<DeviceMarker, "x" | "z" | "size" | "base" | "top" | "rotation" | "variant" | "roll" | "upright"> & { lamp: LampModel },
   H: number,
   shadeCol: number,
 ): void {
+  H = d.top ?? H;
   const [w, dd, h] = d.size ?? LAMP_SIZE[d.lamp];
   const base = d.base ?? 0;
   const ang = (d.rotation ?? 0) * DEG;

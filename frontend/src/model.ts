@@ -324,7 +324,7 @@ export interface RoofSection {
   /** Sides a and b swapped: side a is the high coordinate (a pent roof then rises the other way). */
   flip?: boolean;
   /**
-   * A flat roof as a free shape: its footprint polygon (plan coordinates at the outer wall faces, the
+   * A roof's free footprint polygon (plan coordinates at the outer wall faces, the
    * overhang comes on top); x0 … z1 then hold the polygon's bounding box.
    */
   points?: Vec2[] | null;
@@ -645,6 +645,8 @@ export interface CarLinks {
 
 /** Area outside the house (lawn, terrace, pool, hedge …), drawn like a room. */
 export interface OutdoorArea {
+  /** Retained for compatibility; corner editing is now free by default for every outdoor area. */
+  freeform?: boolean;
   id: string;
   type: OutdoorType;
   points: Vec2[];
@@ -949,7 +951,7 @@ const SURFACES = new Set<string>([
  * Positions of a rows × cols grid of lamps in a room: cells of equal size over the room's bounding box,
  * one lamp per cell centre that lies inside the room (L-shaped rooms simply leave cells out).
  */
-export function spotGrid(room: Room, rows: number, cols: number, inset = 0): Vec2[] {
+export function spotGrid(room: Pick<Room, "points">, rows: number, cols: number, inset = 0): Vec2[] {
   const b = bounds(room.points);
   const w = b.x1 - b.x0 - 2 * inset;
   const d = b.z1 - b.z0 - 2 * inset;
