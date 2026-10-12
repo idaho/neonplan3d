@@ -126,6 +126,7 @@ async def test_opening_fields_get_defaults(hass: HomeAssistant, hass_ws_client) 
     got = (await client.receive_json())["result"]["building"]["floors"][0]["openings"]
     assert got[0] == {
         **opening,
+        "steps": None,
         "hinge": "left",
         "leaves": 1,
         "swing": "in",
@@ -147,6 +148,7 @@ async def test_opening_fields_get_defaults(hass: HomeAssistant, hass_ws_client) 
         "tilt_offset": None,
         "tilt_invert": False,
         "contact_invert": False,
+        "rain_ignore": False,
         "shut": False,
         "wall": None,
         "mark": None,
@@ -339,6 +341,8 @@ async def test_outdoor_roof_and_north_get_defaults(hass: HomeAssistant, hass_ws_
     assert got["floors"][0]["outdoor"][0]["slope"] == 0
     assert got["floors"][0]["outdoor"][0]["slope_dir"] == "x"
     assert got["floors"][0]["outdoor"][0]["cut"] is False
+    assert got["floors"][0]["outdoor"][0]["above"] is False
+    assert got["floors"][0]["outdoor"][0]["pool"] is None
     assert got["floors"][0]["ha_floor"] is None
     assert got["floors"][0]["rooms"][0]["panel"] == []
 
@@ -347,6 +351,68 @@ async def test_outdoor_roof_and_north_get_defaults(hass: HomeAssistant, hass_ws_
     cleared["floors"][0]["outdoor"][0].update({"type": "pergola", "offset": None, "slope": None})
     await client.send_json_auto_id({"type": "neonplan3d/building/save", "building": cleared})
     assert (await client.receive_json())["success"]
+
+    # Pool Pro: an above-ground pool with its entities
+    pool = copy.deepcopy(building)
+    pool["floors"][0]["outdoor"][0].update(
+        {
+            "type": "pool",
+            "above": True,
+            "height": 1.2,
+            "pool": {"temperature": "sensor.pool_temp", "heater": "climate.pool", "cover": "none"},
+        }
+    )
+    await client.send_json_auto_id({"type": "neonplan3d/building/save", "building": pool})
+    assert (await client.receive_json())["success"]
+    await client.send_json_auto_id({"type": "neonplan3d/building/get"})
+    saved = (await client.receive_json())["result"]["building"]["floors"][0]["outdoor"][0]
+    assert saved["above"] is True
+    assert saved["pool"]["heater"] == "climate.pool"
+
+    # Pool Pro: ports and pipes on the pool, the six-way valve and a closed ball valve on the devices
+    plumbing = copy.deepcopy(pool)
+    plumbing["floors"][0]["outdoor"][0]["pool"].update(
+        {
+            "ports": [{"id": "sk", "kind": "skimmer", "x": 0.5, "z": 0}, {"id": "in", "kind": "inlet", "x": 1, "z": 1}],
+            "pipes": [
+                {"id": "p1", "from": "port:sk", "to": "port:in", "floor_id": "eg", "points": [[2, 2]], "height": 0.4},
+                # laid on a wall: a height per point, a closed ball valve, ending at a T-piece
+                {
+                    "id": "p2",
+                    "from": "port:sk",
+                    "to": "joint:t1",
+                    "floor_id": "eg",
+                    "points": [[3, 0], [3, 0], [4, 0]],
+                    "heights": [-0.3, 0.8, None],
+                    "fittings": [{"id": "v1", "kind": "valve", "at": 1.5, "open": False}],
+                },
+            ],
+            "joints": [
+                {"id": "t1", "x": 4, "z": 0, "y": 0.8},
+                {
+                    "id": "h1",
+                    "kind": "wall",
+                    "name": "Loch Einläufe",
+                    "x": 1,
+                    "z": 0,
+                    "y": 0.4,
+                    "nx": 0,
+                    "nz": 1,
+                    "depth": 0.3,
+                },
+            ],
+        }
+    )
+    await client.send_json_auto_id({"type": "neonplan3d/building/save", "building": plumbing})
+    assert (await client.receive_json())["success"]
+    await client.send_json_auto_id({"type": "neonplan3d/building/get"})
+    got_pool = (await client.receive_json())["result"]["building"]["floors"][0]["outdoor"][0]["pool"]
+    assert got_pool["pipes"][0]["points"] == [[2, 2]]
+    assert got_pool["pipes"][1]["heights"] == [-0.3, 0.8, None]
+    assert got_pool["pipes"][1]["fittings"][0]["open"] is False
+    assert got_pool["joints"][0]["y"] == 0.8
+    assert got_pool["joints"][1]["name"] == "Loch Einläufe"
+    assert got_pool["ports"][0]["kind"] == "skimmer"
 
     bad = copy.deepcopy(building)
     bad["floors"][0]["outdoor"][0]["type"] = "volcano"

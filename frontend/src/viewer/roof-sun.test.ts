@@ -49,6 +49,15 @@ test("blinds shrink and eliminate the skylight patch; clouds dim it", () => {
   assert.ok(Math.max(...render(0, 0.8).c) < Math.max(...open.c));
 });
 
+test("skylight sunlight lands on a raised room floor", () => {
+  const { b, floor } = fixture();
+  floor.rooms[0].elevation = floor.elevation + 0.6;
+  const buf = new GeoBuffer();
+  appendRoofSun(buf, b, floor, { elevation: 70, azimuth: 180 }, 0, new Map());
+  assert.ok(buf.count > 0);
+  for (let i = 1; i < buf.p.length; i += 3) assert.ok(Math.abs(buf.p[i] - 0.62) < 1e-6);
+});
+
 test("no sunlight at night, in heavy cloud, behind the slope, through floor holes or on a different floor", () => {
   const { b, floor } = fixture();
   for (const [elevation, azimuth, cloud] of [[0,180,0],[70,180,1],[5,0,0]]) {

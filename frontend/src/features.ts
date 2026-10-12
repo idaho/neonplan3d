@@ -4,10 +4,34 @@
  */
 import { getPacks } from "./packs.ts";
 
-export type Feature = "camera_cockpit" | "weather" | "screens" | "energy_pro" | "sound" | "auto_pro" | "time_travel" | "fridge_smart";
+export type Feature = "camera_cockpit" | "weather" | "screens" | "energy_pro" | "sound" | "auto_pro" | "time_travel" | "pool" | "fridge_smart";
 
 /** The add-ons shown on the extensions page (sold in the shop). */
-export const FEATURES: readonly Feature[] = ["camera_cockpit", "weather", "screens", "energy_pro", "sound", "auto_pro", "time_travel"];
+export const FEATURES: readonly Feature[] = ["camera_cockpit", "weather", "screens", "energy_pro", "sound", "auto_pro", "time_travel", "pool"];
+/** Free features built but not released yet (no pack unlocks them; only the lab switch shows them). */
+export type FreeFeature = "diagnostics";
+export type Gated = Feature | FreeFeature;
+
+/**
+ * Pro add-ons (and free features) built but not released yet: they show nowhere (extensions page, teasers) unless they are
+ * unlocked (the tester has the pack) or the lab switch is on (localStorage "neonplan3d.lab" = "1").
+ * A release takes a feature off this list.
+ */
+export const UNRELEASED: readonly Gated[] = ["pool", "diagnostics"];
+
+export function labOn(): boolean {
+  try {
+    return localStorage.getItem("neonplan3d.lab") === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Whether an add-on may be shown and advertised: released, or unlocked, or the lab switch is on. */
+export function released(feature: Gated): boolean {
+  return !UNRELEASED.includes(feature) || (feature !== "diagnostics" && hasFeature(feature)) || labOn();
+}
+
 /** Features unlocked by a pack but not listed anywhere (exclusive items). */
 const HIDDEN: readonly Feature[] = ["fridge_smart"];
 
@@ -35,6 +59,7 @@ const MANUAL_FEATURE: Record<string, { de: string; en: string }> = {
   sound: { de: "pro-erweiterungen/#65-klang-kino", en: "pro-add-ons/#65-sound-cinema" },
   auto_pro: { de: "pro-erweiterungen/#66-auto-pro", en: "pro-add-ons/#66-auto-pro" },
   time_travel: { de: "pro-erweiterungen/#67-zeitreise", en: "pro-add-ons/#67-time-travel" },
+  pool: { de: "pro-erweiterungen/#68-pool-pro", en: "pro-add-ons/#68-pool-pro" },
   extensions: { de: "erweiterungen-shop-moebel-packs/", en: "extensions-shop-furniture-packs/" },
 };
 

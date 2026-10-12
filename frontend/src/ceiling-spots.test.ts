@@ -43,6 +43,15 @@ test("flat slabs mount at their underside, not on top of the roof", () => {
   }
 });
 
+test("roof raster over a raised room subtracts the room level exactly once", () => {
+  const raised = structuredClone(floor);
+  raised.rooms = [{ id: "r", name: "Raised", area_id: null, points, floor_material: "wood", elevation: floor.elevation + 0.6 }];
+  const flat = { ...roof, shape: "flat" as const };
+  for (const f of ceilingSpots({ id: roof.id, points, roof: flat }, options, raised, id)) {
+    near(f.mount_y! + 0.6 + f.h + raised.elevation, flat.eave_a);
+  }
+});
+
 test("a transparent canopy has no solid slab thickness and its lamps can be adjusted individually", () => {
   const open = { ...roof, open: true };
   const geometry = sectionGeometry(open, { u0: 0, u1: 0, a: 0, b: 0 });

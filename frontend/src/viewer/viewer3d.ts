@@ -47,6 +47,7 @@ import type { Building, Floor, Furniture, Room, StartView } from "../model.ts";
 import { furnitureTransform, rotateFurniturePositions } from "../furniture-transform.ts";
 import { recolorLamps, SHADE_SENTINEL, shadeFactors } from "./lamp-colors.ts";
 import { roomCeilingAt, roomLevel, roomLevelAt, floorTop, centroid, pointInPolygon, openingStyle, WALL_LAMP_Y } from "../model.ts";
+import { clampIntoRoom } from "../geometry/snap.ts";
 import { roofRider, roofUnderAt, sectionCutsBelow } from "../roof-sections.ts";
 import { buildFloorGeometry, SLAB, stairHoles, type FloorGeometry } from "./build.ts";
 import { OrbitControls, type OrbitView } from "./controls.ts";
@@ -55,11 +56,17 @@ import { roofPresentation, makeRoofGlass } from "./roof-visibility.ts";
 import { appendRoofSun } from "./roof-sun.ts";
 import { makeSolarFacing, solarFacingGeometry } from "./solar-facing.ts";
 import { pushCameraModel, pushPackGlow, pushPackLamp, screenRect, pushFridgeDoors } from "./furniture.ts";
+import { pushPipeTube, type PipeTube } from "./pipes.ts";
+// the walk through the house at eye height (lives with the viewer it drives)
+export { FloorMap, WalkCamera, type WalkState } from "./walk.ts";
+
+export type { PipeTube };
 import { mountBase, packItem, setPacks, type FurniturePack } from "../packs.ts";
 import { withVehicles } from "../parking.ts";
 import { buildRoof, type RoofWindowState } from "./roof.ts";
 import { GROUND, groundFace, groundFloor, roofFaces, wallFaces } from "../solar.ts";
 import { buildSolarLive, solarLiveMaterial, writeSolarLevels, type SolarLive } from "./solar-live.ts";
+import { buildPools, disposePools, type PoolPiece } from "./pool-water.ts";
 import { accentOnUniform, accentUniform, parseAccent, lineBlending, themed, themeIndex, type Theme, type ThemeUniform } from "./theme.ts";
 
 export type { Theme } from "./theme.ts";
@@ -290,6 +297,8 @@ export interface ViewerStats {
   /** The low quality level is active (tablet). */
   low: boolean;
   pixelRatio: number;
+  /** The WebGL renderer's name (read once; only its rough class leaves the browser, with opt-in reports). */
+  gpu: string | null;
 }
 
 /** Extra gap between floors in the pulled-apart house view (metres). */
@@ -389,6 +398,9 @@ interface FloorView {
   trailMesh: Mesh;
   /** Doors of smart fridges (they swing open with their sensors). */
   fridgeMesh: Mesh;
+  /** Pool Pro: the pipes as tubes. */
+  pipeMesh: Mesh;
+  pipeSig: string;
   /** Triangle ranges of lamps (entity ids), furniture walls mesh and openings, for tapping. */
   lampTris: { id: string; start: number; end: number }[];
   /** Triangle range of every camera's field-of-view wedge, by device id (a tap on it hits the camera). */
@@ -403,6 +415,8 @@ interface FloorView {
   screenSig: string;
   /** Klang & Kino: rings around playing speakers and lines between grouped ones (made when first needed). */
   soundGroup?: Group;
+  /** Pool Pro: the living water and covers of the pools on this floor. */
+  poolGroup?: Group;
   /** Pictures shown on lit screens, by furniture id. */
   screenPics: Map<string, { url: string; mesh: Mesh; texture: Texture | null }>;
   /** Content signatures: meshes are only rebuilt when these change. */
@@ -463,6 +477,7 @@ export class FloorplanViewer {
   /** Lamps flashing after a tap (entity id -> end time). */
   private flashes = new Map<string, number>();
   private flows: FlowPiece[] = [];
+  private pipes: PipeTube[] = [];
   /** Editor: things on surfaces (solar fields, roof windows) are grabbed and moved with a ray from the camera. */
   private surfaceGrab: SurfaceGrab | null = null;
   private surfaceDragging = false;
@@ -478,6 +493,9 @@ export class FloorplanViewer {
   private flowActive = false;
   /** Klang & Kino: the sound sources and whether any plays (then the rings animate). */
   private sound: SoundSource[] = [];
+  private pools: PoolPiece[] = [];
+  /** A filter pump runs: the water moves (frames keep coming like for the energy flow). */
+  private poolActive = false;
   private soundActive = false;
   private flowTimer: ReturnType<typeof setTimeout> | undefined;
   private persons: PersonPin[] = [];
@@ -567,8 +585,19 @@ export class FloorplanViewer {
   private selectedDevice: string | null = null;
   private pendingDevice: string | null = null;
   private deviceGrab: { id: string; floorId: string; offset: [number, number]; x: number; z: number; moved: boolean } | null = null;
-  private grab: { floorId: string; id: string; offset: [number, number]; x: number; z: number; moved: boolean } | null = null;
+  private grab: {
+    floorId: string;
+    id: string;
+    offset: [number, number];
+    x: number;
+    z: number;
+    moved: boolean;
+    plane?: number;
+    /** Seen almost level: the pointer's way on screen moves the item (a plane gives huge jumps there). */
+    screen?: { x0: number; y0: number; fx: number; fz: number; right: [number, number]; fwd: [number, number]; perPx: number; gain: number };
+  } | null = null;
   private ghost: LineSegments | null = null;
+  private selectedSet: string[] = [];
   private theme: Theme = "neon";
   private readonly themeUniform: ThemeUniform = { value: 0 };
   private sun: SunState | null = null;
@@ -588,6 +617,7 @@ export class FloorplanViewer {
   /** The next fit keeps the camera (a floor-to-floor switch with keepView). */
   private keepNext = false;
   private fpsStart = 0;
+  private gpuName: string | null | undefined;
 
   constructor(host: HTMLElement, options: ViewerOptions = {}) {
     this.host = host;
@@ -600,7 +630,9 @@ export class FloorplanViewer {
     this.patternTexture = makePatternTexture();
     this.blindTexture = makeBlindTexture();
     this.haloTexture = makeHaloTexture();
-    this.ground = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ transparent: true, blending: AdditiveBlending, depthWrite: false }));
+    // drawn first among the solid things (not with the transparent ones after them): lawn, paths and floors
+    // cover the grid also when the view is far away (#427)
+    this.ground = new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ transparent: false, blending: AdditiveBlending, depthWrite: false }));
     this.ground.rotation.x = -Math.PI / 2;
     this.ground.renderOrder = -1;
     this.scene.add(this.ground, this.root);
@@ -879,6 +911,29 @@ export class FloorplanViewer {
     this.invalidate();
   }
 
+  /** Pool Pro: the pools' water colour, movement, heating shimmer and cover; an empty list clears them. */
+  setPools(list: PoolPiece[]): void {
+    const sig = (l: PoolPiece[]) =>
+      l.map((p) => `${p.id}:${p.floorId}:${p.points.length}:${p.points[0]?.join(",")}:${p.y.toFixed(3)}:${p.color.map((c) => c.toFixed(2)).join("/")}:${p.level.toFixed(2)}:${p.flow ? 1 : 0}:${p.heat ? 1 : 0}:${p.cover.toFixed(2)}`).join(";");
+    if (sig(list) === sig(this.pools)) return;
+    this.pools = list;
+    this.poolActive = list.some((p) => p.flow);
+    for (const fv of this.floors) this.buildPoolWater(fv);
+    this.invalidate();
+  }
+
+  private buildPoolWater(fv: FloorView): void {
+    if (fv.poolGroup) {
+      disposePools(fv.poolGroup);
+      fv.group.remove(fv.poolGroup);
+      fv.poolGroup = undefined;
+    }
+    const mine = this.pools.filter((p) => p.floorId === fv.floor.id);
+    if (!mine.length) return;
+    fv.poolGroup = buildPools(mine, this.flowTime);
+    fv.group.add(fv.poolGroup);
+  }
+
   /** Klang & Kino: rings around playing speakers, lines between grouped players; an empty list clears them. */
   setSound(list: SoundSource[]): void {
     const sig = (l: SoundSource[]) => l.map((s) => `${s.id}:${s.floorId}:${s.x},${s.z}:${s.level.toFixed(2)}:${s.playing ? 1 : 0}:${s.members.join("+")}`).join(";");
@@ -970,6 +1025,25 @@ export class FloorplanViewer {
     this.invalidate();
   }
 
+  /** Pool Pro: the pipes drawn as tubes (their water flows in the flow layer). */
+  setPipes(pipes: PipeTube[]): void {
+    this.pipes = pipes;
+    for (const fv of this.floors) this.buildPipes(fv);
+    this.invalidate();
+  }
+
+  private buildPipes(fv: FloorView): void {
+    const mine = this.pipes.filter((t) => t.floorId === fv.floor.id);
+    const sig = JSON.stringify(mine);
+    if (sig === fv.pipeSig) return;
+    fv.pipeSig = sig;
+    const buf = new GeoBuffer();
+    for (const t of mine) pushPipeTube(buf, t);
+    fv.pipeMesh.geometry.dispose();
+    fv.pipeMesh.geometry = buf.geometry();
+    fv.pipeMesh.visible = buf.count > 0;
+  }
+
   /** People in their rooms (pink markers in the floor and room views). */
   setPersons(persons: PersonPin[]): void {
     this.labelsDirty = true;
@@ -1051,6 +1125,13 @@ export class FloorplanViewer {
   selectFurniture(id: string | null): void {
     if (id && this.selectedDevice) this.selectDevice(null);
     this.selectedFurniture = id;
+    this.updateGhost();
+    this.invalidate();
+  }
+
+  /** Further pieces chosen with it (a block, a multi choice): each gets a wireframe box too. */
+  selectFurnitureSet(ids: readonly string[]): void {
+    this.selectedSet = [...ids];
     this.updateGhost();
     this.invalidate();
   }
@@ -1324,7 +1405,9 @@ export class FloorplanViewer {
   currentView(): StartView {
     const v = this.controls.view;
     const base = this.floorBase(this.floorId);
-    return { theta: v.theta, phi: v.phi, radius: v.radius, target: { x: v.target.x, y: v.target.y - base, z: v.target.z } };
+    // the camera may have turned round several times: the angle counts once round (−π … π, #416)
+    const theta = Math.atan2(Math.sin(v.theta), Math.cos(v.theta));
+    return { theta, phi: v.phi, radius: v.radius, target: { x: v.target.x, y: v.target.y - base, z: v.target.z } };
   }
 
   /** Height of a floor as it is shown now (0 for the house view). */
@@ -1657,7 +1740,9 @@ export class FloorplanViewer {
     return {
       floor: themed(new MeshBasicMaterial({ vertexColors: true }), this.themeUniform),
       pattern: patternMaterial(this.patternTexture),
-      wall: themed(makeFoldable(new MeshBasicMaterial({ vertexColors: true }), mask, "solid"), this.themeUniform),
+      // the walls sit a hair behind their glowing edges in depth: lines lying on a wall's top or face no longer
+      // flicker in and out at corners and joints as the view turns (#417)
+      wall: themed(makeFoldable(new MeshBasicMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }), mask, "solid"), this.themeUniform),
       glassWall: makeFoldable(new MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false }), mask, "glass"),
       // result = floor colour * vertex colour (white leaves the floor untouched)
       shadow: new MeshBasicMaterial({
@@ -1773,6 +1858,8 @@ export class FloorplanViewer {
       trailMesh.renderOrder = 7;
       const fridgeMesh = new Mesh(new Geometry(), materials.lamps);
       fridgeMesh.visible = false;
+      const pipeMesh = new Mesh(new Geometry(), materials.lamps);
+      pipeMesh.visible = false;
       const screenMesh = new Mesh(new Geometry(), materials.screens);
       screenMesh.visible = false;
       screenMesh.renderOrder = 5;
@@ -1809,6 +1896,7 @@ export class FloorplanViewer {
         coneMesh,
         trailMesh,
         fridgeMesh,
+        pipeMesh,
         screenMesh,
         glassWalls,
         ...(solarMesh ? [solarMesh] : []),
@@ -1871,6 +1959,8 @@ export class FloorplanViewer {
         coneMesh,
         trailMesh,
         fridgeMesh,
+        pipeMesh,
+        pipeSig: "",
         lampTris: [],
         coneTris: [],
         lampFurnTris: [],
@@ -1902,7 +1992,10 @@ export class FloorplanViewer {
       });
     }
     this.floorMap = new Map(this.floors.map((f) => [f.floor.id, f]));
-    for (const fv of this.floors) this.buildFridges(fv);
+    for (const fv of this.floors) {
+      this.buildFridges(fv);
+      this.buildPipes(fv);
+    }
     this.labelsDirty = true;
     if (this.floorId && !b.floors.some((f) => f.id === this.floorId)) this.floorId = null;
     for (const fv of this.floors) {
@@ -1912,6 +2005,8 @@ export class FloorplanViewer {
       for (const info of fv.geo.openings) fv.openings.set(info.opening.id, prev?.get(info.opening.id) ?? this.openingTargets.get(info.opening.id) ?? CLOSED);
       this.buildOpenings(fv);
       this.buildFlows(fv);
+      fv.poolGroup = undefined;
+      this.buildPoolWater(fv);
       this.buildLightSurface(fv);
       this.buildSun(fv);
     }
@@ -2282,7 +2377,9 @@ export class FloorplanViewer {
     const north = (this.building?.settings.north ?? 0) * DEG;
     // clouds take most of the sunlight
     const cloud = this.weather?.cloud ?? 0;
-    const sig = sun ? `${sun.elevation.toFixed(1)},${sun.azimuth.toFixed(1)},${north},${cloud.toFixed(2)},${[...fv.openings.values()].map((o) => (o.cover ?? 0).toFixed(2)).join(",")},${this.roofWindowsKey}` : "";
+    // rooms joined without a wall share the sunlight too: the zones belong to the patch's signature
+    const zones = lightZonesOf(fv.floor, fv.geo.openRooms);
+    const sig = sun ? `${sun.elevation.toFixed(1)},${sun.azimuth.toFixed(1)},${north},${cloud.toFixed(2)},${[...fv.openings.values()].map((o) => (o.cover ?? 0).toFixed(2)).join(",")},${zones.join(".")},${this.roofWindowsKey}` : "";
     if (sig === fv.sunSig) return;
     fv.sunSig = sig;
     const buf = new GeoBuffer();
@@ -2315,8 +2412,13 @@ export class FloorplanViewer {
         const k = 0.14 * day * Math.min(1, facing * 1.5);
         const near = new Color(1 * k, 0.82 * k, 0.55 * k);
         const far = near.clone().multiplyScalar(0.45);
-        // the patch stays inside the window's room: it is laid in small cells, and only cells whose
-        // centre lies in the room are drawn (so it never crosses walls or leaves the house)
+        // the patch stays inside the window's room – and the rooms joined to it without a wall, like the
+        // lamps' light (#455 reported): it is laid in small cells, and only cells whose centre lies in one
+        // of them are drawn (so it never crosses walls or leaves the house)
+        const ri = fv.floor.rooms.findIndex((r) => r.id === info.opening.room_id);
+        if (ri < 0 || fv.floor.rooms[ri].points.length < 3) continue;
+        const zone = zones[ri];
+        const lit = fv.floor.rooms.filter((r, i) => zones[i] === zone && Math.abs(roomLevel(fv.floor, r) - ground) < 0.001 && r.points.length >= 3).map((r) => r.points);
         const rows = Math.max(1, Math.ceil(Math.min(7, (top - ground) * reach) / 0.25));
         const cols = Math.max(1, Math.ceil(info.width / 0.3));
         for (let i = 0; i < rows; i++) {
@@ -2330,7 +2432,7 @@ export class FloorplanViewer {
             const s0 = (info.width * j) / cols;
             const s1 = (info.width * (j + 1)) / cols;
             const m = at((s0 + s1) / 2, (y0 + y1) / 2);
-            if (!pointInPolygon([m[0], m[2]], room.points)) continue;
+            if (!lit.some((pts) => pointInPolygon([m[0], m[2]], pts))) continue;
             const a = at(s0, y0);
             const b = at(s1, y0);
             const c = at(s1, y1);
@@ -2375,6 +2477,17 @@ export class FloorplanViewer {
         const y = roomLevelAt(fv.floor, d.x, d.z) + 0.015;
         // the wedge ends at the first wall in each direction: a camera does not see through walls
         const walls = fv.geo.walls2d;
+        // only the wall the camera hangs on (the nearest) is looked through – a camera just inside an outer wall
+        // looks out through it; any other wall near it, say a garden wall joining at the corner, stops it (#438)
+        const lineDist = (w: (typeof walls)[number]) => {
+          const ex = w.b[0] - w.a[0];
+          const ez = w.b[1] - w.a[1];
+          const l2 = ex * ex + ez * ez || 1;
+          const t = Math.max(0, Math.min(1, ((d.x - w.a[0]) * ex + (d.z - w.a[1]) * ez) / l2));
+          return Math.hypot(d.x - (w.a[0] + ex * t), d.z - (w.a[1] + ez * t));
+        };
+        let mount: (typeof walls)[number] | null = null;
+        for (const w of walls) if (lineDist(w) < 0.45 && (!mount || lineDist(w) < lineDist(mount))) mount = w;
         const reachAt = (t: number): number => {
           const rx = dir[0] * Math.cos(t) - dir[1] * Math.sin(t);
           const rz = dir[1] * Math.cos(t) + dir[0] * Math.sin(t);
@@ -2386,8 +2499,8 @@ export class FloorplanViewer {
             if (Math.abs(den) < 1e-9) continue;
             const s = ((w.a[0] - d.x) * ez - (w.a[1] - d.z) * ex) / den;
             const u = ((w.a[0] - d.x) * rz - (w.a[1] - d.z) * rx) / den;
-            // the wall the camera hangs on (a camera just inside an outer wall looks out through it) does not count
-            if (s > 0.45 && s < best && u >= 0 && u <= 1) best = s;
+            if (w === mount && s <= 0.45) continue;
+            if (s > 0.02 && s < best && u >= 0 && u <= 1) best = s;
           }
           return best;
         };
@@ -2940,24 +3053,47 @@ export class FloorplanViewer {
   }
 
   /** Furniture item (or lamp) under a screen point, with the floor it is on. */
-  private furnitureAt(x: number, y: number): { fv: FloorView; id: string } | null {
+  private furnitureAt(x: number, y: number): { fv: FloorView; id: string; y: number } | null {
     const ray = this.rayAt(x, y);
     const floors = this.activeFloors();
-    const meshes = floors.flatMap((f) => [f.lampMesh, f.wallMesh].filter((m) => m.visible));
+    // a TV's screen and its picture, a smart fridge's doors are meshes of their own: they belong to the item too
+    const extra = (f: FloorView) => [f.screenMesh, f.fridgeMesh, ...[...f.screenPics.values()].map((p) => p.mesh)];
+    const meshes = floors.flatMap((f) => [f.lampMesh, f.wallMesh, ...extra(f)].filter((m) => m.visible));
     for (const hit of ray.intersectObjects(meshes, false)) {
       if (hit.faceIndex == null) continue;
-      const fv = floors.find((f) => f.group === hit.object.parent)!;
+      const fv = floors.find((f) => f.group === hit.object.parent || extra(f).includes(hit.object as Mesh))!;
+      if (!fv) continue;
+      if (hit.object !== fv.lampMesh && hit.object !== fv.wallMesh) {
+        const id = this.furnitureNear(fv, hit.point.x, hit.point.z);
+        if (id) return { fv, id, y: hit.point.y };
+        continue;
+      }
       const list = hit.object === fv.lampMesh ? fv.lampFurnTris : fv.geo.furnitureTris;
       const id = list.find((r) => hit.faceIndex! >= r.start && hit.faceIndex! < r.end)?.id;
-      if (id) return { fv, id };
+      if (id) return { fv, id, y: hit.point.y };
     }
     return null;
   }
 
-  /** Point on a floor's plane under a screen point. */
-  private floorPoint(fv: FloorView, x: number, y: number): [number, number] | null {
+  /** The item whose footprint (a little grown: a screen stands in front of its front) holds a point, the nearest one. */
+  private furnitureNear(fv: FloorView, x: number, z: number): string | null {
+    let best: { id: string; d: number } | null = null;
+    for (const f of fv.floor.furniture) {
+      const a = f.rotation * DEG;
+      const dx = x - f.x;
+      const dz = z - f.z;
+      const u = Math.abs(dx * Math.cos(a) + dz * Math.sin(a)) - f.w / 2;
+      const v = Math.abs(-dx * Math.sin(a) + dz * Math.cos(a)) - f.d / 2;
+      const d = Math.max(u, v);
+      if (d < 0.25 && (!best || d < best.d)) best = { id: f.id, d };
+    }
+    return best?.id ?? null;
+  }
+
+  /** Point on a floor's plane under a screen point (or on a level plane at height `at`, world coordinates). */
+  private floorPoint(fv: FloorView, x: number, y: number, at?: number): [number, number] | null {
     const ray = this.rayAt(x, y);
-    const h = fv.floor.elevation + fv.y;
+    const h = at ?? fv.floor.elevation + fv.y;
     const dir = ray.ray.direction;
     if (Math.abs(dir.y) < 1e-4) return null;
     const t = (h - ray.ray.origin.y) / dir.y;
@@ -2973,6 +3109,15 @@ export class FloorplanViewer {
   /** The editor's handler for things on roof faces and walls (null: none). */
   setSurfaceGrab(grab: SurfaceGrab | null): void {
     this.surfaceGrab = grab;
+  }
+
+  /** The ray under a point of the view (world coordinates) and the furniture item there: the editor's tools on walls. */
+  pointerRay(x: number, y: number): { o: [number, number, number]; d: [number, number, number] } {
+    return this.surfaceRay(x, y);
+  }
+
+  furnitureIdAt(x: number, y: number): string | null {
+    return this.furnitureAt(x, y)?.id ?? null;
   }
 
   private surfaceRay(x: number, y: number): { o: [number, number, number]; d: [number, number, number] } {
@@ -3024,20 +3169,43 @@ export class FloorplanViewer {
       }
       return false;
     }
-    return this.grabItem(hit.fv, hit.id, x, y);
+    return this.grabItem(hit.fv, hit.id, x, y, hit.y);
   }
 
-  private grabItem(fv: FloorView, id: string, x: number, y: number): boolean {
+  /**
+   * Takes an item to drag. It moves on a level plane at the height where it was grabbed (not the floor): seen
+   * almost level (the wall view at eye height), the floor under the back of an armchair lies far behind it or
+   * above the horizon, and the grab failed – the view turned instead.
+   */
+  private grabItem(fv: FloorView, id: string, x: number, y: number, at?: number): boolean {
     const f = fv.floor.furniture.find((m) => m.id === id);
-    const p = this.floorPoint(fv, x, y);
+    // the plane stays a little below the eye: a plane at eye height gives no point at all
+    const plane = at === undefined ? undefined : Math.min(at, this.camera.position.y - 0.3);
+    const p = this.floorPoint(fv, x, y, plane);
     if (!f || !p) return false;
+    // seen almost level (the wall view at eye height, a tall piece grabbed high up), a level plane turns a few
+    // pixels into metres or none at all: then the pointer's way on screen moves the item, forward and back a
+    // little faster as the depth looks shortened
+    let screen: NonNullable<typeof this.grab>["screen"];
+    const dir = this.rayAt(x, y).ray.direction;
+    if (at !== undefined && -dir.y < 0.34) {
+      const cam = this.camera.position;
+      // forward and back: straight along the view (towards the wall it looks at), not along the pointer's ray
+      const look = this.camera.getWorldDirection(new Vector3());
+      const len = Math.hypot(look.x, look.z) || 1;
+      const fwd: [number, number] = [look.x / len, look.z / len];
+      const dist = Math.hypot(p[0] - cam.x, p[1] - cam.z, (plane ?? 0) - cam.y);
+      const h = this.renderer.domElement.getBoundingClientRect().height || 1;
+      const perPx = (2 * dist * Math.tan((this.camera.fov * Math.PI) / 360)) / h;
+      screen = { x0: x, y0: y, fx: f.x, fz: f.z, right: [-fwd[1], fwd[0]], fwd, perPx, gain: Math.min(2, 1 / Math.max(0.5, -dir.y)) };
+    }
     if (f.locked) {
       // fixed: selected, but a drag turns the view instead of moving it
       this.selectFurniture(f.id);
       this.options.onFurnitureSelect?.(f.id);
       return false;
     }
-    this.grab = { floorId: fv.floor.id, id: f.id, offset: [f.x - p[0], f.z - p[1]], x: f.x, z: f.z, moved: false };
+    this.grab = { floorId: fv.floor.id, id: f.id, offset: [f.x - p[0], f.z - p[1]], x: f.x, z: f.z, moved: false, plane, screen };
     this.selectFurniture(f.id);
     this.options.onFurnitureSelect?.(f.id);
     return true;
@@ -3097,11 +3265,20 @@ export class FloorplanViewer {
     const g = this.grab;
     const fv = g && this.floorMap.get(g.floorId);
     if (!g || !fv) return;
-    const p = this.floorPoint(fv, x, y);
+    const sc = g.screen;
+    let p: [number, number] | null;
+    if (sc) {
+      const dx = (x - sc.x0) * sc.perPx;
+      const dy = (y - sc.y0) * sc.perPx * sc.gain;
+      p = [sc.fx + sc.right[0] * dx - sc.fwd[0] * dy - g.offset[0], sc.fz + sc.right[1] * dx - sc.fwd[1] * dy - g.offset[1]];
+    } else p = this.floorPoint(fv, x, y, g.plane);
     if (!p) return;
     const grid = this.building?.settings.grid ?? 0.05;
-    g.x = Math.round((p[0] + g.offset[0]) / grid) * grid;
-    g.z = Math.round((p[1] + g.offset[1]) / grid) * grid;
+    const f = fv.floor.furniture.find((m) => m.id === g.id);
+    const gx = Math.round((p[0] + g.offset[0]) / grid) * grid;
+    const gz = Math.round((p[1] + g.offset[1]) / grid) * grid;
+    // the whole piece stays in its room: pushed against a wall it stops there
+    [g.x, g.z] = f ? clampIntoRoom(fv.floor, f, gx, gz, this.building?.settings.wall_interior ?? 0) : [gx, gz];
     g.moved = true;
     this.updateGhost();
     this.invalidate();
@@ -3130,10 +3307,26 @@ export class FloorplanViewer {
       this.scene.remove(this.ghost);
       this.ghost = null;
     }
-    const id = this.selectedFurniture;
-    const fv = id ? this.floors.find((f) => f.floor.furniture.some((m) => m.id === id)) : undefined;
-    const f = fv?.floor.furniture.find((m) => m.id === id);
-    if (!fv || !f) return;
+    const ids = [...new Set([...(this.selectedFurniture ? [this.selectedFurniture] : []), ...this.selectedSet])];
+    const lines = new LineBuffer();
+    let at: FloorView | undefined;
+    for (const id of ids) {
+      const fv = this.floors.find((q) => q.floor.furniture.some((m) => m.id === id));
+      const f = fv?.floor.furniture.find((m) => m.id === id);
+      if (!fv || !f) continue;
+      at ??= fv;
+      this.ghostBox(lines, fv, f, id === this.selectedFurniture ? new Color(0.25, 0.9, 1) : new Color(1, 0.71, 0.28));
+    }
+    if (!at) return;
+    this.ghost = new LineSegments(lines.geometry(), new LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true }));
+    this.ghost.position.y = at.floor.elevation + at.y;
+    this.ghost.renderOrder = 20;
+    this.scene.add(this.ghost);
+  }
+
+  /** The wireframe box of one piece (its front edge brighter at floor level). */
+  private ghostBox(lines: LineBuffer, fv: FloorView, f: Furniture, color: Color): void {
+    const from = lines.p.length;
     const x = this.grab?.id === f.id ? this.grab.x : f.x;
     const z = this.grab?.id === f.id ? this.grab.z : f.z;
     const H = roomCeilingAt(fv.floor, f.x, f.z);
@@ -3151,14 +3344,12 @@ export class FloorplanViewer {
     const c = Math.cos(a);
     const sn = Math.sin(a);
     const corner = (lx: number, lz: number, y: number) => [x + lx * c - lz * sn, y, z + lx * sn + lz * c];
-    const lines = new LineBuffer();
     const pts = [
       [-f.w / 2, -f.d / 2],
       [f.w / 2, -f.d / 2],
       [f.w / 2, f.d / 2],
       [-f.w / 2, f.d / 2],
     ];
-    const color = new Color(0.25, 0.9, 1);
     for (let i = 0; i < 4; i++) {
       const [ax, az] = pts[i];
       const [bx, bz] = pts[(i + 1) % 4];
@@ -3171,18 +3362,14 @@ export class FloorplanViewer {
     const pose = { ...f, x, z };
     let pivotY = y0 + f.h / 2;
     if (f.type === "led_strip") {
-      rotateFurniturePositions(lines.p, 0, { ...pose, rotation_x: f.tilt, rotation_z: f.upright ? 90 : 0 }, pivotY);
+      rotateFurniturePositions(lines.p, from, { ...pose, rotation_x: f.tilt, rotation_z: f.upright ? 90 : 0 }, pivotY);
       if (f.upright) {
         const lift = f.w / 2 - f.h / 2;
-        for (let i = 1; i < lines.p.length; i += 3) lines.p[i] += lift;
+        for (let i = from + 1; i < lines.p.length; i += 3) lines.p[i] += lift;
         pivotY += lift;
       }
     }
-    rotateFurniturePositions(lines.p, 0, pose, pivotY);
-    this.ghost = new LineSegments(lines.geometry(), new LineBasicMaterial({ vertexColors: true, depthTest: false, transparent: true }));
-    this.ghost.position.y = fv.floor.elevation + fv.y;
-    this.ghost.renderOrder = 20;
-    this.scene.add(this.ghost);
+    rotateFurniturePositions(lines.p, from, pose, pivotY);
   }
 
   private onHold(x: number, y: number): void {
@@ -3521,6 +3708,7 @@ export class FloorplanViewer {
     if (roofMoving) busy.push("roof");
     if (this.flowActive) busy.push("flow");
     if (this.soundActive) busy.push("sound");
+    if (this.poolActive) busy.push("pool");
     if (this.solarActive) busy.push("solar");
     if (this.effectTick) busy.push("effect");
     if (robotsMoving) busy.push("robot");
@@ -3576,7 +3764,7 @@ export class FloorplanViewer {
         this.invalidate();
       }, this.lowQuality ? 66 : 33);
     }
-    if (!moving && (this.flowActive || this.solarActive || this.soundActive) && !this.flowTimer) {
+    if (!moving && (this.flowActive || this.solarActive || this.soundActive || this.poolActive) && !this.flowTimer) {
       // only the energy flow (or the living modules) moves: about 30 frames per second are enough
       this.flowTimer = setTimeout(() => {
         this.flowTimer = undefined;
@@ -3789,11 +3977,24 @@ export class FloorplanViewer {
         triangles: info.triangles,
         low: this.lowQuality,
         pixelRatio: this.renderer.getPixelRatio(),
+        gpu: (this.gpuName ??= gpuNameOf(this.renderer)),
       });
       this.fpsFrames = 0;
       this.fpsStart = now;
       this.worstFrame = 0;
     }
+  }
+}
+
+/** The GPU's name as WebGL tells it (unmasked where the browser allows), or null. */
+function gpuNameOf(renderer: WebGLRenderer): string | null {
+  try {
+    const gl = renderer.getContext();
+    const ext = gl.getExtension("WEBGL_debug_renderer_info");
+    const name = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+    return typeof name === "string" ? name : null;
+  } catch {
+    return null;
   }
 }
 
@@ -4023,7 +4224,7 @@ function makeGroundTexture(): CanvasTexture {
   return tex;
 }
 
-export { furniturePreview, type PreviewItem } from "./preview.ts";
+export { furnitureFront, furniturePreview, type FrontPicture, type PreviewItem } from "./preview.ts";
 
 export function createViewer(host: HTMLElement, options?: ViewerOptions): FloorplanViewer {
   return new FloorplanViewer(host, options);

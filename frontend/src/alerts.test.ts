@@ -88,6 +88,22 @@ test("the rain warning can be switched off on its own", () => {
   assert.equal(alerts.filter((a) => a.kind === "window_rain").length, 0);
 });
 
+test("a window may stay open in the rain; a weather station's own rain sensor decides (D328, D407)", () => {
+  const { hass, b, links } = setup();
+  hass.states["weather.zuhause"].state = "rainy";
+  // the window under a canopy does not warn
+  for (const o of b.floors[0].openings) if (o.type === "window") o.rain_ignore = true;
+  assert.equal(findAlerts(hass, b, alertSources(hass, b), links).filter((a) => a.kind === "window_rain").length, 0);
+  for (const o of b.floors[0].openings) delete o.rain_ignore;
+  // the station says dry although the forecast says rainy: no warning; then it rains at the house
+  hass.states["sensor.regenrate"] = { entity_id: "sensor.regenrate", state: "0", attributes: { unit_of_measurement: "mm/h" } } as never;
+  b.settings.rain_entity = "sensor.regenrate";
+  assert.equal(findAlerts(hass, b, alertSources(hass, b), links).filter((a) => a.kind === "window_rain").length, 0);
+  hass.states["sensor.regenrate"].state = "2.4";
+  hass.states["weather.zuhause"].state = "sunny";
+  assert.equal(findAlerts(hass, b, alertSources(hass, b), links).filter((a) => a.kind === "window_rain").length, 1);
+});
+
 test("a power outage: grid sensors off, helpers on, a UPS on battery, a low mains voltage (#214)", () => {
   const st = (entity_id: string, state: string, attributes: Record<string, unknown> = {}) => ({ entity_id, state, attributes });
   assert.equal(isOutage(st("binary_sensor.netz", "off", { device_class: "power" })), true);
@@ -109,4 +125,29 @@ test("a power outage: grid sensors off, helpers on, a UPS on battery, a low main
   const alerts = findAlerts(hass, b, sources, new Map());
   assert.deepEqual(alerts.map((a) => a.kind), ["power_outage"]);
   assert.equal(alertText(hass, b, alerts[0]), "Stromausfall: Netz");
+});
+
+test("Pool Pro warns when pH or chlorine are far off or the water freezes while the pump rests", async () => {
+  const { setPacks } = await import("./packs.ts");
+  const st = (entity_id: string, state: string, attributes: Record<string, unknown> = {}) => ({ entity_id, state, attributes });
+  const hass = {
+    language: "de",
+    states: {
+      "sensor.pool_ph": st("sensor.pool_ph", "8.3"),
+      "sensor.pool_redox": st("sensor.pool_redox", "700", { unit_of_measurement: "mV" }),
+      "sensor.pool_wasser": st("sensor.pool_wasser", "2", { device_class: "temperature", unit_of_measurement: "°C" }),
+      "switch.pool_pumpe": st("switch.pool_pumpe", "off"),
+    },
+    entities: {},
+  } as unknown as HomeAssistant;
+  const b = emptyBuilding();
+  b.floors = [{ ...newFloor("eg", "EG", 0), outdoor: [{ id: "p1", type: "pool", points: [[0, 0], [4, 0], [4, 3], [0, 3]], pool: {} }] }];
+  // without the add-on no pool warnings
+  setPacks([]);
+  assert.deepEqual(findAlerts(hass, b, alertSources(hass, b), new Map()), []);
+  setPacks([{ id: "pro", name: "Pro", items: [], features: ["pool"] } as never]);
+  const alerts = findAlerts(hass, b, alertSources(hass, b), new Map());
+  assert.deepEqual(alerts.map((a) => a.kind), ["pool_ph", "pool_frost"]);
+  assert.equal(alertText(hass, b, alerts[0]), "Pool: pH 8.3");
+  setPacks([]);
 });

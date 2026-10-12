@@ -21,6 +21,16 @@ export function splitFloor() {
 }
 const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
 
+test("upstream ceiling height wins over the legacy branch alias without moving the floor", () => {
+  const f = splitFloor(), r = f.rooms[1];
+  r.ceiling_height = 4;
+  near(roomHeight(f, r), 4);
+  near(roomCeilingAt(f, 6, 2), 4.6);
+  near(roomLevel(f, r), 0.6);
+  r.ceiling_height = null;
+  near(roomHeight(f, r), 2.4);
+});
+
 test("room elevation is absolute while its height remains independent", () => {
   const f = splitFloor();
   near(roomLevel(f, f.rooms[1]), 0.6); near(roomHeight(f, f.rooms[1]), 2.4);

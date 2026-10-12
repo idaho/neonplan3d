@@ -5,7 +5,7 @@
 // The clock and the playhead follow the replay by writing to the DOM directly – no re-render per tick.
 
 import { css, html, LitElement, nothing, svg } from "lit";
-import { DISCORD_URL } from "../beta.ts";
+import { DISCORD_URL, isBeta } from "../beta.ts";
 import type { Session } from "../timetravel/entry.ts";
 import { CATEGORY, clusterEvents, groupByHour, type Category, type Cluster, type EventKind, type TTEvent } from "../timetravel/events.ts";
 import { parseMoment } from "../timetravel/playback.ts";
@@ -25,6 +25,7 @@ const icon = (d: string) => svg`<svg viewBox="0 0 24 24" width="18" height="18" 
 const COLOR: Record<EventKind, string> = {
   alarm: "#ff3b4f",
   smoke: "#ff3b4f",
+  outage: "#ffc83a",
   gas: "#ff3b4f",
   co: "#ff3b4f",
   water: "#3aa0ff",
@@ -34,6 +35,7 @@ const COLOR: Record<EventKind, string> = {
   garage: "#ffb020",
   window: "#ffd27a",
   motion: "#b48cff",
+  camera: "#e07aff",
   washer: "#4dff9a",
   robot_start: "#4dff9a",
   robot_done: "#4dff9a",
@@ -596,7 +598,7 @@ export class Fp3dTimeBar extends LitElement {
     const minutes = Math.round((s.end - s.start) / 60000);
     return html`<div class="frame"></div>
       <div class="clock" role="status" aria-live="off">
-        <span class="badge">⏪ ${t("tt_badge")} <a class="beta" href=${DISCORD_URL} target="_blank" rel="noopener" title=${t("beta_bar")}>🧪 BETA</a></span>
+        <span class="badge">⏪ ${t("tt_badge")}${isBeta("time_travel") ? html` <a class="beta" href=${DISCORD_URL} target="_blank" rel="noopener" title=${t("beta_bar")}>🧪 BETA</a>` : nothing}</span>
         ${ready
           ? // filled by onTick (written directly, many times a second while playing – no binding inside)
             html`<b class="clock-time"></b><span class="clock-ago"></span>`

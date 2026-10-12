@@ -5,7 +5,14 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from custom_components.neonplan3d.card_resource import async_ensure_card_resource, async_remove_card_resource
+from custom_components.neonplan3d.card_resource import (
+    LOADER_URL,
+    async_ensure_card_resource,
+    async_remove_card_resource,
+    loader_source,
+    remove_loader,
+    write_loader,
+)
 
 
 class FakeResources:
@@ -60,3 +67,26 @@ async def test_yaml_mode_and_old_layout() -> None:
     res = FakeResources([])
     await async_ensure_card_resource(SimpleNamespace(data={"lovelace": {"resources": res}}), URL)
     assert [i["url"] for i in res.items] == [URL]
+
+
+async def test_loader_resource_replaces_the_bundle_and_goes_on_removal() -> None:
+    """The loader in www takes the bundle's place in the resources (#461) and is removed with the integration."""
+    res = FakeResources([{"id": "a", "type": "module", "url": URL}])
+    hass = SimpleNamespace(data={"lovelace": SimpleNamespace(resources=res)})
+    loader = f"{LOADER_URL}?v=1.16.0-abc"
+    await async_ensure_card_resource(hass, loader)
+    assert [i["url"] for i in res.items] == [loader]
+    await async_remove_card_resource(hass)
+    assert res.items == []
+
+
+def test_loader_file(tmp_path) -> None:
+    """The loader imports the bundle, tries again while the card is missing, and is written and removed cleanly."""
+    text = loader_source(URL)
+    assert f'const url = "{URL}";' in text
+    assert "customElements.get(tag)" in text
+    write_loader(tmp_path, URL)
+    written = tmp_path / "neonplan3d" / "neonplan3d-loader.js"
+    assert written.read_text(encoding="utf-8") == text
+    remove_loader(tmp_path)
+    assert not (tmp_path / "neonplan3d").exists()

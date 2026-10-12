@@ -4,6 +4,79 @@ All notable changes to NeonPlan 3D. The full notes in German and English are on 
 [releases page](https://github.com/Mastershort/neonplan3d/releases). Ideas and votes:
 [Discussions → Ideas](https://github.com/Mastershort/neonplan3d/discussions/categories/ideas).
 
+## 1.17.0
+
+### New
+
+- **Furniture blocks:** Shift + click (or *Select several* on a tablet) and Shift + drag (a frame) select several pieces; move, turn about their centre, copy, fix or delete them together, or **join them into a block** – a click on any part then selects the whole kitchen or wall unit, a double click edits one part alone, *Break up block* undoes it. Blocks move together in 3D beside the plan too. Ctrl+D duplicates the selected furniture.
+- **Wall view:** blocks there too (shift-click or a frame, join, drag the whole block along the wall, *Whole block / This part only*); the side bar **Onto the wall** shows a few categories, a search and recently used pieces instead of a long list – tap a free spot on the wall and it offers only what fits that gap, cabinets built to measure taking its width. Pieces can be resized in the wall view: handles left/right (width), top and bottom (height), snapping to neighbours, width and height to type in; picture tiles in the side bar, delete button and Del key, blocks in 3D in the room too. A block with a fixed part stays put everywhere and says so, with *Release all*.
+- **Time travel for everyone:** out of the supporter beta; what a placed camera detects (motion, person, car) is an event day and night.
+
+### Fixed
+
+- **Lights:** effect names that are a light's mode (white, colour, rgb, manual, default) no longer start the colour effect in 3D (LocalTuya bulbs).
+
+## 1.16.0
+
+### New
+
+- **Walk through the house:** the 🚶 Walk button (top right) puts you at eye height into a room; drag to look, tap the floor to walk there (through doors), W A S D / arrows or a touch stick; walls stop you; `walk: false` hides it in the card.
+- **Thermostats as room temperature:** a room without its own temperature or humidity sensor takes its thermostat's `current_temperature` / `current_humidity` (room cards, heatmap, room panel); thermostats can be chosen as the room's sensor (#478).
+- **Energie Pro:** a side bar in the wall view puts the meter, inverter, home battery and wallbox straight onto the wall shown.
+
+### Fixed
+
+- **Dashboard card after a restart** stayed on "Configuration error" when opened while Home Assistant was starting: the card resource is now a loader in `www` (served from the start) that tries again; the static path is registered in `async_setup` (#461).
+- **Several speakers on one player** (Sonos group, stereo pair) all show playing (#475).
+- **Robot vacuum room:** more cleaning states, the vacuum's own room attribute as a fallback (#470).
+- **Glass card ▶/⏸** send `media_play` / `media_pause`; buttons act on pointer up or click, once (#400).
+- **Light through doors** on a wall line shared by several rooms goes into the right room (#444).
+- **Sun patches** run on into rooms joined without a wall (#455).
+- **Camera wedge** stops at a wall next to the camera (#438).
+- **Drop-down lists** keep the dark look when opened.
+
+## 1.15.0
+
+### New
+
+- **Wall view:** **▦ Wall view** in the furniture form, in the right-click menu or beside each wall under *Wall heights* shows the wall from the front with its doors, windows and the furniture on it; drag pieces along the wall and (when they hang) up or down, with dimension lines and snapping; 3D in the room (camera in the middle of the room at eye height, everything in the room, tap and drag, wheel to walk closer) or the flat front view with the furniture as a real front view; arrow keys 1 cm / Shift 10 cm; arrows left and right turn to the joining wall.
+- **Furnishing in 3D:** a dragged piece stays wholly in its room and stops at the wall (no more sliding into it and jumping on release); pulled a little away from the wall it no longer snaps back; tall pieces seen almost level (fridge, oven tower in the wall view) move forward and back evenly.
+- **Wall view:** the chosen piece shows its lock (🔒 Release / 🔓 Fix) – a fixed piece cannot be dragged, which was not visible there; in 3D a TV's screen and picture and a smart fridge's doors grab their piece too.
+- **Wall view:** turn the chosen piece by 45° or by degrees (turned at a wall it moves back into the room); after **▦ Wall view** in the toolbar a click anywhere in a room opens it (near a wall: that wall).
+
+### Fixed
+
+- **"Height above the floor"** takes at most 10 m like the backend – "40" meant as centimetres made every save fail; a stored height above it is set to 10 m when saving.
+
+## 1.14.0
+
+### New
+
+- **Energy Pro: gas and water.** In the energy balance you can choose a **gas meter** and a **water meter** (or take them over from the energy dashboard); the house card shows today's use – "Gas 2.2 m³ · Water 238 l today".
+- **A Pool tool of its own:** pools are now drawn with their own tool in the editor.
+- **Outdoor: choose what to draw first** (lawn, terrace, path …) at the top of the Outdoor tool.
+- **Pool shapes (free):** rectangular, round, oval or free, chosen before drawing; round and oval pools resize at the corners of their box (a circle stays round) or by diameter / width and depth; **above-ground pools** with their own height.
+- **Rain warning per window:** the tick **No rain warning** in a window's form – for a window under a canopy; all others still warn (idea D328 by Thundras).
+- **Rain from your own weather station:** choose a rain sensor or a rain rate (mm/h) in the settings; then the rain at the house counts instead of the forecast – for the warning and the rain in 3D (idea D407 by Kuddelsoft).
+- **Balcony:** a new outdoor type for upper floors – a thin slab at the floor's level, a see-through railing of bars with its own height, no railing along the house wall so the balcony doors stay in view (#253 by pzmd739-ui).
+- **Time travel (beta): power outages** now show as an important event on the timeline – from the sensor chosen under "Report a power outage with" (Mavyre in the beta forum).
+
+### Fixed
+
+- **Commands from glass cards** that Home Assistant refuses now show its error message at the bottom instead of failing silently (#400).
+- **A pool inside a lawn** was hidden by the lawn; every pool now cuts itself out of the area around it.
+- **Klang & Kino glass card:** ⏮, ▶/⏸ and ⏭ now act when the finger lifts – on some tablets the tap got lost while a speaker played (#400 by domodial).
+- **Full screen fills the whole screen** – an empty strip stayed at the bottom (#426 by rolandarends); **"Fill the screen"** reaches the bottom edge, also in kiosk mode without the header (#344 by djbassmind-sketch, cause found by sjess).
+- **Editor:** the lengths on upright room edges stand beside the "+" instead of under it (#431 by Maddin2020).
+- **The grid under lawns and paths** showed through when zoomed far out (#427 by 1970lexi).
+
+## 1.13.3
+
+### Fixed
+
+- **Saving a start view after several turns** failed with "… theta"; the angle now counts once round, waiting changes save again (#416 by rolandarends).
+- **Glowing edges at wall corners** no longer flicker, shorten or stick out as the view turns (#417 by rolandarends).
+
 ## 1.13.2
 
 ### New
@@ -14,6 +87,11 @@ All notable changes to NeonPlan 3D. The full notes in German and English are on 
 
 - **Ceiling height per room:** the glow points of ceiling, panel and pendant lamps sat at the floor height and floated above the lamp in a low room beside a taller one (#372 by wiesi12).
 - **Colour effects of lights that report no colour** (e.g. Nanoleaf during an effect) run through real colours instead of staying white (#373 by sjess).
+- **Ceiling height per room above the floor height:** a vaulted room open to the roof (e.g. 4.5 m in an attic of 2.35 m) – its pendant and ceiling lamps now hang from that ceiling or from the roof underside above them instead of stopping at the floor height (#379 by Twilight-Networks).
+- **Room buttons without a name:** a room whose name is empty no longer leaves an empty button in the room bar (#370 by pepeelpl).
+- **Car Pro – lock:** the lock role also takes a text sensor like BMW's door lock state (`LOCKED`, `SECURED`, `UNLOCKED`); a binary sensor of class lock now counts "on" as unlocked, as in Home Assistant (#369 by ElVincenco).
+- **Doors and windows in free walls outside the rooms** (outer walls drawn with the wall tool, rooms without walls of their own) now open and close with the contact chosen for them (#367 by ge8020).
+- **Outdoor light:** neighbouring outdoor areas no longer get brighter seams under a garden light, and a lowered or sloped bed is lit along its own surface instead of showing as a bright patch (#341 by 1970lexi).
 
 ## 1.13.1
 

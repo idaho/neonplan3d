@@ -19,6 +19,7 @@ import { carState, type CarState, roomClimateValue,
   tempUnit,
   robotRoom,
   robotRoomSensor,
+  vacuumCleaning,
   roomNamed,
   carEntities,
   isStatusSensor,
@@ -28,13 +29,26 @@ import { carState, type CarState, roomClimateValue,
 } from "../devices.ts";
 import { alertColor, alertEntities, alertSources, alertText, findAlerts, isOutage, type Alert, type AlertSources } from "../alerts.ts";
 import { iconPath, iconSvg, mdiIcon } from "../icons.ts";
-import { deviceSensors, energySummary, fetchSolarRows, fieldLevels, fieldPowers, findConsumers, flowColor, flowSegments, gridPoint, powerSensorFor, readPower, solarCurvePath, solarDayFromStats, type Consumer, type EnergySummary, type StatRow } from "../energy.ts";
+import { deviceSensors, energySummary, fetchSolarRows, fetchTodayChange, fieldLevels, fieldPowers, findConsumers, flowColor, flowSegments, gridPoint, powerSensorFor, readPower, solarCurvePath, solarDayFromStats, type Consumer, type EnergySummary, type StatRow } from "../energy.ts";
 import { fieldFace, fieldSize } from "../solar.ts";
-import { type CustomButton, type EntityRef, DEFAULT_HOLOGRAM, type SolarField } from "../model.ts";
+import { type CustomButton, type EntityRef, DEFAULT_HOLOGRAM, type SolarField, POOL_DEVICES } from "../model.ts";
 
 /** A hologram card: the house's balance on the main plant, one plant (a balcony plant) on its own, or a device. */
+/** The unit a meter counts in (m³ when it does not say). */
+function meterUnit(hass: HomeAssistant, id: string | null | undefined): string {
+  return String((id && hass.states[id]?.attributes.unit_of_measurement) || "m³");
+}
+
+/** Today's water: litres while it is less than 10 m³ (a household's day), else in the meter's unit. */
+function waterText(hass: HomeAssistant, v: number, unit: string): string {
+  if ((unit === "m³" || unit === "m3") && v < 10) return `${formatNumber(hass, v * 1000, 0)} l`;
+  return `${formatNumber(hass, v, v < 10 ? 2 : 0)} ${unit}`;
+}
+
 interface HoloCard {
-  kind: "main" | "plant" | "device" | "media" | "car";
+  kind: "main" | "plant" | "device" | "media" | "car" | "pool";
+  /** Pool Pro: the pool and what its entities report. */
+  pool?: { area: string; state: PoolState };
   name: string;
   /** Auto Pro: the car in its parking spot (charge, range, charging, lock, climate). */
   car?: { spot: string; soc: number | null; range: number | null; rangeUnit: string; chargingW: number | null; charging: boolean; locked: boolean | null; climateOn: boolean | null; lock: string | null; climate: string | null; charge: string | null };
@@ -80,10 +94,17 @@ import "./quick-menu.ts";
 import { load3d } from "../load3d.ts";
 import { detectionKind, scaleGlow, buildMarkers, cameraMotionSensors, openMoreInfo, stateText, toggleEntity } from "../markers.ts";
 import { roofUnderAt, sectionCutsBelow } from "../roof-sections.ts";
-import { roomCeilingAt, roomLevelAt, centroid, furnitureFootprint, isLamp, LAMP_MODEL, LIFT_SPOTS, outdoorGround, pointInPolygon, spotDepth, surfaceHeight, type Building, type Furniture, type StartView } from "../model.ts";
+import { roomCeilingAt, roomLevelAt, centroid, furnitureFootprint, isLamp, LAMP_MODEL, LIFT_SPOTS, outdoorGround, pointInPolygon, poolWaterY, spotDepth, surfaceHeight, type Building, type Furniture, type StartView } from "../model.ts";
+import { poolAreas, poolState, poolWaterGlow, type PoolState } from "../pool.ts";
+import { pipePieces, poolFlow, waterColor, type PipePiece, type PoolDeviceType } from "../pool-flow.ts";
+import { pathLength, pipePath, pointAlong } from "../geometry/runs.ts";
+import { poolNodeAt } from "../pool-runs.ts";
+import type { PipeTube } from "../viewer/viewer3d.ts";
+import type { PoolPiece } from "../viewer/pool-water.ts";
 import { floorCounts, floorInfoText, personsInRooms } from "../presence.ts";
 import { controls, tokens } from "../styles.ts";
 import type { HassEntity, HomeAssistant } from "../types.ts";
+import { countView, diagnosticsActive, recordFrame, watchDiagnostics } from "../diagnostics.ts";
 import type { DeviceMarker, FloorplanViewer, FloorStack, RobotInfo, Quality, ScreenState, SoundSource, SurfaceGrab, ViewerStats, WallMode } from "../viewer/viewer3d.ts";
 import { wallLayout } from "../camera-wall.ts";
 import { watchedEntities } from "../watched.ts";
@@ -136,6 +157,7 @@ export class Fp3dView3d extends LitElement {
     _flash: { state: true },
     _proHint: { state: true },
     selectedFurniture: { attribute: false },
+    selectedSet: { attribute: false },
     selectedDevice: { attribute: false },
     _sky: { state: true },
     quality: { attribute: false },
@@ -145,6 +167,7 @@ export class Fp3dView3d extends LitElement {
     _energy: { state: true },
     _holos: { state: true },
     _rows: { state: true },
+    _meters: { state: true },
     _holoOpen: { state: true },
     _wallboxW: { state: true },
     _plants: { state: true },
@@ -157,6 +180,8 @@ export class Fp3dView3d extends LitElement {
     _blend: { state: true },
     _wallBig: { state: true },
     _find: { state: true },
+    _walk: { state: true },
+    walkable: { attribute: false },
     _central: { state: true },
     _thumbsCompact: { state: true },
     _armed: { state: true },
@@ -200,6 +225,7 @@ export class Fp3dView3d extends LitElement {
   /** The replay's focus counter as last seen (an event was tapped: the view shows where). */
   private seenFocus = 0;
   private unlistenReplay: (() => void) | null = null;
+  private unwatchDiag: (() => void) | null = null;
   /** The last sync showed something that follows the clock (a camera's detection pin). */
   private detecting = false;
   /** How long the last full sync took (ms, smoothed), shown with the stats. */
@@ -252,6 +278,8 @@ export class Fp3dView3d extends LitElement {
   private trailRows: Record<string, HistoryRow[]> = {};
   private trailTimer: ReturnType<typeof setInterval> | undefined;
   declare selectedFurniture: string | null;
+  /** Further chosen pieces (a block): outlined too. */
+  declare selectedSet: string[];
   declare selectedDevice: string | null;
   /** How much daylight there is (0 = night, 1 = day), from sun.sun. */
   private declare _sky: number;
@@ -281,6 +309,8 @@ export class Fp3dView3d extends LitElement {
   private mediaGraceTimer: ReturnType<typeof setTimeout> | undefined;
   /** The volume being dragged (shown at once; the player answers later, a cloud speaker slowly). */
   private mediaVolume = new Map<string, { v: number; at: number }>();
+  /** Pool Pro: a target temperature just set, shown until the heat pump reports it (at most 30 s). */
+  private poolTarget = new Map<string, { v: number; at: number }>();
   private volumeSent = 0;
   private holoIds = "";
   /** The start view last handed to the viewer (JSON), to notice a new one. */
@@ -358,6 +388,14 @@ export class Fp3dView3d extends LitElement {
   private armTimer: ReturnType<typeof setTimeout> | undefined;
   /** Show the star with the central menu (card option central; default on). */
   declare central: boolean;
+  /** Offer the walk through the house at eye height (card option walk; default on). */
+  declare walkable: boolean;
+  /** The walk: the room one stands in (null between rooms), or false when not walking. */
+  private declare _walk: { room: string | null; hint: boolean } | false;
+  private walker: { dispose(): void; setStick(v: { x: number; y: number } | null): void } | null = null;
+  private walkKeys: ((e: KeyboardEvent) => void) | null = null;
+  /** The outline of the room one walks in (its glass cards show). */
+  private walkRoomPts: [number, number][] | null = null;
   /** Own buttons from the card's YAML (replace the house's buttons when set). */
   declare buttons: CustomButton[] | null;
   private swipeSent = 0;
@@ -411,6 +449,7 @@ export class Fp3dView3d extends LitElement {
     this.showEnergy = true;
     this.flows = null;
     this.selectedFurniture = null;
+    this.selectedSet = [];
     this.selectedDevice = null;
     this._sky = 0;
     this.quality = "auto";
@@ -438,6 +477,8 @@ export class Fp3dView3d extends LitElement {
     }
     this._armed = null;
     this.central = true;
+    this.walkable = true;
+    this._walk = false;
     this.buttons = null;
     this._thumbs = [];
     this.floorThumbs = true;
@@ -472,6 +513,8 @@ export class Fp3dView3d extends LitElement {
   connectedCallback(): void {
     super.connectedCallback();
     this.listenReplay();
+    // the opt-in reports sample the frame rate the viewer measures for its stats anyway
+    this.unwatchDiag = watchDiagnostics((on) => this.viewer?.setStats(this.showStats || on));
     if (this.hasUpdated) {
       this.observeStage();
       if (!this.viewer) void this.start();
@@ -480,8 +523,11 @@ export class Fp3dView3d extends LitElement {
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    this.stopWalk();
     this.unlistenReplay?.();
     this.unlistenReplay = null;
+    this.unwatchDiag?.();
+    this.unwatchDiag = null;
     this.resizeObs?.disconnect();
     this.resizeObs = null;
     clearInterval(this.alertTimer);
@@ -562,6 +608,7 @@ export class Fp3dView3d extends LitElement {
         // stats can be switched on at any time; they only cause updates while shown
         onStats: (s) => {
           if (this.showStats) this._stats = s;
+          recordFrame(s);
         },
       });
       this.viewer.setWallMode(this.wallMode);
@@ -573,7 +620,8 @@ export class Fp3dView3d extends LitElement {
       this.viewer.setFurnishTypes(this.furnishTypes ?? null);
       this.viewer.setAnchorCallback((i, x, y, on, scale, facing) => this.placeHolo(i, x, y, on, scale, facing));
       this.viewer.setFloorStack(this.floorStack);
-      this.viewer.setStats(this.showStats);
+      this.viewer.setStats(this.showStats || diagnosticsActive());
+      countView("3d");
       this.viewer.setAutoOrbit(this.autoOrbit ? 0.06 : 0);
       this.viewer.setKeepRoof(this.keepRoof);
       this._low = this.viewer.low;
@@ -653,6 +701,7 @@ export class Fp3dView3d extends LitElement {
       this.syncDevices(true);
     }
     if (changed.has("selectedFurniture")) v.selectFurniture(this.selectedFurniture);
+    if (changed.has("selectedSet")) v.selectFurnitureSet(this.selectedSet ?? []);
     if (changed.has("selectedDevice")) v.setSelectedDevice(this.selectedDevice);
     if (changed.has("trail") || changed.has("replay")) this.watchTrail();
     if (changed.has("replay")) {
@@ -666,7 +715,7 @@ export class Fp3dView3d extends LitElement {
       // a replay ticks as often as the new quality allows
       this.replay?.setQuality(this.quality, v.low);
     }
-    if (changed.has("showStats")) v.setStats(this.showStats);
+    if (changed.has("showStats")) v.setStats(this.showStats || diagnosticsActive());
     if (changed.has("building")) this.findIndex = null;
   }
 
@@ -941,7 +990,14 @@ export class Fp3dView3d extends LitElement {
       const holoSize = (b.settings.roof.hologram ?? DEFAULT_HOLOGRAM).size;
       const add = (floor: Building["floors"][number], id: string, x: number, z: number, top: number, name: string) => {
         const st = hass.states[id];
-        if (!st || kindOf(id) !== "media" || seenMedia.has(id)) return;
+        if (!st || kindOf(id) !== "media") return;
+        if (seenMedia.has(id)) {
+          // a second speaker linked to the same player (a Sonos group or stereo pair known as one entity): it
+          // plays along – its own rings, a line to the first, the one card stays with the first (#475)
+          const first = sound.find((x) => x.id === id);
+          if (first) sound.push({ ...first, id: `${id}#${sound.filter((x) => x.id.startsWith(`${id}#`)).length + 2}`, floorId: floor.id, x, z, members: [id] });
+          return;
+        }
         seenMedia.add(id);
         // a cloud speaker (Alexa, Google) drops out or reports "idle" for a moment between songs:
         // its last card stands in for a short while instead of blinking away
@@ -1033,23 +1089,58 @@ export class Fp3dView3d extends LitElement {
         }
       }
     }
+    // Pool Pro: living water (light colour, moving with the filter pump, warm shimmer while heating, the cover)
+    // and a glass card over every pool with links
+    if (hasFeature("pool")) {
+      const holoSize = (b.settings.roof.hologram ?? DEFAULT_HOLOGRAM).size;
+      const pieces: PoolPiece[] = [];
+      for (const { floor, area } of poolAreas(b.floors)) {
+        const st = poolState(hass, area.pool);
+        // nothing of the pool found in Home Assistant: the plain water stays, no empty card
+        if (!Object.values(st.entities).some(Boolean)) continue;
+        const glow = poolWaterGlow(st);
+        const y = poolWaterY(floor, area);
+        pieces.push({
+          id: area.id,
+          floorId: floor.id,
+          points: area.points,
+          y,
+          color: glow.color,
+          level: this.dimmed ? glow.level * 0.4 : glow.level,
+          flow: !!st.pump?.on,
+          heat: !!st.heater?.heating,
+          cover: st.cover?.closed ?? 0,
+        });
+        const [cx, cz] = centroid(area.points);
+        anchors.push({ p: [cx, floor.elevation + Math.max(y, 0) + (area.above ? 0.6 : 1.1), cz], n: [0, 1, 0], floorId: floor.id, size: holoSize * 0.7, roof: false, views: "all" });
+        cards.push({ kind: "pool", name: translate(hass, "out_pool"), w: null, dayIds: [], battery: null, pool: { area: area.id, state: st } });
+      }
+      v.setPools(pieces);
+    } else v.setPools([]);
     v.setSound(sound);
-    v.setAnchors(anchors);
-    if (JSON.stringify(cards) !== JSON.stringify(this._holos)) this._holos = cards;
+    // walking: only the glass cards of the room one stands in (the others would float through the walls)
+    const room = this._walk ? this.walkRoomPts : null;
+    const keep = anchors.map((a) => !this._walk || (!!room && pointInPolygon([a.p[0], a.p[2]], room)));
+    const shownCards = cards.filter((_, i) => keep[i]);
+    v.setAnchors(anchors.filter((_, i) => keep[i]));
+    if (JSON.stringify(shownCards) !== JSON.stringify(this._holos)) this._holos = shownCards;
     // the modules live with their production (at night, and without Pro, they rest)
     v.setSolarLevels(powers && !this.dimmed ? fieldLevels(b, powers) : new Map());
-    v.setFlows(
+    // the energy cables (Energie Pro) and the pool's pipes share the viewer's flow layer
+    const energyFlows =
       !pro || !(this.flows ?? this._flows) || this.dimmed
         ? []
         : flowSegments({ building: b, consumers, summary, battery: batteryPlaced ?? null, fieldPower: powers, devicePower: this.devicePowers(hass, b) }).map((f) => ({
-        floorId: f.floorId,
-        a: f.a,
-        b: f.b,
-        dist: f.dist,
-        power: f.power,
-        color: flowColor(f.kind, summary),
-      })),
-    );
+            floorId: f.floorId,
+            a: f.a,
+            b: f.b,
+            dist: f.dist,
+            power: f.power,
+            color: flowColor(f.kind, summary),
+          }));
+    const pool = this.poolPipes(hass, b);
+    v.setFlows(this.dimmed ? energyFlows : [...energyFlows, ...pool.flows]);
+    v.setPipes(pool.tubes);
     const persons = SHOW_PRESENCE ? personsInRooms(hass, b) : [];
     v.setPersons(persons);
     const counts = floorCounts(hass, b, this.openingLinks!, persons);
@@ -1059,7 +1150,7 @@ export class Fp3dView3d extends LitElement {
     const elevation = typeof sun?.elevation === "number" ? sun.elevation : null;
     v.setSun(elevation !== null && typeof sun?.azimuth === "number" ? { elevation, azimuth: sun.azimuth } : null);
     // the weather outside: clouds darken the sky, rain, snow and fog fall over the plot
-    const raw = this.weather && !this.dimmed && hasFeature("weather") ? weatherState(hass, weatherEntity(hass, this.weatherEntityId ?? b.settings.weather_entity)) : null;
+    const raw = this.weather && !this.dimmed && hasFeature("weather") ? weatherState(hass, weatherEntity(hass, this.weatherEntityId ?? b.settings.weather_entity), b.settings.rain_entity) : null;
     const weather = raw ? limitEffects(raw, b.settings.weather_effects) : null;
     this.cloud = weather?.cloud ?? 0;
     this._sky = (elevation === null ? 0 : Math.min(1, Math.max(0, (elevation + 4) / 16))) * (1 - 0.45 * this.cloud);
@@ -1086,6 +1177,9 @@ export class Fp3dView3d extends LitElement {
     if (wallboxW !== this._wallboxW) this._wallboxW = wallboxW;
     // the holograms' day curves: the sensors' statistics, fetched now and then while the sun is watched
     this.watchSolarDay([...new Set(cards.flatMap((c) => c.dayIds))]);
+    // Energie Pro: today's gas and water use on the house card
+    const energyPro = hasFeature("energy_pro");
+    this.watchMeters(energyPro ? (b.energy.gas ?? null) : null, energyPro ? (b.energy.water ?? null) : null);
     if (began) this.syncMs = this.syncMs * 0.8 + (performance.now() - began) * 0.2;
   }
 
@@ -1300,6 +1394,81 @@ export class Fp3dView3d extends LitElement {
     };
   }
 
+  /** Energie Pro: today's gas and water use (meter unit), fetched every five minutes. */
+  private declare _meters: { gas: number | null; water: number | null } | null;
+  private meterKey = "";
+  private meterTimer?: ReturnType<typeof setInterval>;
+
+  private watchMeters(gas: string | null, water: string | null): void {
+    const ids = [gas, water].filter((x): x is string => !!x);
+    const key = this.replay ? "" : ids.join(",");
+    if (key === this.meterKey) return;
+    this.meterKey = key;
+    clearInterval(this.meterTimer);
+    this.meterTimer = undefined;
+    if (!key) {
+      this._meters = null;
+      return;
+    }
+    const fetch = async () => {
+      if (!this.hass || document.hidden) return;
+      const got = await fetchTodayChange(this.hass, ids);
+      if (this.meterKey === key && got) this._meters = { gas: gas ? (got.get(gas) ?? null) : null, water: water ? (got.get(water) ?? null) : null };
+    };
+    void fetch();
+    this.meterTimer = setInterval(() => void fetch(), 300000);
+  }
+
+  /**
+   * Pool Pro: the pipes of every pool – drawn for everyone, the water flows (blue, warm after a heating heat pump,
+   * brown to the waste drain) only with Pool Pro and while the filter pump runs.
+   */
+  private poolPipes(hass: HomeAssistant, b: Building): { flows: PipePiece[]; tubes: PipeTube[] } {
+    const pro = hasFeature("pool");
+    const devs = new Map(b.floors.flatMap((fl) => fl.furniture.filter((m) => (POOL_DEVICES as readonly string[]).includes(m.type)).map((m) => [m.id, m] as const)));
+    const devices = [...devs.values()].map((f) => ({ id: f.id, type: f.type as PoolDeviceType, open: f.valve_open !== false, valve: f.valve_position ?? null }));
+    const out: PipePiece[] = [];
+    const tubes: PipeTube[] = [];
+    for (const { floor, area } of poolAreas(b.floors)) {
+      const links = area.pool!;
+      if (!links.pipes?.length && !links.joints?.length) continue;
+      const st = poolState(hass, links);
+      const ports = links.ports ?? [];
+      const flows = poolFlow({ pipes: links.pipes ?? [], ports, devices, pumpOn: pro && !!st.pump?.on, heaterOn: !!st.heater?.on, heating: !!st.heater?.heating });
+      const nodeAt = poolNodeAt(b, floor, area);
+      out.push(...pipePieces(links.pipes ?? [], flows, nodeAt));
+      // holes through a wall or the floor: a sleeve from the inside to the outside
+      for (const j of links.joints ?? []) {
+        if (j.kind !== "wall" && j.kind !== "floor") continue;
+        const a = nodeAt(`joint:${j.id}:inside`)!;
+        const o = nodeAt(`joint:${j.id}:outside`)!;
+        const top = j.kind === "floor" ? 0.03 : a.y;
+        tubes.push({ floorId: floor.id, points: [[a.x, top, a.z], [o.x, o.y, o.z]], radius: 0.05, water: null, fittings: [] });
+      }
+      for (const p of links.pipes ?? []) {
+        const points = pipePath(p, nodeAt);
+        if (points.length < 2) continue;
+        const flow = flows.get(p.id);
+        const fittings: PipeTube["fittings"] = [];
+        // sleeves where the pipe meets a device or a T-piece
+        const len = pathLength(points);
+        for (const [node, at] of [
+          [p.from, 0.04],
+          [p.to, len - 0.04],
+        ] as const) {
+          const q = node.startsWith("dev:") || node.startsWith("joint:") ? pointAlong(points, at) : null;
+          if (q) fittings.push({ kind: "sleeve", p: q.p, dir: q.dir });
+        }
+        for (const ft of p.fittings ?? []) {
+          const q = pointAlong(points, ft.at);
+          if (q) fittings.push({ kind: ft.kind, p: q.p, dir: q.dir, open: ft.open !== false });
+        }
+        tubes.push({ floorId: p.floor_id, points, radius: 0.025, water: flow?.active ? waterColor(flow) : null, fittings });
+      }
+    }
+    return { flows: out, tubes };
+  }
+
   /** Fetch today's solar statistics every five minutes while there are sensors to watch (none: the curve goes). */
   private watchSolarDay(ids: string[]): void {
     const r = this.replay;
@@ -1409,11 +1578,11 @@ export class Fp3dView3d extends LitElement {
   private renderHologram() {
     const e = this._energy;
     // the editor keeps the energy bar off but asks for the holograms in its energy tool
-    if (!(hasFeature("energy_pro") || hasFeature("sound") || hasFeature("auto_pro")) || (this.roomId && !(this.building?.settings.roof.hologram ?? DEFAULT_HOLOGRAM).device_room) || !(this.showEnergy || this.holograms) || !this.holoVisible()) return nothing;
+    if (!(hasFeature("energy_pro") || hasFeature("sound") || hasFeature("auto_pro") || hasFeature("pool")) || (this.roomId && !(this.building?.settings.roof.hologram ?? DEFAULT_HOLOGRAM).device_room) || !(this.showEnergy || this.holograms) || !this.holoVisible()) return nothing;
     // the plants' cards belong to the house view – with a single floor that floor is the house view (#255)
     const house = this.floorId === null || (this.building?.floors.length ?? 0) <= 1;
     const plants = !!e && (e.solar !== null || e.grid !== null || e.battery !== null) && house;
-    return this._holos.map((card, i) => (card.kind === "car" ? this.renderCarCard(card, i) : card.kind === "media" ? this.renderMediaCard(card, i) : card.kind === "device" ? this.renderDeviceCard(card, i) : plants ? this.renderHoloCard(card, i, e!) : nothing));
+    return this._holos.map((card, i) => (card.kind === "pool" ? this.renderPoolCard(card, i) : card.kind === "car" ? this.renderCarCard(card, i) : card.kind === "media" ? this.renderMediaCard(card, i) : card.kind === "device" ? this.renderDeviceCard(card, i) : plants ? this.renderHoloCard(card, i, e!) : nothing));
   }
 
   /** Auto Pro: the car's card – charge as a bar in its colour, range, charging power, lock and climate buttons. */
@@ -1466,6 +1635,96 @@ export class Fp3dView3d extends LitElement {
       </div>`;
   }
 
+  /**
+   * Pool Pro: the pool's card – water temperature large in its colour, the heat pump's target with − and +,
+   * the filter pump, the light and the cover as buttons, pH and chlorine with a coloured range.
+   */
+  private renderPoolCard(card: HoloCard, index: number) {
+    const hass = this.hass;
+    const t = (k: Parameters<typeof translate>[1]) => translate(hass, k);
+    const { area, state: s } = card.pool!;
+    const open = !this.mediaFolded.has(area);
+    const toggle = () => {
+      if (this.mediaFolded.has(area)) this.mediaFolded.delete(area);
+      else this.mediaFolded.add(area);
+      this.requestUpdate();
+    };
+    const call = (domain: string, service: string, id: string, data: Record<string, unknown> = {}) => void hass.callService(domain, service, { entity_id: id, ...data });
+    const h = s.heater;
+    // a target just set shows at once and stays until the heat pump reports it (a cloud heat pump answers late)
+    const local = h ? this.poolTarget.get(h.id) : undefined;
+    if (local && h && ((h.target !== null && Math.abs(local.v - h.target) < 0.01) || Date.now() - local.at > 30000)) this.poolTarget.delete(h.id);
+    const target = (h && this.poolTarget.get(h.id)?.v) ?? h?.target ?? null;
+    const setTarget = (v: number) => {
+      if (!h || h.kind === "switch") return;
+      const next = Math.min(h.max, Math.max(h.min, Math.round(v / h.step) * h.step));
+      this.poolTarget.set(h.id, { v: next, at: Date.now() });
+      this.requestUpdate();
+      call(h.kind, "set_temperature", h.id, { temperature: next });
+    };
+    const fmt = (v: number, digits: number) => formatNumber(hass, v, digits);
+    const celsius = s.temp === null ? null : s.unit.includes("F") ? ((s.temp - 32) * 5) / 9 : s.temp;
+    const tempCol = celsius === null ? "#37e0ff" : celsius < 20 ? "#5ab4ff" : celsius < 26 ? "#37e0ff" : celsius < 31 ? "#4dff9a" : "#ffb347";
+    const rangeCol = (r: string) => (r === "ok" ? "#4dff80" : r === "warn" ? "#ffcc40" : "#ff4d40");
+    // where the value sits on its scale: pH 6.6–8.0, redox 500–900 mV, chlorine 0–3 mg/l
+    const pos = (v: number, lo: number, hi: number) => Math.max(3, Math.min(97, ((v - lo) / (hi - lo)) * 100));
+    const chem = (label: string, value: string, range: string, at: number) =>
+      html`<div class="fp3d-holo-pool-chem"><span>${label}</span><b style="color:${rangeCol(range)}">${value}</b><i><em style="left:${at}%;background:${rangeCol(range)};color:${rangeCol(range)}"></em></i></div>`;
+    // the head names one state: heating first, else the running pump
+    const live = h?.heating ? `🔥 ${t("pool_heating")}` : s.pump?.on ? `〰 ${t("pool_pump_on")}` : "";
+    const coverText = (c: NonNullable<PoolState["cover"]>) =>
+      c.closed > 0.98 ? t("pool_cover_closed") : c.closed < 0.02 ? t("pool_cover_open") : `${Math.round(c.closed * 100)} % ${t("pool_cover_closed_part")}`;
+    return html`<svg class="fp3d-holo-link" data-holo=${index} hidden aria-hidden="true"><line x1="0" y1="0" x2="0" y2="0" /><circle cx="0" cy="0" r="3" /></svg>
+      <div class="fp3d-holo fp3d-holo-dev fp3d-holo-pool ${open ? "" : "fp3d-holo-min"} ${this._low ? "fp3d-holo-plain" : ""}" data-holo=${index} hidden role="group" aria-label=${card.name}>
+        <div class="fp3d-holo-sheen"></div>
+        <div class="fp3d-holo-scan"></div>
+        <div class="fp3d-holo-body">
+          <div class="fp3d-holo-head" role="button" tabindex="0" @click=${toggle}><span>🏊 ${card.name}</span><span class="fp3d-holo-live">${live}</span></div>
+          <div class="fp3d-holo-car-main">
+            <b style="color:${tempCol}">${s.temp !== null ? `${fmt(s.temp, 1)} ${s.unit}` : "–"}</b>
+            <span>${h && target !== null && h.kind !== "switch" ? `→ ${fmt(target, 1)} ${s.unit}` : h ? (h.on ? t("pool_heater_on") : t("pool_heater_off")) : ""}</span>
+          </div>
+          ${open && s.ph ? chem("pH", fmt(s.ph.value, 2), s.ph.range, pos(s.ph.value, 6.6, 8.0)) : nothing}
+          ${open && s.chlorine
+            ? chem(
+                s.chlorine.orp ? t("pool_orp") : t("pool_chlorine"),
+                `${fmt(s.chlorine.value, s.chlorine.orp ? 0 : 2)} ${s.chlorine.unit}`,
+                s.chlorine.range,
+                s.chlorine.orp ? pos(s.chlorine.value, 500, 900) : pos(s.chlorine.value, 0, 3),
+              )
+            : nothing}
+          ${open && s.cover ? html`<div class="fp3d-holo-pool-line">${t("pool_cover")}: ${coverText(s.cover)}</div>` : nothing}
+          ${open && !this.ro && (h || s.pump?.switchable || s.light || s.cover)
+            ? html`<div class="fp3d-holo-media-controls fp3d-holo-car-controls">
+                ${h && h.kind !== "switch" && target !== null
+                  ? html`<button title=${t("pool_colder")} @click=${() => setTarget(target - h.step)}>−</button
+                    ><button title=${t("pool_warmer")} @click=${() => setTarget(target + h.step)}>+</button>`
+                  : nothing}
+                ${h
+                  ? html`<button class=${h.on ? "fp3d-holo-on" : ""} title=${t("pool_heater")} @click=${() => (h.kind === "switch" ? call("homeassistant", h.on ? "turn_off" : "turn_on", h.id) : call(h.kind, h.on ? "turn_off" : "turn_on", h.id))}>🔥</button>`
+                  : nothing}
+                ${s.pump?.switchable ? html`<button class=${s.pump.on ? "fp3d-holo-on" : ""} title=${t("pool_pump")} @click=${() => call("homeassistant", s.pump!.on ? "turn_off" : "turn_on", s.pump!.id)}>〰</button>` : nothing}
+                ${s.light ? html`<button class=${s.light.on ? "fp3d-holo-on" : ""} title=${t("pool_light")} @click=${() => call("homeassistant", "toggle", s.light!.id)}>💡</button>` : nothing}
+                ${s.cover
+                  ? html`<button
+                      title=${s.cover.moving ? t("pool_cover_stop") : s.cover.closed > 0.5 ? t("pool_cover_open_btn") : t("pool_cover_close_btn")}
+                      @click=${() => call("cover", s.cover!.moving ? "stop_cover" : s.cover!.closed > 0.5 ? "open_cover" : "close_cover", s.cover!.id)}
+                    >
+                      ${s.cover.moving ? "⏹" : s.cover.closed > 0.5 ? "▲" : "▼"}
+                    </button>`
+                  : nothing}
+              </div>`
+            : nothing}
+        </div>
+      </div>`;
+  }
+
+  /** A service call from a card was refused: Home Assistant shows the reason as a notice at the bottom. */
+  private serviceFailed(service: string, err: unknown): void {
+    const why = err && typeof err === "object" && "message" in err ? String((err as { message: unknown }).message) : String(err);
+    this.dispatchEvent(new CustomEvent("hass-notification", { detail: { message: `${service}: ${why}` }, bubbles: true, composed: true }));
+  }
+
   /** Klang & Kino: what a speaker plays – cover, title, artist, volume, with play/pause, previous and next. */
   private renderMediaCard(card: HoloCard, index: number) {
     const hass = this.hass;
@@ -1477,7 +1736,31 @@ export class Fp3dView3d extends LitElement {
       else this.mediaFolded.add(m.id);
       this.requestUpdate();
     };
-    const call = (service: string, data: Record<string, unknown> = {}) => void hass.callService("media_player", service, { entity_id: m.id, ...data });
+    // a refused command shows as Home Assistant's own notice instead of failing silently (#400)
+    const call = (service: string, data: Record<string, unknown> = {}) =>
+      void Promise.resolve(hass.callService("media_player", service, { entity_id: m.id, ...data })).catch((err: unknown) => this.serviceFailed(`media_player.${service}`, err));
+    // the buttons act when the finger lifts (#400): while a speaker plays the view redraws all the time and
+    // some tablets then drop the click; a click without a pointer (keyboard) still works
+    // whichever comes, the lifted finger or the click: the button acts once (some browsers drop one of them)
+    const press = {
+      down: (e: PointerEvent) => ((e.currentTarget as HTMLElement).dataset.pressed = String(e.pointerId)),
+      up: (fn: () => void) => (e: PointerEvent) => {
+        const el = e.currentTarget as HTMLElement;
+        if (el.dataset.pressed !== String(e.pointerId)) return;
+        delete el.dataset.pressed;
+        e.stopPropagation();
+        el.dataset.acted = String(Date.now());
+        fn();
+      },
+      key: (fn: () => void) => (e: MouseEvent) => {
+        const el = e.currentTarget as HTMLElement;
+        if (Date.now() - Number(el.dataset.acted ?? 0) < 700) return;
+        el.dataset.acted = String(Date.now());
+        fn();
+      },
+    };
+    // play and pause by their own services: some players (an Echo through Alexa Media Player) ignore play_pause
+    const playPause = () => call(m.playing ? "media_pause" : "media_play");
     // the dragged volume shows at once and is sent while dragging (at most every 350 ms) and on release;
     // it stays until the player reports it (a cloud speaker like an Echo answers late), at most 30 s
     const local = this.mediaVolume.get(m.id);
@@ -1503,9 +1786,9 @@ export class Fp3dView3d extends LitElement {
         </div>
         ${open && !this.ro
           ? html`<div class="fp3d-holo-media-controls">
-                <button aria-label=${t("previous")} @click=${() => call("media_previous_track")}>⏮</button>
-                <button aria-label=${t("play_pause")} @click=${() => call("media_play_pause")}>${m.playing ? "⏸" : "▶"}</button>
-                <button aria-label=${t("next")} @click=${() => call("media_next_track")}>⏭</button>
+                <button aria-label=${t("previous")} @pointerdown=${press.down} @pointerup=${press.up(() => call("media_previous_track"))} @click=${press.key(() => call("media_previous_track"))}>⏮</button>
+                <button aria-label=${t("play_pause")} @pointerdown=${press.down} @pointerup=${press.up(playPause)} @click=${press.key(playPause)}>${m.playing ? "⏸" : "▶"}</button>
+                <button aria-label=${t("next")} @pointerdown=${press.down} @pointerup=${press.up(() => call("media_next_track"))} @click=${press.key(() => call("media_next_track"))}>⏭</button>
                 <input
                   type="range"
                   min="0"
@@ -1618,6 +1901,13 @@ export class Fp3dView3d extends LitElement {
                 ${main && e.consumption !== null ? html`<div class="fp3d-holo-cell fp3d-holo-house">${t("holo_house")}<br /><b>${formatPower(hass, e.consumption)}</b></div>` : nothing}
                 ${main && this._wallboxW !== null ? html`<div class="fp3d-holo-cell fp3d-holo-wb">${t("holo_wallbox")}<br /><b>${formatPower(hass, this._wallboxW)}</b></div>` : nothing}
               </div>
+              ${main && this._meters && (this._meters.gas !== null || this._meters.water !== null)
+                ? html`<div class="fp3d-holo-sub fp3d-holo-meters">
+                    ${this._meters.gas !== null ? html`<span>🔥 ${t("holo_gas")} <b>${formatNumber(hass, this._meters.gas, this._meters.gas < 10 ? 2 : 1)} ${meterUnit(hass, this.building?.energy.gas)}</b></span>` : nothing}
+                    ${this._meters.water !== null ? html`<span>💧 ${t("holo_water")} <b>${waterText(hass, this._meters.water, meterUnit(hass, this.building?.energy.water))}</b></span>` : nothing}
+                    <span>${t("holo_today_short")}</span>
+                  </div>`
+                : nothing}
               ${autarky !== null
                 ? html`<div class="fp3d-holo-bar"><div style="width:${autarky}%"></div></div>
                     <div class="fp3d-holo-foot"><span>${t("holo_autarky")}</span><b>${autarky} %</b></div>`
@@ -1757,6 +2047,9 @@ export class Fp3dView3d extends LitElement {
     const consumers: Consumer[] = [];
     const screens = new Map<string, ScreenState>();
     const targets = new Map<string, string>();
+    // Pool Pro: what the (first) pool reports, for the devices of its technical room
+    const poolFirst = hasFeature("pool") ? poolAreas(b.floors)[0] : undefined;
+    const poolLive = poolFirst ? poolState(hass, poolFirst.area.pool) : null;
     for (const floor of b.floors) {
       for (const f of floor.furniture) {
         const linked = this.furnitureLinks.get(f.id);
@@ -1770,6 +2063,17 @@ export class Fp3dView3d extends LitElement {
         }
         // a home battery with only its charge, a wallbox with only its status still gets its marker;
         // a parking spot with Auto Pro data gets one even without a presence sensor
+        // Pool Pro: the technical room lives with the pool – the pump glows while it runs, the heat pump warm
+        // while it heats, the filter's valve head in the colour of its position
+        if (poolLive && (POOL_DEVICES as readonly string[]).includes(f.type)) {
+          const v = f.valve_position ?? "filter";
+          if (f.type === "pool_pump" && poolLive.pump?.on) screens.set(f.id, { color: [0.3, 0.8, 1], level: 0.85 });
+          else if (f.type === "pool_heat_pump" && poolLive.heater?.heating) screens.set(f.id, { color: [1, 0.45, 0.15], level: 0.85 });
+          else if (f.type === "pool_heat_pump" && poolLive.heater?.on) screens.set(f.id, { color: [0.3, 0.8, 1], level: 0.35 });
+          else if (f.type === "pool_filter")
+            screens.set(f.id, v === "closed" ? { color: [1, 0.3, 0.25], level: 0.6 } : v === "filter" || v === "recirculate" ? { color: [0.3, 1, 0.6], level: poolLive.pump?.on ? 0.8 : 0.3 } : { color: [1, 0.62, 0.2], level: 0.85 });
+          else if (f.type === "pool_dosing" && poolLive.pump?.on) screens.set(f.id, { color: [0.6, 0.9, 1], level: 0.5 });
+        }
         const autoPro = f.type === "parking" && hasFeature("auto_pro") && !!f.car;
         const car = autoPro ? carState(hass, f) : null;
         const extraRef = f.type === "home_battery" ? f.soc : f.type === "wallbox" ? f.status : f.type === "parking" && car ? (f.car?.device ?? car.entities.soc) : null;
@@ -2038,7 +2342,7 @@ export class Fp3dView3d extends LitElement {
         const entity = this.furnitureLinks.get(f.id)?.entity ?? null;
         const state = entity ? hass.states[entity]?.state : undefined;
         const mode: RobotInfo["mode"] =
-          state === "cleaning" ? "cleaning" : state === "returning" ? "returning" : state === "error" ? "error" : state === "docked" || !state ? "docked" : "idle";
+          vacuumCleaning(state) ? "cleaning" : state === "returning" ? "returning" : state === "error" ? "error" : state === "docked" || !state ? "docked" : "idle";
         // the robot rests in front of its dock, facing away from it
         const a = (f.rotation * Math.PI) / 180;
         const off = f.d * 0.14;
@@ -2121,9 +2425,9 @@ export class Fp3dView3d extends LitElement {
   /** The ceiling height on a floor at a point: the floor height, a room's own ceiling (#30), or lower under a roof slope (#168). */
   private ceilingAt(floor: Building["floors"][number], x: number, z: number): number {
     // a room with a ceiling of its own (#30)
-const room = roomCeilingAt(floor, x, z);
+    const room = roomCeilingAt(floor, x, z);
     const b = this.building;
-    if (!b || !(b.settings.roof.sections ?? []).some((sec) => sectionCutsBelow(sec, floor.elevation + floor.height))) return room;
+    if (!b || !(b.settings.roof.sections ?? []).some((sec) => sectionCutsBelow(sec, floor.elevation + room))) return room;
     const under = roofUnderAt(b, x, z);
     return under === null ? room : Math.max(0.5, Math.min(room, under - floor.elevation));
   }
@@ -2206,7 +2510,9 @@ const room = roomCeilingAt(floor, x, z);
       furnitureId: f.id,
       pack: item ? f.type : null,
       lightY: item ? (item.mount === "ceiling" ? base : base + f.h * 0.85) : undefined,
-      effect: !!st && st.state === "on" && typeof st.attributes.effect === "string" && !/^(none|off|solid|static|normal)$/i.test(st.attributes.effect),
+      // a running colour effect – not a "mode" some integrations report as their effect (LocalTuya: "white",
+      // "colour"; others "manual", "default", an empty one)
+      effect: !!st && st.state === "on" && typeof st.attributes.effect === "string" && !/^(none|off|solid|static|normal|white|colou?r|rgb|manual|default|-|)$/i.test(st.attributes.effect.trim()),
       variant: f.variant,
       show: f.marker ?? undefined,
       fromFurniture: true,
@@ -2404,6 +2710,121 @@ const room = roomCeilingAt(floor, x, z);
     return html`<div class="fp3d-scenes">
       ${ids.map((id) => html`<button class="fp3d-chip" aria-pressed=${this._sceneFired === id} @click=${() => this.runScene(id)}>${entityName(this.hass, id, areaName)}</button>`)}
     </div>`;
+  }
+
+  /**
+   * The walk through the house: one stands at eye height in a room of the floor shown (the room chosen, else the
+   * biggest) and walks – dragging looks around, a tap on the floor walks there through the doors, keys or the
+   * stick move; walls stop you. The house lives on around you: lights, screens, sunlight.
+   */
+  private async startWalk(): Promise<void> {
+    countView("walk");
+    const b = this.building;
+    const v = this.viewer;
+    if (!b || !v || this._walk) return;
+    const withRooms = b.floors.filter((f) => f.rooms.some((r) => r.points.length >= 3));
+    const byRoom = this.roomId ? withRooms.find((f) => f.rooms.some((r) => r.id === this.roomId)) : undefined;
+    const floor = byRoom ?? withRooms.find((f) => f.id === this.floorId) ?? [...withRooms].sort((x, y) => Math.abs(x.elevation) - Math.abs(y.elevation))[0];
+    if (!floor) return;
+    const mod = await load3d();
+    this._walk = { room: null, hint: true };
+    await this.updateComplete;
+    const surface = this.renderRoot.querySelector<HTMLElement>(".fp3d-walk-surface");
+    if (!surface) return;
+    // the floor alone, its walls whole (the view's floor and wall mode come back afterwards)
+    v.setFloor(floor.id, false);
+    v.setWallMode("auto");
+    const map = new mod.FloorMap(b, floor);
+    const room = this.roomId ? floor.rooms.find((r) => r.id === this.roomId) : undefined;
+    let start;
+    if (room) {
+      const c = map.freeNear(centroid(room.points));
+      start = { x: c[0], z: c[1], yaw: map.openYaw(c), pitch: -0.05 };
+    }
+    this.walker = new mod.WalkCamera(v as never, map, surface, {
+      start,
+      onRoom: (r) => {
+        this.walkRoomPts = r?.points ?? null;
+        if (this._walk) this._walk = { ...this._walk, room: r?.name ?? null };
+        this.syncDevices(true);
+      },
+    });
+    this.walkKeys = (e: KeyboardEvent) => {
+      if (e.key === "Escape") this.stopWalk();
+    };
+    window.addEventListener("keydown", this.walkKeys);
+    // the hint fades after a while
+    setTimeout(() => {
+      if (this._walk) this._walk = { ...this._walk, hint: false };
+    }, 9000);
+  }
+
+  private stopWalk(): void {
+    if (!this.walker && !this._walk) return;
+    this.walker?.dispose();
+    this.walker = null;
+    if (this.walkKeys) window.removeEventListener("keydown", this.walkKeys);
+    this.walkKeys = null;
+    this._walk = false;
+    this.walkRoomPts = null;
+    const v = this.viewer;
+    if (v) {
+      v.setWallMode(this.wallMode);
+      v.setFloor(this.floorId, true);
+    }
+    this.syncDevices(true);
+  }
+
+  private renderWalk() {
+    if (!this.walkable || this.ro || !this.building || !this.hass) return nothing;
+    const t = (k: I18nKey) => translate(this.hass, k);
+    if (!this._walk)
+      return html`<button class="fp3d-walk-btn" title=${t("walk_start")} aria-label=${t("walk_start")} @click=${() => void this.startWalk()}>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4.5" r="1.8" /><path d="m9 20 2.5-6 2.5 2.5V21M7.5 11l3-3.5 3.5 1.5 2 3.5M11.5 14l1-5" /></svg>
+        <span>${t("walk_title")}</span>
+      </button>`;
+    const w = this._walk;
+    // the stick (tablets): forward and back, turning left and right
+    let stick: { id: number; cx: number; cy: number } | null = null;
+    const knob = (e: PointerEvent, el: HTMLElement) => {
+      if (!stick) return;
+      const r = 44;
+      let dx = e.clientX - stick.cx;
+      let dy = e.clientY - stick.cy;
+      const d = Math.hypot(dx, dy);
+      if (d > r) [dx, dy] = [(dx / d) * r, (dy / d) * r];
+      (el.firstElementChild as HTMLElement).style.transform = `translate(${dx}px, ${dy}px)`;
+      this.walker?.setStick({ x: dx / r, y: dy / r });
+    };
+    return html`<div class="fp3d-walk-surface"></div>
+      <div class="fp3d-walk-top">
+        <span class="fp3d-walk-room">🚶 ${w.room ?? t("walk_title")}</span>
+        <button class="fp3d-walk-exit" @click=${() => this.stopWalk()}>✕ ${t("walk_end")}</button>
+      </div>
+      ${w.hint ? html`<div class="fp3d-walk-hint">${t("walk_hint")}</div>` : nothing}
+      <div
+        class="fp3d-walk-stick"
+        @pointerdown=${(e: PointerEvent) => {
+          const el = e.currentTarget as HTMLElement;
+          const r = el.getBoundingClientRect();
+          stick = { id: e.pointerId, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+          el.setPointerCapture(e.pointerId);
+          knob(e, el);
+        }}
+        @pointermove=${(e: PointerEvent) => knob(e, e.currentTarget as HTMLElement)}
+        @pointerup=${(e: PointerEvent) => {
+          stick = null;
+          ((e.currentTarget as HTMLElement).firstElementChild as HTMLElement).style.transform = "";
+          this.walker?.setStick(null);
+        }}
+        @pointercancel=${(e: PointerEvent) => {
+          stick = null;
+          ((e.currentTarget as HTMLElement).firstElementChild as HTMLElement).style.transform = "";
+          this.walker?.setStick(null);
+        }}
+      >
+        <span></span>
+      </div>`;
   }
 
   private renderFind() {
@@ -2951,7 +3372,7 @@ const room = roomCeilingAt(floor, x, z);
       style=${style}
     >
       ${this._error ? html`<p class="fp3d-error">${this._error}</p>` : nothing} ${this.clean ? nothing : this.renderEnergy()} ${this.renderHologram()} ${this.clean ? nothing : this.renderLegend()}
-      ${this.renderAlerts()} ${this.clean ? nothing : html`${this.renderThumbs()} ${this.renderScenes()} ${this.renderFind()} ${this.renderCentral()}`} ${this.renderSwipe()} ${this.renderInfo()} ${this.renderThrough()} ${this.renderCameraWall()}
+      ${this.renderAlerts()} ${this.clean || this._walk ? nothing : html`${this.renderThumbs()} ${this.renderScenes()} ${this.renderFind()} ${this.renderCentral()}`} ${this.clean ? nothing : this.renderWalk()} ${this.renderSwipe()} ${this.renderInfo()} ${this.renderThrough()} ${this.renderCameraWall()}
       ${this.clean ? nothing : this.renderProHint()} ${this.renderMenu()} ${this.renderEye()}
       ${this.showStats && this._stats
         ? html`<span class="fp3d-stats"
@@ -3308,6 +3729,102 @@ const room = roomCeilingAt(floor, x, z);
       }
       .fp3d-thumbs-small .fp3d-thumb {
         width: 104px;
+      }
+      /* at the top right, clear of the floor pictures and the switch rows (a card moves it beside its own buttons) */
+      .fp3d-walk-btn {
+        position: absolute;
+        z-index: 3;
+        top: 12px;
+        right: var(--fp3d-walk-right, 12px);
+        height: 38px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 14px 0 10px;
+        font: inherit;
+        font-weight: 700;
+        font-size: 14px;
+        border: 1px solid rgba(55, 224, 255, 0.45);
+        border-radius: 13px;
+        background: var(--fp3d-chrome);
+        color: var(--fp3d-text);
+        box-shadow: var(--fp3d-shadow);
+        cursor: pointer;
+      }
+      .fp3d-walk-surface {
+        position: absolute;
+        inset: 0;
+        z-index: 4;
+        touch-action: none;
+        cursor: grab;
+      }
+      .fp3d-walk-top {
+        position: absolute;
+        z-index: 5;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        pointer-events: none;
+        white-space: nowrap;
+      }
+      .fp3d-walk-room,
+      .fp3d-walk-exit,
+      .fp3d-walk-hint {
+        padding: 8px 14px;
+        border-radius: 14px;
+        background: var(--fp3d-chrome);
+        color: var(--fp3d-text);
+        box-shadow: var(--fp3d-shadow);
+        font: inherit;
+        font-weight: 700;
+      }
+      .fp3d-walk-exit {
+        border: 0;
+        cursor: pointer;
+        pointer-events: auto;
+      }
+      .fp3d-walk-hint {
+        position: absolute;
+        z-index: 5;
+        left: 50%;
+        top: 62px;
+        transform: translateX(-50%);
+        max-width: min(560px, calc(100% - 32px));
+        font-weight: 500;
+        font-size: 13px;
+        text-align: center;
+        pointer-events: none;
+      }
+      .fp3d-walk-stick {
+        position: absolute;
+        z-index: 5;
+        right: 18px;
+        bottom: calc(18px + var(--fp3d-bottom-inset, 0px));
+        width: 112px;
+        height: 112px;
+        border-radius: 50%;
+        background: rgba(14, 21, 38, 0.55);
+        border: 1px solid var(--fp3d-line);
+        display: grid;
+        place-items: center;
+        touch-action: none;
+      }
+      .fp3d-walk-stick span {
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        background: var(--fp3d-accent);
+        box-shadow: 0 0 16px rgba(55, 224, 255, 0.5);
+        pointer-events: none;
+      }
+      /* with a mouse the stick is not needed */
+      @media (pointer: fine) {
+        .fp3d-walk-stick {
+          display: none;
+        }
       }
       .fp3d-find-btn {
         position: absolute;
@@ -3969,6 +4486,47 @@ const room = roomCeilingAt(floor, x, z);
         height: 100%;
         border-radius: 3px;
         box-shadow: 0 0 8px currentColor;
+      }
+      .fp3d-holo-meters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px 10px;
+      }
+      .fp3d-holo-pool-chem {
+        display: grid;
+        grid-template-columns: 50px 64px 1fr;
+        align-items: center;
+        gap: 6px;
+        margin-top: 5px;
+        font-size: 12px;
+      }
+      .fp3d-holo-pool-chem span {
+        opacity: 0.8;
+      }
+      .fp3d-holo-pool-chem b {
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+      .fp3d-holo-pool-chem i {
+        position: relative;
+        height: 4px;
+        border-radius: 2px;
+        /* red – yellow – green (the ideal range in the middle) – yellow – red */
+        background: linear-gradient(90deg, rgba(255, 77, 64, 0.35), rgba(255, 204, 64, 0.35) 25%, rgba(77, 255, 128, 0.45) 40%, rgba(77, 255, 128, 0.45) 60%, rgba(255, 204, 64, 0.35) 75%, rgba(255, 77, 64, 0.35));
+      }
+      .fp3d-holo-pool-chem em {
+        position: absolute;
+        top: -2px;
+        width: 8px;
+        height: 8px;
+        margin-left: -4px;
+        border-radius: 50%;
+        box-shadow: 0 0 6px currentColor;
+      }
+      .fp3d-holo-pool-line {
+        margin-top: 5px;
+        font-size: 12px;
+        opacity: 0.85;
       }
       .fp3d-holo-on {
         border-color: var(--fp3d-accent) !important;

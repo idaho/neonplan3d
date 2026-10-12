@@ -1,6 +1,7 @@
 // Lovelace card (loaded automatically by the integration, no resource needed).
 
 import { confirmEntities } from "./devices.ts";
+import { countView } from "./diagnostics.ts";
 import { css, html, LitElement, nothing, type PropertyValues } from "lit";
 import { BuildingController } from "./building-controller.ts";
 import "./components/room-panel.ts";
@@ -180,6 +181,7 @@ export class Floorplan3dCard extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
+    countView("card");
     document.addEventListener("fullscreenchange", this.onFullscreen);
     window.addEventListener("resize", this.onViewport);
     window.visualViewport?.addEventListener("resize", this.onViewport);
@@ -298,12 +300,14 @@ clearTimeout(this.cleanTimer);
     const heat = this._heat ?? c?.heatmap ?? "none";
     const explode = this._explode ?? c?.explode ?? true;
     // full screen, the screen below the dashboard header, or a fixed height
+    // full screen takes the whole screen by CSS (a measured height went stale on some screens, #426); "fill"
+    // reaches the bottom edge exactly: the card's 1 px border above and below is all that is left (#344)
     const size = this._fullscreen
-      ? `${this._vh}px`
+      ? "100%"
       : c?.fill
         ? this._top !== null
-          ? `${Math.max(240, this._vh - this._top - 8)}px`
-          : "calc(100vh - var(--header-height, 56px) - 16px)"
+          ? `${Math.max(240, this._vh - this._top - 2)}px`
+          : "calc(100vh - var(--header-height, 56px) - 2px)"
         : `${height}px`;
     // the bar of switches at the bottom (the back button belongs to it)
     const bar = !!b && !this._clean && (canGoBack || ((!!c?.controls || !!c?.time_travel) && !(this._roomId && c.room_panel !== false)));
@@ -329,6 +333,7 @@ clearTimeout(this.cleanTimer);
               .markerMode=${this._config?.markers ?? "important"}
               .markerNames=${this._config?.marker_names === true}
               .central=${this._config?.central !== false}
+              .walkable=${this._config?.walk !== false}
               .buttons=${this._config?.buttons?.map((b, i) => ({ id: `card_${i}`, ...b })) ?? null}
               .heatMode=${heat}
               .theme=${this._config?.theme ?? "neon"}
@@ -481,6 +486,10 @@ clearTimeout(this.cleanTimer);
       .fp3d-card-dash-2 {
         right: 56px;
       }
+      /* the view's walk button steps aside for the card's own buttons at the top right */
+      fp3d-view3d {
+        --fp3d-walk-right: 104px;
+      }
       .fp3d-card-full {
         position: absolute;
         right: 10px;
@@ -499,6 +508,18 @@ clearTimeout(this.cleanTimer);
         overflow: hidden;
         background: var(--fp3d-bg);
         height: 100%;
+      }
+      ha-card:fullscreen {
+        display: flex;
+        flex-direction: column;
+        width: 100vw;
+        height: 100vh;
+        border-radius: 0;
+        border: 0;
+      }
+      ha-card:fullscreen .fp3d-card-body {
+        flex: 1 1 auto;
+        min-height: 0;
       }
       /* night (kiosk): the whole card dimmed */
       ha-card.fp3d-night .fp3d-card-body {

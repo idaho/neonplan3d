@@ -200,6 +200,15 @@ const DEVICES = [
   entity("binary_sensor.bett_links", "schlafzimmer", "on", { friendly_name: "Bett links belegt", device_class: "occupancy" }),
   entity("binary_sensor.bett_rechts", "schlafzimmer", "off", { friendly_name: "Bett rechts belegt", device_class: "occupancy" }),
   entity("cover.garagentor", "garage", "open", { friendly_name: "Garagentor", device_class: "garage", current_position: 60, supported_features: 15 }),
+  // Energie Pro: gas and water meters (counters)
+  entity("sensor.wasserzaehler", null, "412.318", { friendly_name: "Wasserzähler", device_class: "water", unit_of_measurement: "m³", state_class: "total_increasing" }),
+  // Pool Pro: an 8 x 4 m pool with heat pump, filter pump, light, pH and redox measurement and a cover
+  entity("sensor.pool_wassertemperatur", null, "27.4", { friendly_name: "Pool Wassertemperatur", device_class: "temperature", unit_of_measurement: "°C" }),
+  entity("climate.pool_waermepumpe", null, "heat", { friendly_name: "Pool Wärmepumpe", temperature: 28, current_temperature: 27.4, hvac_action: "heating", hvac_modes: ["off", "heat"], min_temp: 15, max_temp: 35, target_temp_step: 0.5 }),
+  entity("switch.pool_filterpumpe", null, "on", { friendly_name: "Pool Filterpumpe" }),
+  entity("sensor.pool_ph", null, "7.32", { friendly_name: "Pool pH" }),
+  entity("sensor.pool_redox", null, "712", { friendly_name: "Pool Redox", unit_of_measurement: "mV" }),
+  entity("cover.pool_abdeckung", null, "open", { friendly_name: "Pool Abdeckung", current_position: 70, supported_features: 15 }),
   entity("binary_sensor.wohnzimmer_terrasse", "wohnzimmer", "on", { friendly_name: "Terrassentür", device_class: "opening" }),
   entity("vacuum.saugi", "wohnzimmer", "cleaning", { friendly_name: "Saugi", battery_level: 64 }),
   entity("binary_sensor.wohnzimmer_terrasse_2", "wohnzimmer", "off", { friendly_name: "Terrassentür Standflügel", device_class: "opening" }),
@@ -295,6 +304,8 @@ DEMO_BUILDING.energy = {
   battery_soc: null,
   consumption: null,
   tariff: "sensor.strompreis",
+  gas: "sensor.gaszaehler",
+  water: "sensor.wasserzaehler",
 };
 DEMO_BUILDING.presence = [
   { person: "person.mia", sensor: "sensor.mia_raum" },
@@ -328,7 +339,7 @@ DEMO_BUILDING.floors[0].openings = [
   hole("door", "wohnen", 2, 4.2, 0.9),
   hole("window", "kueche", 0, 2.4, 1.2),
   hole("door", "kueche", 1, 3.6, 0.9, { hinge: "right" }),
-  hole("garage", "garage", 1, 2.6, 2.5, { sill: 0, height: 2.1 }),
+  hole("garage", "garage", 2, 1.8, 2.5, { sill: 0, height: 2.1 }),
   hole("door", "kueche", 2, 1.6, 0.9),
   hole("window", "schlafen", 2, 2.2, 1.4, { contact: "binary_sensor.schlafzimmer_fenster", tilt: "binary_sensor.schlafzimmer_kipp" }),
   hole("window", "schlafen", 3, 1.7, 1.0, { contact: "none" }),
@@ -414,7 +425,7 @@ DEMO_BUILDING.floors[0].furniture = [
       { state: "suv", vehicle: "pack:mastershort.vehicles:suv" },
     ],
   },
-  { ...item("parking", 16.2, 2.7, 2.6, 5.2, 0.02, 90), entity: "device_tracker.zweitwagen", vehicle: "pack:mastershort.vehicles:compact" },
+  { ...item("parking", 11.8, 10.9, 2.6, 5.2, 0.02, 0), entity: "device_tracker.zweitwagen", vehicle: "pack:mastershort.vehicles:compact" },
 ];
 // a partition through half of the guest room (a free-standing wall)
 // a half-height wall between the kids' room and the office (edge 1 of the kids' room)
@@ -443,9 +454,35 @@ DEMO_BUILDING.floors[0].outdoor = [
   area("a1", "lawn", -3, -8, 17, -0.3),
   area("a2", "lawn", -3, 9.5, 6.5, 14),
   area("a3", "terrace", 1.5, -2.8, 6.2, -0.3),
-  area("a4", "pool", 8.5, -6.5, 12, -3.5),
+  {
+    ...area("a4", "pool", 8.5, -6.5, 12, -3.5),
+    // Pool Pro: skimmer and bottom drain suck, two inlets return, the backwash goes to the drain in the garage floor
+    pool: {
+      ports: [
+        { id: "sk", kind: "skimmer", x: 9.3, z: -3.5 },
+        { id: "bd", kind: "drain", x: 10.25, z: -5 },
+        { id: "in1", kind: "inlet", x: 11.2, z: -3.5 },
+        { id: "in2", kind: "inlet", x: 12, z: -5.4 },
+        { id: "kanal", kind: "waste", x: 13.2, z: 0.9 },
+      ],
+      pipes: [
+        { id: "p_sk", from: "port:sk", to: "dev:pv_sk", floor_id: "eg", points: [[9.3, -2.4], [10.35, -2.4]] },
+        { id: "p_sk2", from: "dev:pv_sk", to: "dev:pt_pump", floor_id: "eg", points: [] },
+        { id: "p_bd", from: "port:bd", to: "dev:pv_bd", floor_id: "eg", points: [[10.25, -2.8], [10.65, -2.8]] },
+        { id: "p_bd2", from: "dev:pv_bd", to: "dev:pt_pump", floor_id: "eg", points: [] },
+        { id: "p_pf", from: "dev:pt_pump", to: "dev:pt_filter", floor_id: "eg", points: [] },
+        { id: "p_fs", from: "dev:pt_filter", to: "dev:pv_split", floor_id: "eg", points: [] },
+        { id: "p_wp1", from: "dev:pv_split", to: "dev:pt_wp", floor_id: "eg", points: [[12.2, -0.6]] },
+        { id: "p_wp2", from: "dev:pt_wp", to: "dev:pv_tee", floor_id: "eg", points: [[13.0, -0.6]] },
+        { id: "p_by", from: "dev:pv_split", to: "dev:pv_tee", floor_id: "eg", points: [], height: 0.6 },
+        { id: "p_in1", from: "dev:pv_tee", to: "port:in1", floor_id: "eg", points: [[13.0, -2.2], [11.2, -2.2]] },
+        { id: "p_in2", from: "dev:pv_tee", to: "port:in2", floor_id: "eg", points: [[13.4, -2.0], [13.4, -5.4]] },
+        { id: "p_ws", from: "dev:pt_filter", to: "port:kanal", floor_id: "eg", points: [[11.6, 0.9]], height: 0.1 },
+      ],
+    },
+  },
   area("a5", "path", 7.0, 9.5, 8.2, 14),
-  area("a6", "driveway", 13.9, 0.8, 18.5, 4.6),
+  area("a6", "driveway", 10.2, 5.4, 13.4, 14),
   area("a7", "hedge", -3.5, -8.5, -2.9, 14),
   area("a8", "bed", 1.5, 10.2, 5.5, 11.2),
   area("a9", "fence", -4, -9, 19, 14.5),
@@ -453,8 +490,18 @@ DEMO_BUILDING.floors[0].outdoor = [
   { ...area("a10", "wild", 9.5, -2.6, 12.2, -1.0), cut: true },
   { ...area("a11", "pergola", 13.4, -3.6, 16.2, -0.9), height: 2.3, bracing: true },
 ];
-DEMO_BUILDING.floors[0].outdoor[5] = { ...DEMO_BUILDING.floors[0].outdoor[5], slope: 0.35, slope_dir: "x" };
+DEMO_BUILDING.floors[0].outdoor[5] = { ...DEMO_BUILDING.floors[0].outdoor[5], slope: 0.35, slope_dir: "-z" };
 // meter, solar inverter, home battery and wallbox on the back wall of the garage
+// Pool Pro: the technical room at the back wall of the garage, the heat pump outside behind it
+DEMO_BUILDING.floors[0].furniture.push(
+  { ...item("pool_valve", 10.35, 0.35, 0.16, 0.1, 0.14, 90), id: "pv_sk" },
+  { ...item("pool_valve", 10.65, 0.35, 0.16, 0.1, 0.14, 90), id: "pv_bd" },
+  { ...item("pool_pump", 10.9, 0.75, 0.7, 0.32, 0.4), id: "pt_pump" },
+  { ...item("pool_filter", 11.7, 0.5, 0.6, 0.6, 1.0), id: "pt_filter" },
+  { ...item("pool_valve", 12.4, 0.35, 0.16, 0.1, 0.14), id: "pv_split" },
+  { ...item("pool_valve", 13.0, 0.35, 0.16, 0.1, 0.14), id: "pv_tee" },
+  { ...item("pool_heat_pump", 12.6, -1.0, 1.0, 0.45, 0.75, 180), id: "pt_wp" },
+);
 DEMO_BUILDING.floors[0].furniture.push(
   { ...item("meter", 13.75, 0.11, 0.55, 0.21, 1.1), power: "sensor.netz_leistung" },
   { ...item("inverter", 13.0, 0.11, 0.5, 0.2, 0.65), id: "inv_main", power: "sensor.pv_leistung" },

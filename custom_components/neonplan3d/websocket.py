@@ -14,7 +14,8 @@ from homeassistant.loader import async_get_integration
 import voluptuous as vol
 
 from . import license as lic
-from .const import DOMAIN, SIGNAL_BUILDING_UPDATED
+from .const import DATA_DIAGNOSTICS, DOMAIN, SIGNAL_BUILDING_UPDATED
+from .diagnostics_report import DiagnosticsError, DiagnosticsReporter
 from .packs import MAX_PACK_SIZE, PackError, parts_of, verify_pack
 from .schema import BUILDING_SCHEMA, IMAGE_DATA
 from .storage import FloorplanData, complete
@@ -47,6 +48,10 @@ def async_register_commands(hass: HomeAssistant) -> None:
         ws_backup_export,
         ws_backup_import,
         ws_timetravel_history,
+        ws_diagnostics_get,
+        ws_diagnostics_set,
+        ws_diagnostics_delete,
+        ws_diagnostics_client,
     ):
         websocket_api.async_register_command(hass, command)
 
@@ -381,3 +386,95 @@ async def ws_backup_import(
             "skipped": skipped,
         },
     )
+
+
+# ---------------------------------------------------------------------------- opt-in diagnostics
+
+
+def _reporter(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> DiagnosticsReporter | None:
+    reporter: DiagnosticsReporter | None = hass.data.get(DATA_DIAGNOSTICS)
+    if reporter is None:
+        connection.send_error(msg["id"], "not_loaded", "NeonPlan 3D is not set up")
+    return reporter
+
+
+@websocket_api.websocket_command({vol.Required("type"): "neonplan3d/diagnostics/get"})
+@websocket_api.require_admin
+@callback
+def ws_diagnostics_get(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Whether the reports are on, and the exact next daily report."""
+    if (reporter := _reporter(hass, connection, msg)) is None:
+        return
+    connection.send_result(msg["id"], reporter.status())
+
+
+@websocket_api.websocket_command({vol.Required("type"): "neonplan3d/diagnostics/set", vol.Required("enabled"): bool})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_diagnostics_set(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Switch the reports on or off."""
+    if (reporter := _reporter(hass, connection, msg)) is None:
+        return
+    await reporter.async_set_enabled(msg["enabled"])
+    connection.send_result(msg["id"], reporter.status())
+
+
+@websocket_api.websocket_command({vol.Required("type"): "neonplan3d/diagnostics/delete"})
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_diagnostics_delete(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Delete what was sent under our id on the server, forget the id and switch off."""
+    if (reporter := _reporter(hass, connection, msg)) is None:
+        return
+    try:
+        await reporter.async_delete()
+    except DiagnosticsError as err:
+        connection.send_error(msg["id"], err.code, "The NeonPlan server could not be reached")
+        return
+    connection.send_result(msg["id"], reporter.status())
+
+
+_DIAG_CLIENT = vol.Schema(
+    {
+        vol.Optional("device"): vol.All(str, vol.Length(max=20)),
+        vol.Optional("browser"): vol.All(str, vol.Length(max=60)),
+        vol.Optional("os"): vol.All(str, vol.Length(max=60)),
+        vol.Optional("low_end"): vol.Any(None, bool),
+        vol.Optional("render_scale"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("fps"): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("fps_n"): int,
+        vol.Optional("gpu_tier"): vol.Any(None, vol.All(str, vol.Length(max=10))),
+        vol.Optional("views"): vol.All({vol.All(str, vol.Length(max=20)): int}, vol.Length(max=20)),
+    }
+)
+_DIAG_ERROR = vol.Schema(
+    {
+        vol.Required("msg"): vol.All(str, vol.Length(max=1000)),
+        vol.Required("where"): vol.All(str, vol.Length(max=200)),
+        vol.Optional("count", default=1): int,
+        vol.Optional("version", default=""): vol.All(str, vol.Length(max=40)),
+    }
+)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "neonplan3d/diagnostics/client",
+        vol.Optional("client"): vol.Any(None, _DIAG_CLIENT),
+        vol.Optional("errors", default=list): vol.All([_DIAG_ERROR], vol.Length(max=50)),
+    }
+)
+@callback
+def ws_diagnostics_client(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """A frontend's aggregate and errors (any user: the wall tablets report too). Ignored while the
+    reports are off; the answer tells the frontend whether to collect at all."""
+    reporter: DiagnosticsReporter | None = hass.data.get(DATA_DIAGNOSTICS)
+    if reporter is None or not reporter.enabled:
+        connection.send_result(msg["id"], {"enabled": False})
+        return
+    reporter.add_client(msg.get("client"), msg.get("errors"))
+    connection.send_result(msg["id"], {"enabled": True})

@@ -251,7 +251,27 @@ export function roomClimateSensors(hass: HomeAssistant, floor: Floor | null, roo
   const here = placed.filter((p) => inRoom(p.x, p.z)).map((p) => p.entity_id);
   const elsewhere = new Set(placed.filter((p) => !inRoom(p.x, p.z)).map((p) => p.entity_id));
   const ids = [...new Set([...areaEntities(hass, room.area_id).filter((id) => !elsewhere.has(id)), ...here])];
-  return ids.filter((id) => id.startsWith("sensor.") && hass.states[id]?.attributes.device_class === dc && isRoomClimateSensor(hass, id));
+  const sensors = ids.filter((id) => id.startsWith("sensor.") && hass.states[id]?.attributes.device_class === dc && isRoomClimateSensor(hass, id));
+  if (sensors.length) return sensors;
+  // no sensor of its own: a thermostat of the room tells its temperature (and humidity) too (#478)
+  const attr = CLIMATE_ATTRS[key];
+  return attr ? ids.filter((id) => id.startsWith("climate.") && typeof hass.states[id]?.attributes[attr] === "number") : [];
+}
+
+/** What a thermostat (climate entity) reports of a room's climate. */
+export const CLIMATE_ATTRS: Partial<Record<ClimateKey, string>> = { temperature: "current_temperature", humidity: "current_humidity" };
+
+/** A room climate value of a sensor (its state) or of a thermostat (its current_temperature / current_humidity). */
+export function climateReading(hass: HomeAssistant, id: string, key: ClimateKey): number {
+  const st = hass.states[id];
+  if (id.startsWith("climate.")) {
+    const attr = CLIMATE_ATTRS[key];
+    const v = attr ? Number(st?.attributes[attr]) : Number.NaN;
+    // a thermostat reports in Home Assistant's unit
+    return key === "temperature" ? toCelsius(v, tempUnit(hass)) : v;
+  }
+  const v = Number(st?.state);
+  return key === "temperature" ? toCelsius(v, st?.attributes.unit_of_measurement) : v;
 }
 
 /** Average of a room climate value (null when no sensor reports one). */
@@ -275,10 +295,7 @@ export function fromCelsius(hass: HomeAssistant, celsius: number): number {
 /** Average of the room's climate sensors; temperatures always in °C, whatever unit a sensor reports. */
 export function roomClimateValue(hass: HomeAssistant, floor: Floor | null, room: Room, key: ClimateKey): number | null {
   const values = roomClimateSensors(hass, floor, room, key)
-    .map((id) => {
-      const v = Number(hass.states[id]?.state);
-      return key === "temperature" ? toCelsius(v, hass.states[id]?.attributes.unit_of_measurement) : v;
-    })
+    .map((id) => climateReading(hass, id, key))
     .filter((v) => Number.isFinite(v));
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
 }
@@ -317,11 +334,20 @@ export function isStatusSensor(st: HassEntity | undefined): boolean {
   return !!st && st.entity_id.startsWith("sensor.") && st.attributes.device_class === "enum";
 }
 
+/**
+ * A robot vacuum at work: "cleaning", and the states some integrations report instead ("room_cleaning",
+ * "segment_cleaning", "zone_cleaning", "sweeping", "mopping" …) (#470).
+ */
+export function vacuumCleaning(state: string | undefined): boolean {
+  if (!state) return false;
+  return state === "cleaning" || /clean|sweep|mop/.test(state.toLowerCase());
+}
+
 /** "Active" drives the glow of a device marker: light on, cover open, heating, playing, window open … */
 export function isActive(st: HassEntity | undefined): boolean {
   if (!st) return false;
   // a robot vacuum (the pack's robot with its dock): busy while cleaning or on its way back
-  if (st.entity_id.startsWith("vacuum.")) return st.state === "cleaning" || st.state === "returning";
+  if (st.entity_id.startsWith("vacuum.")) return vacuumCleaning(st.state) || st.state === "returning";
   switch (kindOf(st.entity_id)) {
     case "light":
     case "switch":
@@ -513,6 +539,23 @@ function pair(openings: Opening[], ids: string[], shared = false): Map<string, s
  */
 export function openingEntities(hass: HomeAssistant, floors: readonly Floor[]): Map<string, OpeningEntities> {
   const out = new Map<string, OpeningEntities>();
+  const pick = (ref: string | null, auto: string | undefined) => (ref === "none" ? null : (ref ?? auto ?? null));
+  const link = (o: Opening, autoC?: string, autoK?: string): OpeningEntities => ({
+    cover: pick(o.cover, autoC),
+    // a window with a handle sensor gets no plain contact assigned automatically
+    contact: o.sensor === "handle" && o.contact == null ? null : pick(o.contact, autoK),
+    tilt: o.tilt === "none" ? null : o.tilt,
+    contact2: o.leaves === 2 && o.contact2 && o.contact2 !== "none" ? o.contact2 : null,
+    tilt2: o.leaves === 2 && o.tilt2 && o.tilt2 !== "none" ? o.tilt2 : null,
+    position: o.position && o.position !== "none" ? o.position : null,
+    positionInverted: !!o.position_inverted,
+    tiltAngle: o.tilt_angle && o.tilt_angle !== "none" ? o.tilt_angle : null,
+    tiltMax: o.tilt_max ?? null,
+    tiltOffset: o.tilt_offset ?? null,
+    tiltInvert: !!o.tilt_invert,
+    shut: !!o.shut,
+    ...(o.contact_invert ? { contactInvert: true } : {}),
+  });
   for (const floor of floors) {
     for (const room of floor.rooms) {
       const own = floor.openings.filter((o) => o.room_id === room.id).sort((a, b) => a.edge - b.edge || a.offset - b.offset);
@@ -529,28 +572,15 @@ export function openingEntities(hass: HomeAssistant, floors: readonly Floor[]): 
       const autoDoor = pair(doors, ids.filter((id) => kindOf(id) === "binary" && cls(id) === "door"));
       const autoGarageCover = pair(garages, ids.filter((id) => kindOf(id) === "cover" && GARAGE_COVERS.has(cls(id) ?? "")));
       const autoGarageContact = pair(garages, ids.filter((id) => kindOf(id) === "binary" && cls(id) === "garage_door"));
-      const pick = (ref: string | null, auto: string | undefined) => (ref === "none" ? null : (ref ?? auto ?? null));
       for (const o of own) {
         const autoC = o.type === "window" ? autoCover : o.type === "garage" ? autoGarageCover : null;
         const autoK = o.type === "window" ? autoWindow : o.type === "garage" ? autoGarageContact : autoDoor;
-        out.set(o.id, {
-          cover: pick(o.cover, autoC?.get(o.id)),
-          // a window with a handle sensor gets no plain contact assigned automatically
-          contact: o.sensor === "handle" && o.contact == null ? null : pick(o.contact, autoK.get(o.id)),
-          tilt: o.tilt === "none" ? null : o.tilt,
-          contact2: o.leaves === 2 && o.contact2 && o.contact2 !== "none" ? o.contact2 : null,
-          tilt2: o.leaves === 2 && o.tilt2 && o.tilt2 !== "none" ? o.tilt2 : null,
-          position: o.position && o.position !== "none" ? o.position : null,
-          positionInverted: !!o.position_inverted,
-          tiltAngle: o.tilt_angle && o.tilt_angle !== "none" ? o.tilt_angle : null,
-          tiltMax: o.tilt_max ?? null,
-          tiltOffset: o.tilt_offset ?? null,
-          tiltInvert: !!o.tilt_invert,
-          shut: !!o.shut,
-          ...(o.contact_invert ? { contactInvert: true } : {}),
-        });
+        out.set(o.id, link(o, autoC?.get(o.id), autoK.get(o.id)));
       }
     }
+    // an opening in a free wall that stands outside every room (outer walls drawn with the wall tool, rooms
+    // without walls of their own) has no area to look in: only the entities chosen by hand drive it (#367)
+    for (const o of floor.openings) if (!out.has(o.id)) out.set(o.id, link(o));
   }
   return out;
 }
@@ -956,6 +986,24 @@ export interface CarState {
   away: string | null;
 }
 
+/**
+ * Whether the car's lock entity says locked (null when it cannot tell): a lock, a binary_sensor of class lock
+ * ("on" means unlocked, as in Home Assistant), a text sensor like BMW's door lock state ("LOCKED", "SECURED",
+ * "UNLOCKED", "SELECTIVE_LOCKED", #369) or a switch or helper that is "on" while locked.
+ */
+export function carLocked(st: HassEntity): boolean | null {
+  const id = st.entity_id;
+  const state = String(st.state).toLowerCase().trim();
+  if (id.startsWith("lock.")) return state === "locked";
+  if (id.startsWith("binary_sensor.")) return st.attributes.device_class === "lock" ? state === "off" : state === "on";
+  if (id.startsWith("sensor.")) {
+    if (/^(locked|secured|double_locked|verriegelt|gesichert|abgeschlossen)$/.test(state)) return true;
+    if (/^(unlocked|unsecured|selective_locked|partially_locked|open|entriegelt|offen|unverriegelt)$/.test(state)) return false;
+    return null;
+  }
+  return state === "on";
+}
+
 export function carState(hass: HomeAssistant, f: Pick<Furniture, "entity" | "car">): CarState {
   const e = carEntities(hass, f);
   const st = (id: string | null) => (id ? hass.states[id] : undefined);
@@ -982,7 +1030,7 @@ export function carState(hass: HomeAssistant, f: Pick<Furniture, "entity" | "car
     chargingW,
     charging,
     plugged: plugSt ? plugSt.state === "on" : null,
-    locked: lockSt ? (lockSt.entity_id.startsWith("lock.") ? lockSt.state === "locked" : lockSt.state === "on") : null,
+    locked: lockSt ? carLocked(lockSt) : null,
     climateOn: climSt ? (climSt.entity_id.startsWith("climate.") ? climSt.state !== "off" && climSt.state !== "unavailable" : climSt.state === "on") : null,
     away: trackSt && trackState !== "home" && !isUnavailable(trackSt) ? (trackState === "not_home" ? "" : trackSt.state) : null,
   };
@@ -1018,7 +1066,13 @@ export function roomKey(name: string): string {
 
 /** The room a robot reports (sensor state, else the vacuum's current_room attribute), matched by room or area name. */
 export function robotRoom<R extends { name: string; area_id?: string | null }>(hass: HomeAssistant, rooms: readonly R[], vacuum: string | null, sensor: string | null): R | null {
-  return roomNamed(hass, rooms, sensor ? hass.states[sensor]?.state : vacuum ? hass.states[vacuum]?.attributes.current_room : undefined);
+  const attrs = vacuum ? hass.states[vacuum]?.attributes : undefined;
+  // the sensor first; when it names no room of the plan, what the vacuum itself says (#470)
+  for (const raw of [sensor ? hass.states[sensor]?.state : undefined, attrs?.current_room, attrs?.room, attrs?.current_segment]) {
+    const room = roomNamed(hass, rooms, raw);
+    if (room) return room;
+  }
+  return null;
 }
 
 /** The room a robot's name for it means ("Küche", "kitchen", the area's id). */

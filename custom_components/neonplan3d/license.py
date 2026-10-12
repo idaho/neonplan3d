@@ -87,6 +87,11 @@ async def _user_agent_of(hass: HomeAssistant) -> str:
     return _user_agent
 
 
+async def user_agent(hass: HomeAssistant) -> str:
+    """The User-Agent of every request to our servers (the shop and the opt-in diagnostics)."""
+    return await _user_agent_of(hass)
+
+
 def _retry_wait(res: aiohttp.ClientResponse, attempt: int) -> float | None:
     """How long to wait before trying again after a 429, None when the attempts are used up."""
     if attempt >= len(RETRY_WAITS):

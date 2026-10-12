@@ -2,6 +2,7 @@
 
 import type { ReactiveController, ReactiveControllerHost } from "lit";
 import { fetchBuilding, listPacks, saveBuilding, subscribeBuilding } from "./api.ts";
+import { initDiagnostics } from "./diagnostics.ts";
 import { normalizeBuilding, type Building } from "./model.ts";
 import { setPacks, type FurniturePack } from "./packs.ts";
 import type { HomeAssistant } from "./types.ts";
@@ -142,6 +143,9 @@ export class BuildingController implements ReactiveController {
     const building = this.pending;
     if (!building || !this.hass) return;
     this.pending = null;
+    // a mount height above what the backend accepts (10 m – "40" typed as centimetres) would refuse every save,
+    // also of an edit kept from earlier: it is brought into range here
+    for (const f of building.floors) for (const m of f.furniture) if (m.mount_y != null && m.mount_y > 10) m.mount_y = 10;
     this.saveState = "saving";
     this.host.requestUpdate();
     this.saving = (async () => {
@@ -166,6 +170,8 @@ export class BuildingController implements ReactiveController {
 
   private async start(): Promise<void> {
     if (!this.hass) return;
+    // the opt-in reports: one local call per page to learn whether they are on (see diagnostics.ts)
+    initDiagnostics(this.hass);
     await Promise.all([this.reloadPacks(), this.reload()]);
     if (!this.unsubscribe && this.connected) {
       try {

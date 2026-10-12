@@ -190,3 +190,17 @@ test("shadowed: a wall between lamp and point, its height and its openings", () 
   // past the wall's end
   assert.equal(shadowed({ x: 0, y: 1.5, z: 5 }, [wall], 4, 0, 5), false);
 });
+
+test("doors on one wall line between several rooms lead into the room they sit in (#444)", () => {
+  const floor: Floor = { ...newFloor("eg", "EG", 0), rooms: [rect("flur", 0, 0, 8, 3), rect("bad", 2, 3, 4, 6), rect("schlaf", 5, 3, 8, 6)] };
+  const door = (id: string, offset: number): Opening => ({ id, room_id: "flur", edge: 2, offset, width: 0.9, type: "door", sill: 0, height: 2.05, hinge: "left", leaves: 1, swing: "in", cover: null, contact: null, contact2: null, tilt: null });
+  // edge 2 runs from (8, 3) to (0, 3): the bathroom door at x = 3, the bedroom door at x = 6.5
+  floor.openings = [door("bad", 5), door("schlaf", 1.5)];
+  const s = surfaceOf(floor);
+  const rooms = (id: string) => {
+    const d = s.doors.find((x) => x.id === id)!;
+    return [d.a, d.b].sort();
+  };
+  assert.deepEqual(rooms("bad"), [0, 1]);
+  assert.deepEqual(rooms("schlaf"), [0, 2]);
+});

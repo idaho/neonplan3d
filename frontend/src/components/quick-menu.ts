@@ -274,7 +274,7 @@ export class Fp3dQuickMenu extends LitElement {
     const picture = typeof a.entity_picture === "string" ? (a.entity_picture as string) : null;
     return html`<div class="qm-media">
         <button class="qm-swatch qm-slot" aria-label=${this.t("previous")} ?disabled=${off} @click=${() => this.call("media_player", "media_previous_track")}>⏮</button>
-        <button class="qm-power qm-media-main ${playing ? "qm-on" : ""}" aria-label=${this.t("play_pause")} style=${picture ? `background-image:url(${picture})` : ""} @click=${() => this.call("media_player", off ? "turn_on" : "media_play_pause")}>
+        <button class="qm-power qm-media-main ${playing ? "qm-on" : ""}" aria-label=${this.t("play_pause")} style=${picture ? `background-image:url(${picture})` : ""} @click=${() => this.call("media_player", off ? "turn_on" : playing ? "media_pause" : "media_play")}>
           <span>${off ? "⏻" : playing ? "⏸" : "▶"}</span>
         </button>
         <button class="qm-swatch qm-slot" aria-label=${this.t("next")} ?disabled=${off} @click=${() => this.call("media_player", "media_next_track")}>⏭</button>

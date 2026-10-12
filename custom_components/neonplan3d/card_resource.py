@@ -4,11 +4,19 @@ The main bundle is also loaded as an extra frontend module, but in the companion
 before that module has arrived; the card then stays "Custom element doesn't exist: neonplan3d-card" until the
 sidebar page is opened (#252). Lovelace waits for its resources before it draws cards, so the card's bundle is
 kept in the resource list as well, in storage mode only (YAML resources belong to the user).
+
+While Home Assistant starts, its frontend is served before this integration has set up its static path, so a
+dashboard (a wall tablet reloading itself) may ask for the bundle too early, get nothing and keep "Configuration
+error" until the next reload (#461). The resource is therefore a small loader in `www/neonplan3d/`, which Home
+Assistant serves as /local from the start: it loads the bundle and tries again every few seconds while it is not
+there yet. Without a `www` folder at startup (/local is then not served) the bundle itself stays the resource.
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
+from pathlib import Path
 from typing import Any
 
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
@@ -17,6 +25,54 @@ from homeassistant.core import CoreState, Event, HomeAssistant
 from .const import MAIN_BUNDLE, URL_BASE
 
 _LOGGER = logging.getLogger(__name__)
+
+LOADER_DIR = "neonplan3d"
+LOADER_FILE = "neonplan3d-loader.js"
+LOADER_URL = f"/local/{LOADER_DIR}/{LOADER_FILE}"
+
+# tries every 5 s for 15 minutes; the first try is awaited, so a dashboard normally waits for the card as before
+_LOADER = """// NeonPlan 3D: loads the dashboard card. Written by the integration; changes here are overwritten.
+// While Home Assistant is still starting, the card's script is not served yet: then it tries again (#461).
+const url = "{url}";
+const tag = "neonplan3d-card";
+const load = async (n) => {{
+  try {{
+    await import(n ? `${{url}}&retry=${{n}}` : url);
+  }} catch (err) {{
+    // not there yet
+  }}
+}};
+await load(0);
+(async () => {{
+  for (let n = 1; n <= 180 && !customElements.get(tag); n++) {{
+    await new Promise((done) => setTimeout(done, 5000));
+    if (!customElements.get(tag)) await load(n);
+  }}
+}})();
+"""
+
+
+def loader_source(bundle_url: str) -> str:
+    """The loader for the bundle at this URL."""
+    return _LOADER.format(url=bundle_url.replace("\\", "").replace('"', ""))
+
+
+def write_loader(www: Path, bundle_url: str) -> None:
+    """Writes (or rewrites) the loader into the www folder (created when missing: /local then works next start)."""
+    folder = www / LOADER_DIR
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / LOADER_FILE
+    text = loader_source(bundle_url)
+    if not path.exists() or path.read_text(encoding="utf-8") != text:
+        path.write_text(text, encoding="utf-8")
+
+
+def remove_loader(www: Path) -> None:
+    """Takes the loader (and its folder, when empty) away again."""
+    folder = www / LOADER_DIR
+    (folder / LOADER_FILE).unlink(missing_ok=True)
+    with contextlib.suppress(OSError):
+        folder.rmdir()
 
 
 def _resources(hass: HomeAssistant) -> Any | None:
@@ -32,8 +88,9 @@ def _resources(hass: HomeAssistant) -> Any | None:
 
 
 def _is_ours(url: str) -> bool:
-    """A resource that loads our main bundle: ours, or an older copy of it (another path, an old hand install)."""
-    return url.split("?")[0].endswith(f"/{MAIN_BUNDLE}")
+    """A resource that loads our main bundle: ours, our loader, or an older copy (another path, an old hand install)."""
+    path = url.split("?")[0]
+    return path.endswith(f"/{MAIN_BUNDLE}") or path.endswith(f"/{LOADER_FILE}")
 
 
 async def async_ensure_card_resource(hass: HomeAssistant, url: str) -> None:
@@ -70,14 +127,15 @@ def async_schedule_card_resource(hass: HomeAssistant, url: str) -> None:
 
 
 async def async_remove_card_resource(hass: HomeAssistant) -> None:
-    """When the integration is removed: drop the resources that point to our own static path."""
+    """When the integration is removed: drop the resources that point to our own static path or our loader."""
     resources = _resources(hass)
     if resources is None:
         return
     try:
         await resources.async_get_info()
         for item in list(resources.async_items()):
-            if str(item.get("url", "")).startswith(f"{URL_BASE}/"):
+            url = str(item.get("url", ""))
+            if url.startswith(f"{URL_BASE}/") or url.split("?")[0] == LOADER_URL:
                 await resources.async_delete_item(item["id"])
     except Exception:
         _LOGGER.debug("Could not remove the dashboard resource", exc_info=True)

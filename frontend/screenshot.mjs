@@ -47,6 +47,9 @@ const PACK_SCRIPT = `
   e.setDoc(structuredClone(e._doc));
 `;
 
+// switches the lab on (cleared again before every shot) and opens the editor's last section, the opt-in reports
+const DIAG_SCRIPT = "localStorage.setItem('neonplan3d.lab', '1'); e.requestUpdate(); setTimeout(() => { const d = [...e.renderRoot.querySelectorAll('details')].at(-1); d.open = true; d.scrollIntoView(); }, 300); setTimeout(() => e.changeDiagnostics('on'), 700);";
+
 // a farmhouse like a user's: a two-storey house, a long barn whose front slope sweeps down lower
 // (catslide), and a lean-to with a pent roof in front of the barn; roof sections at their own heights
 const ATTIC_SCRIPT = "e.useRoofSections(); setTimeout(() => { const secs = e._doc.settings.roof.sections; const big = [...secs].sort((p, q) => Math.abs((q.x1 - q.x0) * (q.z1 - q.z0)) - Math.abs((p.x1 - p.x0) * (p.z1 - p.z0)))[0]; e._tool = 'roof'; e._roofId = big.id; e.updateRoofSection({ base: 3.7, eave_a: 3.7, eave_b: 3.7, pitch_a: 40, pitch_b: 40 }); }, 600);";
@@ -113,6 +116,9 @@ const shots = [
   { name: "editor-opening", query: "", width: 1280, height: 800, editor: true, editorState: { _openingId: "o2", _roomId: "wohnen" } },
   { name: "editor-camera-wedge", query: "", width: 1280, height: 800, editor: true, editorState: { _floorId: "eg", _deviceId: "camera.wohnzimmer", _roomId: "wohnen", _tool: "select" } },
   { name: "editor-picture-rules", query: "", width: 1280, height: 900, editor: true, editorScript: "const f = e._doc.floors[0].furniture.find((m) => m.pictures); e._roomId = 'wohnen'; e._furnitureId = f.id; e.renderRoot.querySelector('aside').scrollTop = 900;" },
+  // the opt-in reports (unreleased: only with the lab switch) and the exact JSON they send
+  { name: "editor-diagnostics", query: "", width: 1280, height: 1000, editor: true, editorScript: DIAG_SCRIPT, afterWait: 800 },
+  { name: "editor-diagnostics-data", query: "", width: 1280, height: 1000, editor: true, editorScript: DIAG_SCRIPT + " setTimeout(() => (e._diagView = true), 1100);", afterWait: 1200 },
   { name: "editor-library", query: "", width: 1280, height: 900, editor: true, editorScript: "e._roomId = 'wohnen'; e._furnQuery = 'sofa';" },
   { name: "editor-split-3d", query: "", width: 1400, height: 900, editor: true, editorScript: "e._split = true; e._furnitureId = 'm2';" },
   { name: "editor-free-wall", query: "", width: 1280, height: 800, editor: true, editorState: { _floorId: "og", _tool: "select" } },
@@ -164,10 +170,10 @@ const shots = [
   { name: "editor-split-wall", query: "", width: 1400, height: 900, editor: true, editorScript: "const r = e._doc.floors[0].rooms.find((x) => x.id === 'wohnen'); r.wall_splits = [[2.2], null, null, null]; r.wall_heights = [[1.1, null], null, null, null]; e.setDoc(structuredClone(e._doc)); e._roomId = 'wohnen'; e._tool = 'select'; setTimeout(() => e.renderRoot.querySelector('aside')?.scrollTo(0, 500), 400);", afterWait: 1200 },
   { name: "view-flat-outline", query: "", width: 1280, height: 800, editor: true, editorScript: "e._doc.floors = e._doc.floors.filter((f) => f.id === 'eg'); e._doc.settings.roof.sections = []; e.setDoc(structuredClone(e._doc)); e._floorId = 'eg'; setTimeout(() => { e.useRoofSections(); setTimeout(() => { const sec = e._doc.settings.roof.sections[0]; e._tool = 'roof'; e._roofId = sec.id; e.updateRoofSection({ shape: 'flat', eave_a: 2.95, eave_b: 2.95, base: 2.95 }); e.takeRoofOutline(); }, 500); }, 300);", afterWait: 2000, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.8, phi: 1.0, radius: 24 } },
   { name: "editor-flat-outline", query: "", width: 1400, height: 900, editor: true, editorScript: "e._doc.floors = e._doc.floors.filter((f) => f.id === 'eg'); e._doc.settings.roof.sections = []; e.setDoc(structuredClone(e._doc)); e._floorId = 'eg'; setTimeout(() => { e.useRoofSections(); setTimeout(() => { const sec = e._doc.settings.roof.sections[0]; e._tool = 'roof'; e._roofId = sec.id; e.updateRoofSection({ shape: 'flat', eave_a: 2.95, eave_b: 2.95, base: 2.95 }); e.takeRoofOutline(); setTimeout(() => e.fit(), 300); }, 500); }, 300);", afterWait: 2500 },
-  { name: "view-roof-halfhip", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { const secs = e._doc.settings.roof.sections; const big = [...secs].sort((p, q) => Math.abs((q.x1 - q.x0) * (q.z1 - q.z0)) - Math.abs((p.x1 - p.x0) * (p.z1 - p.z0)))[0]; e._tool = 'roof'; e._roofId = big.id; e.updateRoofSection({ shape: 'halfhip', pitch_a: 42, pitch_b: 42 }); }, 600);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.9, phi: 1.0, radius: 26 } },
-  { name: "view-roof-pyramid", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { const secs = e._doc.settings.roof.sections; const big = [...secs].sort((p, q) => Math.abs((q.x1 - q.x0) * (q.z1 - q.z0)) - Math.abs((p.x1 - p.x0) * (p.z1 - p.z0)))[0]; e._tool = 'roof'; e._roofId = big.id; e.updateRoofSection({ shape: 'pyramid', pitch_a: 35, pitch_b: 35 }); }, 600);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.9, phi: 1.0, radius: 26 } },
-  { name: "view-roof-mansard", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { const secs = e._doc.settings.roof.sections; const big = [...secs].sort((p, q) => Math.abs((q.x1 - q.x0) * (q.z1 - q.z0)) - Math.abs((p.x1 - p.x0) * (p.z1 - p.z0)))[0]; e._tool = 'roof'; e._roofId = big.id; e.updateRoofSection({ shape: 'mansard', pitch_a: 70, pitch_b: 70 }); }, 600);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.9, phi: 1.0, radius: 26 } },
-  { name: "view-roof-parapet", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { const secs = e._doc.settings.roof.sections; const big = [...secs].sort((p, q) => Math.abs((q.x1 - q.x0) * (q.z1 - q.z0)) - Math.abs((p.x1 - p.x0) * (p.z1 - p.z0)))[0]; e._tool = 'roof'; e._roofId = big.id; e.updateRoofSection({ shape: 'parapet', eave_a: 5.6, eave_b: 5.6 }); }, 600);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.9, phi: 1.0, radius: 26 } },
+  { name: "view-roof-halfhip", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { const secs = e._doc.settings.roof.sections; const big = [...secs].sort((p, q) => Math.abs((q.x1 - q.x0) * (q.z1 - q.z0)) - Math.abs((p.x1 - p.x0) * (p.z1 - p.z0)))[0]; e._tool = 'roof'; e._roofId = big.id; e.updateRoofSection({ shape: 'halfhip', pitch_a: 42, pitch_b: 42 }); }, 700);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.9, phi: 1.0, radius: 26 } },
+  { name: "view-roof-pyramid", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { const secs = e._doc.settings.roof.sections; const big = [...secs].sort((p, q) => Math.abs((q.x1 - q.x0) * (q.z1 - q.z0)) - Math.abs((p.x1 - p.x0) * (p.z1 - p.z0)))[0]; e._tool = 'roof'; e._roofId = big.id; e.updateRoofSection({ shape: 'pyramid', pitch_a: 35, pitch_b: 35 }); }, 700);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.9, phi: 1.0, radius: 26 } },
+  { name: "view-roof-mansard", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { const secs = e._doc.settings.roof.sections; const big = [...secs].sort((p, q) => Math.abs((q.x1 - q.x0) * (q.z1 - q.z0)) - Math.abs((p.x1 - p.x0) * (p.z1 - p.z0)))[0]; e._tool = 'roof'; e._roofId = big.id; e.updateRoofSection({ shape: 'mansard', pitch_a: 70, pitch_b: 70 }); }, 700);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.9, phi: 1.0, radius: 26 } },
+  { name: "view-roof-parapet", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { const secs = e._doc.settings.roof.sections; const big = [...secs].sort((p, q) => Math.abs((q.x1 - q.x0) * (q.z1 - q.z0)) - Math.abs((p.x1 - p.x0) * (p.z1 - p.z0)))[0]; e._tool = 'roof'; e._roofId = big.id; e.updateRoofSection({ shape: 'parapet', eave_a: 5.6, eave_b: 5.6 }); }, 700);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.9, phi: 1.0, radius: 26 } },
   { name: "view-dormer-flat", query: "", width: 1280, height: 800, editor: true, editorScript: ATTIC_SCRIPT + " setTimeout(() => { e.addDormer('b'); const d = e._doc.settings.roof.sections.find((s) => s.dormer); e._roofId = d.id; const deep = Math.abs(d.z1 - d.z0) > Math.abs(d.x1 - d.x0); const cx = (d.x0 + d.x1) / 2; const cz = (d.z0 + d.z1) / 2; e.updateRoofSection({ shape: 'flat', base: 5.6, ...(deep ? { x0: cx - 1.6, x1: cx + 1.6 } : { z0: cz - 1.6, z1: cz + 1.6 }) }); }, 900);", afterWait: 2200, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.75, phi: 1.05, radius: 24 } },
   { name: "view-dormer", query: "", width: 1280, height: 800, editor: true, editorScript: DORMER_SCRIPT, afterWait: 2200, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.75, phi: 1.05, radius: 24 } },
   { name: "view-dormer-floor", query: "", width: 1280, height: 800, editor: true, editorScript: DORMER_SCRIPT, afterWait: 2200, then3d: "Obergeschoss", camera: { theta: 0.5, phi: 1.0, radius: 14 } },
@@ -193,10 +199,10 @@ const shots = [
   { name: "promo-roof-day", query: "", width: 1280, height: 800, editor: true, editorScript: FARM_SCRIPT, then3d: "Alle Etagen", then3dAlso: ["Gestapelt", "Tag"], camera: { theta: 2.3, phi: 0.95, radius: 52 } },
   { name: "promo-parapet", query: "", width: 1280, height: 800, click: "Obergeschoss", then: "Kinderzimmer" },
   { name: "editor-outdoor-handles", query: "", width: 1280, height: 800, editor: true, editorScript: "const a = e._doc.floors[0].outdoor.find((x) => x.type === 'terrace'); e._tool = 'select'; e._outdoorId = a.id; e._roomId = null;" },
-  { name: "view-canopy", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { e._tool = 'roof'; e.addRoofSection([1.5, -2.8], [6.2, -0.24]); }, 600);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 3.9, phi: 1.1, radius: 24 } },
-  { name: "view-canopy-apart", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { e._tool = 'roof'; e.addRoofSection([1.5, -2.8], [6.2, -0.24]); }, 600);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Auseinander"], camera: { theta: 3.9, phi: 1.1, radius: 26 } },
-  { name: "view-canopy-b", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { e._tool = 'roof'; e.addRoofSection([1.5, -2.8], [6.2, -0.24]); }, 600);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 2.6, phi: 1.1, radius: 24 } },
-  { name: "view-roof-garage-pent", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { const g = e._doc.settings.roof.sections.find((s) => s.x0 > 9.5); e._tool = 'roof'; e._roofId = g.id; e.updateRoofSection({ shape: 'pent', axis: 'z', flip: true, pitch_a: 25, pitch_b: 25, eave_a: 2.6, eave_b: 2.6 }); }, 600);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.6, phi: 1.15, radius: 24 } },
+  { name: "view-canopy", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { e._tool = 'roof'; e.addRoofSection([1.5, -2.8], [6.2, -0.24]); }, 700);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 3.9, phi: 1.1, radius: 24 } },
+  { name: "view-canopy-apart", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { e._tool = 'roof'; e.addRoofSection([1.5, -2.8], [6.2, -0.24]); }, 700);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Auseinander"], camera: { theta: 3.9, phi: 1.1, radius: 26 } },
+  { name: "view-canopy-b", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { e._tool = 'roof'; e.addRoofSection([1.5, -2.8], [6.2, -0.24]); }, 700);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 2.6, phi: 1.1, radius: 24 } },
+  { name: "view-roof-garage-pent", query: "", width: 1280, height: 800, editor: true, editorScript: "e.useRoofSections(); setTimeout(() => { const g = e._doc.settings.roof.sections.find((s) => s.x0 > 9.5); e._tool = 'roof'; e._roofId = g.id; e.updateRoofSection({ shape: 'pent', axis: 'z', flip: true, pitch_a: 25, pitch_b: 25, eave_a: 2.6, eave_b: 2.6 }); }, 700);", afterWait: 1500, then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.6, phi: 1.15, radius: 24 } },
   { name: "view-roof-farmhouse-front", query: "", width: 1280, height: 800, editor: true, editorScript: FARM_SCRIPT, then3d: "Alle Etagen", then3dAlso: "Gestapelt", camera: { theta: 2.3, phi: 0.95, radius: 52 } },
   { name: "view-roof-farmhouse", query: "", width: 1280, height: 800, editor: true, editorScript: FARM_SCRIPT, then3d: "Alle Etagen", then3dAlso: "Gestapelt" },
   // the state hint above "Power sensor" must not overlap it (customer mail 2026-10-09)
@@ -265,6 +271,28 @@ const shots = [
   { name: "view-alert-banner", query: "?alerts", width: 1280, height: 800, click: "Erdgeschoss" },
   { name: "view-alert-short", query: "?alerts", width: 1280, height: 800, click: "Erdgeschoss", viewScript: "v.building = { ...v.building, settings: { ...v.building.settings, alert_names: false } };", wait: 800 },
   { name: "view-garden-trees", query: "", width: 1280, height: 800, editor: true, editorScript: "e.fit();", then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.35, phi: 1.15, radius: 30, target: { x: 7, y: 0, z: -1 } } },
+  { name: "view-outdoor-light", query: "", width: 1280, height: 800, editor: true, editorScript: "const f = e._doc.floors[0]; const r = (x0, z0, x1, z1) => [[x0, z0], [x1, z0], [x1, z1], [x0, z1]]; f.outdoor.push({ id: 'lt_lawn', type: 'lawn', points: r(8.3, 9.5, 10.1, 14) }, { id: 'lt_bed', type: 'bed', points: r(8.6, 10, 9.8, 12.8), offset: -0.3, slope: 0.3, slope_dir: 'x', cut: true }); e.setDoc(structuredClone(e._doc));", afterWait: 800, then3d: "Erdgeschoss", camera: { theta: 0.5, phi: 1.0, radius: 7, target: { x: 9.2, y: 0, z: 11.2 } } },
+  { name: "view-pool", query: "", width: 1280, height: 800, click: "Erdgeschoss", viewScript: "const c = v.viewer.controls; c.view.target.set(10.25, 0.2, -5); c.view.radius = 7.5; c.view.theta = 3.6; c.view.phi = 0.95; c.events.change(); v.viewer.invalidate();", wait: 2000, afterWait: 800 },
+  { name: "view-pool-phone", query: "", width: 430, height: 860, click: "Erdgeschoss", viewScript: "const c = v.viewer.controls; c.view.target.set(10.25, 0.2, -5); c.view.radius = 9; c.view.theta = 3.6; c.view.phi = 0.95; c.events.change(); v.viewer.invalidate();", wait: 2000, afterWait: 800 },
+  { name: "editor-pool", query: "", width: 1280, height: 1300, editor: true, editorScript: "e._tool = 'outdoor'; e._outdoorId = 'a4'; setTimeout(() => e.fit(), 300);", afterWait: 1200, scrollSide: true },
+  { name: "view-pool-above", query: "", width: 1280, height: 800, editor: true, editorScript: "const f = e._doc.floors[0]; f.outdoor = f.outdoor.filter((o) => o.id !== 'a4'); e.setDoc(structuredClone(e._doc)); e._tool = 'outdoor'; e._outdoorType = 'pool'; e._poolShape = 'oval'; e.addOutdoor([[8.5, -6.5], [12.5, -6.5], [12.5, -3.5], [8.5, -3.5]]); const n = e._doc.floors[0].outdoor.at(-1); n.pool = {}; n.above = true; n.height = 1.2; e.setDoc(structuredClone(e._doc));", afterWait: 1200, then3d: "Erdgeschoss", camera: { theta: 3.6, phi: 1.05, radius: 7.5, target: { x: 10.5, y: 0.6, z: -5 } } },
+  { name: "editor-outdoor-pick", query: "", width: 1280, height: 900, editor: true, editorScript: "const f = e._doc.floors[0]; f.outdoor = f.outdoor.filter((o) => o.id !== 'a4'); e.setDoc(structuredClone(e._doc)); e._tool = 'outdoor'; e._outdoorType = 'pool'; e._poolShape = 'oval'; e.addOutdoor([[8.5, -6.5], [12.5, -6.5], [12.5, -3.5], [8.5, -3.5]]); const n = e._doc.floors[0].outdoor.at(-1); n.pool = {}; e.setDoc(structuredClone(e._doc)); e._outdoorId = n.id; e._tool = 'outdoor'; setTimeout(() => e.fit(), 300);", afterWait: 1200 },
+  { name: "editor-pool-pipes", query: "", width: 1280, height: 1000, editor: true, editorScript: "e._tool = 'pool'; e.selectItem('outdoor', 'a4'); e._tool = 'pool'; e._pipeId = 'p_by'; setTimeout(() => { e._view = { ...e._view, scale: 70 }; e.showPoint(11, -2.4); }, 300);", afterWait: 1500 },
+  // the wall view: the living room's walls from the front with the furniture on them
+  // the wall view in 3D: standing in the kitchen, looking at the wall with the corner bench and the table
+  { name: "editor-wall-3d", query: "", width: 1280, height: 900, editor: true, editorScript: "localStorage.setItem('neonplan3d.wall3d', '1'); e._wallView3d = true; const r = e._doc.floors[0].rooms.find((x) => x.name === 'Küche'); e.openWallView(r.id, 2);", afterWait: 4000 },
+  { name: "editor-wall-3d-b", query: "", width: 1280, height: 900, editor: true, editorScript: "e._wallView3d = true; const r = e._doc.floors[0].rooms.find((x) => x.name === 'Wohnzimmer'); e.openWallView(r.id, 0);", afterWait: 4000 },
+  { name: "editor-wall-view", query: "", width: 1280, height: 900, editor: true, editorScript: "e._wallView3d = false; const r = e._doc.floors[0].rooms.find((x) => x.name === 'Wohnzimmer'); e.openWallView(r.id, 0);", afterWait: 800 },
+  { name: "editor-wall-view-2", query: "", width: 1280, height: 900, editor: true, editorScript: "e._wallView3d = false; const r = e._doc.floors[0].rooms.find((x) => x.name === 'Küche'); e.openWallView(r.id, 0); setTimeout(() => { const it = e._doc.floors[0].furniture.find((m) => m.type === 'kitchen_wall'); if (it) e._wallSel = it.id; }, 200);", afterWait: 900 },
+  // without Pool Pro (unreleased): no ports, devices or pipes in the pool tool
+  { name: "editor-pool-free", query: "?nopro", width: 1280, height: 1000, editor: true, editorScript: "e._tool = 'pool'; e.selectItem('outdoor', 'a4'); e._tool = 'pool'; setTimeout(() => { e._view = { ...e._view, scale: 70 }; e.showPoint(11, -2.4); }, 300);", afterWait: 1500, scrollSide: true },
+  { name: "editor-pool-tech", query: "", width: 1280, height: 1000, editor: true, editorScript: "e._tool = 'pool'; e.selectItem('outdoor', 'a4'); e._tool = 'pool'; e._pipeId = 'p_by'; setTimeout(() => { e._view = { ...e._view, scale: 70 }; e.showPoint(11, -2.4); }, 300);", afterWait: 1500, scrollSide: true },
+  { name: "view-pool-pipes", query: "", width: 1280, height: 800, click: "Erdgeschoss", viewScript: "const c = v.viewer.controls; c.view.target.set(11.2, 0.3, -1.6); c.view.radius = 8.5; c.view.theta = 3.9; c.view.phi = 0.85; c.events.change(); v.viewer.invalidate();", wait: 2000, afterWait: 1200 },
+  { name: "view-pool-backwash", query: "", width: 1280, height: 800, editor: true, editorScript: "const f = e._doc.floors[0].furniture.find((m) => m.id === 'pt_filter'); f.valve_position = 'backwash'; e.setDoc(structuredClone(e._doc));", afterWait: 800, then3d: "Erdgeschoss", wait: 1500, camera: { theta: 3.9, phi: 0.85, radius: 8.5, target: { x: 11.2, y: 0.3, z: -1.6 } } },
+  { name: "editor-round-drag", query: "", width: 1280, height: 900, editor: true, editorScript: "const f = e._doc.floors[0]; f.outdoor = f.outdoor.filter((o) => o.id !== 'a4'); e.setDoc(structuredClone(e._doc)); e._tool = 'pool'; e._poolShape = 'round'; e.addOutdoor([[8.5, -6.5], [12.5, -6.5], [12.5, -3.5], [8.5, -3.5]]); setTimeout(() => e.showPoint(10.5, -5), 200); setTimeout(() => { const a = e._doc.floors[0].outdoor.at(-1); const h = e.renderRoot.querySelectorAll('[data-out-box]')[2]; const r = h.getBoundingClientRect(); const x = r.x + r.width / 2; const y = r.y + r.height / 2; e.drag = { kind: 'outbox', id: a.id, corner: 2, base: e._doc, moved: false }; const ev = (dx, dy, type) => ({ type, clientX: x + dx, clientY: y + dy, pointerId: 7, altKey: false, target: h }); e.onPointerMove(ev(60, 10, 'pointermove')); e.onPointerMove(ev(140, 20, 'pointermove')); e.onPointerUp(ev(140, 20, 'pointerup')); const b = e._doc.floors[0].outdoor.at(-1).points; const xs = b.map((q) => q[0]); const zs = b.map((q) => q[1]); document.title = 'W=' + (Math.max(...xs) - Math.min(...xs)).toFixed(2) + ' D=' + (Math.max(...zs) - Math.min(...zs)).toFixed(2) + ' shape=' + e._doc.floors[0].outdoor.at(-1).pool_shape; }, 900);", afterWait: 1800 },
+  { name: "test-media-next", query: "", width: 1280, height: 800, click: "Erdgeschoss", wait: 2500, mouseClickIn: ".fp3d-holo-media:not([hidden]) .fp3d-holo-media-controls button:nth-child(3)" },
+  { name: "view-balcony", query: "", width: 1280, height: 800, editor: true, editorScript: "const og = e._doc.floors.find((f) => f.id === 'og'); og.outdoor = [...(og.outdoor ?? []), { id: 'bal', type: 'balcony', points: [[0.6, -1.6], [4.0, -1.6], [4.0, 0], [0.6, 0]] }]; e.setDoc(structuredClone(e._doc));", afterWait: 800, then3d: "Obergeschoss", camera: { theta: 3.5, phi: 1.15, radius: 7, target: { x: 2.3, y: 3.2, z: -0.6 } } },
+  { name: "test-wall-corners", query: "", width: 1280, height: 800, click: "Erdgeschoss", viewScript: "const c = v.viewer.controls; c.view.target.set(6, 1.5, 4.6); c.view.radius = 5; c.view.theta = 0.7; c.view.phi = 0.55; c.events.change(); v.viewer.invalidate();", wait: 1500, afterWait: 800 },
   { name: "view-outdoor-round", query: "", width: 1280, height: 800, editor: true, editorScript: "e.fit();", then3d: "Alle Etagen", then3dAlso: ["Gestapelt"], camera: { theta: 0.6, phi: 1.1, radius: 15, target: { x: 12.5, y: 0, z: -2 } } },
   { name: "editor-outdoor-pergola", query: "", width: 1280, height: 900, editor: true, editorState: { _outdoorId: "a11" }, scrollSide: true },
   { name: "view-room-ceiling", query: "", width: 1280, height: 800, editor: true, editorScript: "const k = e._doc.floors[0].rooms.find((r) => r.id === 'kueche'); k.ceiling_height = 1.4; e.setDoc(structuredClone(e._doc));", afterWait: 800, then3d: "Erdgeschoss", camera: { target: { x: 8, y: 1.4, z: 2.3 }, radius: 6, phi: 1.2, theta: 0.6 } },
@@ -401,6 +429,36 @@ shots.push(
 );
 shots.push(...[true, false].map((near) => ({ name: `view-kept-roof-${near ? 'near' : 'far'}`, query: "", width: 1280, height: 900, editor: true, editorScript: "e.fit();", then3d: "Alle Etagen", then3dAlso: "Gestapelt", keptRoofNear: near })));
 
+shots.push({
+  name: "editor-custom-block-integration", query: "", width: 1400, height: 1000,
+  editor: true, mockPrivatePacks: true,
+  editorScript: `
+    const b = structuredClone(e._doc), f = b.floors[0];
+    b.floors = [f];
+    f.rooms = [{ id: 'raised', name: 'Erhöhter Raum', area_id: null, points: [[0,0],[6,0],[6,5],[0,5]], floor_material: 'wood', elevation: f.elevation + 0.6, ceiling_height: 3.2 }];
+    f.openings = []; f.walls = []; f.outdoor = []; f.placements = [];
+    f.furniture = ['a','b'].map((id,i) => ({ id, type: 'wall_cabinet', x: 1 + i, z: 0.2, w: 0.6, d: 0.35, h: 0.8, rotation: 0, rotation_x: i ? 0 : 20, rotation_z: 0, variant: null, mount_y: 1.2 }));
+    b.settings.roof = { type: 'none', sections: [], windows: [], solar: [], pitch: 30, overhang: 0 };
+    e.setDoc(b); e._floorId = f.id; e._tool = 'select'; e._split = true;
+    e.setMulti(['a','b']); e.groupSelection();
+    if (e.selection().length !== 2) throw new Error('Custom furniture lost block selection');
+    e.rotateSelection(90);
+    const parts = () => e._doc.floors[0].furniture;
+    if (parts()[0].rotation_x !== 20 || parts().some(m => m.rotation !== 90)) throw new Error('Block rotation lost XYZ orientation');
+    e.undo();
+    e.lockSelection(true);
+    const locked = JSON.stringify(parts()); e.rotateSelection(90);
+    if (JSON.stringify(parts()) !== locked) throw new Error('A fixed block moved');
+    e.lockSelection(false);
+    const frame = { a: [0,0], b: [6,0], u: [1,0], n: [0,1], length: 6, rightward: true };
+    e.moveSetOnWall(frame, ['a','b'], 0.2, 0.1);
+    if (parts().some(m => Math.abs(m.mount_y - 1.3) > 0.001)) throw new Error('Wall block counted room elevation twice');
+    e.moveOnWall(frame, 'a', 0, 1.1);
+    if (parts()[0].mount_y !== 1.1) throw new Error('Wall height is not relative to room floor');
+    e.selectItem('furniture', 'a'); e.fit();
+  `,
+});
+
 const errors = [];
 shots.push(...[false, true].map((closed) => ({ name: `view-roof-sun-${closed ? 'closed' : 'open'}`, query: "", width: 1280, height: 900, editor: true, roofSunClosed: closed, then3d: "Alle Etagen", then3dAlso: "Gestapelt", editorScript: `
   const b = structuredClone(e._doc), f = b.floors[0]; b.floors = [f];
@@ -509,6 +567,23 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       new Function("v", code)(v);
     }, shot.viewScript);
     await new Promise((r) => setTimeout(r, 1500 + (shot.afterWait ?? 0)));
+  }
+  if (shot.mouseClickIn) {
+    // a real mouse click on an element inside the 3D view (CSS selector in its shadow root); prints the services called
+    const at = await page.evaluate((sel) => {
+      const v = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-view3d");
+      const h = v.hass;
+      window.__calls = [];
+      const orig = h.callService.bind(h);
+      h.callService = (d, s, data) => (window.__calls.push(`${d}.${s} ${JSON.stringify(data)}`), orig(d, s, data));
+      const el = v.renderRoot.querySelector(sel);
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return [r.x + r.width / 2, r.y + r.height / 2];
+    }, shot.mouseClickIn);
+    if (at) await page.mouse.click(at[0], at[1]);
+    await new Promise((r) => setTimeout(r, 400));
+    console.log("CLICK", shot.mouseClickIn, at ? "at " + at.map(Math.round).join(",") : "NOT FOUND", await page.evaluate(() => JSON.stringify(window.__calls)));
   }
   if (shot.editorScript) {
     await page.evaluate((code) => {
@@ -707,14 +782,14 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
           const input = field?.querySelector('input'); if (!input) throw new Error('Missing field: ' + label);
           input.value = String(value); input.dispatchEvent(new Event('change')); await settle();
         };
-        e.selectItem('room', 'low'); await settle(); await setNumber('Raumhöhe (m)', 4);
-        e.selectItem('room', 'high'); await settle(); await setNumber('Höhe über Boden (m)', 0.6); await setNumber('Raumhöhe (m)', 3.4);
+        e.selectItem('room', 'low'); await settle(); await setNumber('Deckenhöhe (m)', 4);
+        e.selectItem('room', 'high'); await settle(); await setNumber('Höhe über Boden (m)', 0.6); await setNumber('Deckenhöhe (m)', 3.4);
         if (e._doc.floors[0].height !== 2.6 || e._doc.floors[0].elevation !== 0) throw new Error('Room editing changed floor defaults');
         const reset = [...e.shadowRoot.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Etagenhöhen übernehmen');
         if (!reset) throw new Error('Missing inheritance reset'); reset.click(); await settle();
-        if (e.room.elevation !== null || e.room.height !== null) throw new Error('Room defaults did not reset');
+        if (e.room.elevation !== null || e.room.height !== null || e.room.ceiling_height !== null) throw new Error('Room defaults did not reset');
         e.undo(); await settle();
-        if (e.room.elevation !== 0.6 || e.room.height !== 3.4) throw new Error('Undo did not restore independent room heights');
+        if (e.room.elevation !== 0.6 || e.room.ceiling_height !== 3.4) throw new Error('Undo did not restore independent room heights');
         e.selectItem('opening', 'level_passage'); await settle();
         const label = [...e.shadowRoot.querySelectorAll('label.fp3d-field')].find((l) => l.textContent.includes('Stufen in diesem Raum'));
         const select = label?.querySelector('select'); if (!select) throw new Error('Missing stair side selector');
@@ -729,7 +804,7 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       await page.evaluate(async (side) => {
         const e = document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');
         const saved = (await e.hass.callWS({ type: 'neonplan3d/building/get' })).building.floors[0];
-        if (saved.rooms[1].elevation !== 0.6 || saved.rooms[1].height !== 3.4 || saved.openings[0].steps.side !== side) throw new Error('Room levels and steps did not save');
+        if (saved.rooms[1].elevation !== 0.6 || saved.rooms[1].ceiling_height !== 3.4 || saved.openings[0].steps.side !== side) throw new Error('Room levels and steps did not save');
       }, shot.roomLevelsSide);
       console.log('verified independent heights, stair side, undo/redo and save: ' + shot.name);
     }

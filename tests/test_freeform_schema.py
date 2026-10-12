@@ -19,11 +19,17 @@ ROOF = {"id": "test", "x0": 0, "z0": 0, "x1": 6, "z1": 6, "axis": "x", "eave_a":
 
 class FreeformSchemaTests(unittest.TestCase):
     def test_upstream_camera_and_room_ceiling_survive_custom_validation(self):
-        room = schema.ROOM_SCHEMA({
-            "id": "room", "name": "Room", "area_id": None, "points": POINTS,
-            "floor_material": "wood", "ceiling_height": 2.5,
-            "start_view": {"theta": 0.3, "phi": 1.1, "radius": 4.0},
-        })
+        room = schema.ROOM_SCHEMA(
+            {
+                "id": "room",
+                "name": "Room",
+                "area_id": None,
+                "points": POINTS,
+                "floor_material": "wood",
+                "ceiling_height": 2.5,
+                "start_view": {"theta": 0.3, "phi": 1.1, "radius": 4.0},
+            }
+        )
         self.assertEqual(room["ceiling_height"], 2.5)
         self.assertEqual(room["start_view"]["radius"], 4.0)
 

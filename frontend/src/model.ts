@@ -113,6 +113,8 @@ export interface Opening {
   shut?: boolean;
   /** The contact sensors report the other way round (on = closed, #329). */
   contact_invert?: boolean;
+  /** Windows: no rain warning for this one (it may stay open in the rain, under a canopy, D328). */
+  rain_ignore?: boolean;
   /** Highlight in 3D while open (null, default) or while closed (a WC or a child's room door). */
   mark?: "closed" | null;
   /** Ask before moving the blind or garage door; it then does not follow a swipe either. */
@@ -136,6 +138,12 @@ export interface ScreenPicture {
 export interface Furniture {
   /** Fixed against moving by accident. */
   locked?: boolean | null;
+  /** Furniture block: items with the same group id are selected, moved and turned together (a kitchen, a wall unit). */
+  group?: string | null;
+  /** Pool Pro, sand filter: the six-way valve's position (null = filter). */
+  valve_position?: ValvePosition | null;
+  /** Pool Pro, ball valve: closed stops the water (null / true = open). */
+  valve_open?: boolean | null;
   id: string;
   type: string;
   x: number;
@@ -540,6 +548,8 @@ export interface BuildingSettings {
   weather_effects?: WeatherEffect[] | null;
   /** Warning for a window open while it rains (default on). */
   rain_warning?: boolean;
+  /** Rain from a weather station of your own (a rain sensor or a rain rate) instead of the weather entity (D407). */
+  rain_entity?: string | null;
   /** Warnings name the device after the room (default on); off = only "Room · Smoke" when the warning has a room (#374). */
   alert_names?: boolean;
   /** An entity that reports a power outage (a grid or UPS sensor); null = no outage warning (#214). */
@@ -575,7 +585,7 @@ export type WeatherEffect = (typeof WEATHER_EFFECTS)[number];
 /** The effects shown when the plan does not say: everything but fog (fog greys the whole scene). */
 export const DEFAULT_WEATHER_EFFECTS: WeatherEffect[] = ["rain", "snow", "clouds", "lightning", "sky"];
 
-export const OUTDOOR_TYPES = ["lawn", "terrace", "path", "driveway", "pool", "bed", "wild", "hedge", "fence", "pergola"] as const;
+export const OUTDOOR_TYPES = ["lawn", "terrace", "path", "driveway", "pool", "bed", "wild", "hedge", "fence", "pergola", "balcony"] as const;
 export type OutdoorType = (typeof OUTDOOR_TYPES)[number];
 
 /** Top of each kind of outdoor area above ground level (pool: its water, below). */
@@ -590,6 +600,8 @@ export const OUTDOOR_TOP: Record<OutdoorType, number> = {
   hedge: 1.2,
   fence: 1.0,
   pergola: 2.2,
+  // a balcony's floor lies at the floor's level, a thin slab in front of the house
+  balcony: 0.02,
 };
 
 /** Types that stand on the ground as structures (no surface to stand on, no light pool). */
@@ -676,6 +688,139 @@ export interface OutdoorArea {
   bracing?: boolean;
   /** This area is cut out of every area beneath it that contains it (a wild patch or pond inside a lawn). */
   cut?: boolean;
+  /** Pool: round or oval (chosen before drawing); its outline is made from its box and resized as a whole. */
+  pool_shape?: "round" | "oval" | null;
+  /** Pool: an above-ground pool (a tub standing on the ground, `height` tall) instead of one let into the ground. */
+  above?: boolean;
+  /** Pool Pro: the pool's entities (water temperature, heat pump, filter pump, light, pH, chlorine, cover). */
+  pool?: PoolLinks | null;
+}
+
+/** Pool Pro: the entities of a pool; a role left empty is searched by name ("pool"), "none" switches it off. */
+export interface PoolLinks {
+  /** Water temperature (a sensor; a climate or water_heater entity reports it too). */
+  temperature?: EntityRef;
+  /** Heat pump or heater: a climate or water_heater entity (target temperature, heating) or a switch. */
+  heater?: EntityRef;
+  /** Filter pump: a switch, a binary sensor or a power sensor (running above 20 W). */
+  pump?: EntityRef;
+  /** Pool light: the water takes its colour. */
+  light?: EntityRef;
+  /** pH value. */
+  ph?: EntityRef;
+  /** Chlorine: redox/ORP in mV or free chlorine in mg/l (ppm). */
+  chlorine?: EntityRef;
+  /** Pool cover (a cover entity): it slides over the water as far as it is closed. */
+  cover?: EntityRef;
+  /** Pool Pro: the pool's ports (skimmer, bottom drain, inlets) and the waste drain the backwash goes to. */
+  ports?: PoolPort[];
+  /** Pool Pro: the pipes between ports and pool devices; the water flows from `from` to `to`. */
+  pipes?: PoolPipe[];
+  /** Pool Pro: T-pieces joining pipes. */
+  joints?: PoolJoint[];
+}
+
+/** A connection of a pool: skimmer and bottom drain suck, inlets return, the waste drain takes the backwash. */
+export interface PoolPort {
+  id: string;
+  kind: "skimmer" | "drain" | "inlet" | "waste";
+  x: number;
+  z: number;
+}
+
+/**
+ * A pipe between two nodes ("port:<id>", "dev:<furniture id>", "joint:<id>"; "" = a loose end), with its corner
+ * points in between.
+ */
+export interface PoolPipe {
+  id: string;
+  from: string;
+  to: string;
+  floor_id: string;
+  points: Vec2[];
+  /** Height above the floor in m (negative: under the ground); null = 0.3 m. */
+  height?: number | null;
+  /**
+   * A height per point (null: `height`) – a pipe laid on a wall: up from the floor, along it, round the corner,
+   * down into the ground. With it the pipe runs straight from node to point to node (no automatic risers).
+   */
+  heights?: (number | null)[] | null;
+  /** Ball valves and sight glasses in the pipe. */
+  fittings?: PipeFitting[] | null;
+}
+
+/** A ball valve (a closed one stops the water) or a sight glass, `at` metres along the pipe from its start. */
+export interface PipeFitting {
+  id: string;
+  kind: "valve" | "sight";
+  at: number;
+  open?: boolean;
+}
+
+/**
+ * A part where pipes meet or pass: a T- or Y-piece, or a hole through a wall or the floor. A node of the pipes like
+ * a port or a device.
+ */
+export interface PoolJoint {
+  id: string;
+  /** "tee" (default), "y", or a hole: "wall", "floor". */
+  kind?: "tee" | "y" | "wall" | "floor" | null;
+  /** Its own name ("Hole skimmer", "T inlets"); else numbered by kind. */
+  name?: string | null;
+  x: number;
+  z: number;
+  /** Height above the floor (a hole: of its inside). */
+  y: number;
+  /** A hole in a wall: the normal into the room (its outside lies the wall's depth behind it). */
+  nx?: number | null;
+  nz?: number | null;
+  depth?: number | null;
+}
+
+/** Position of a sand filter's six-way valve. */
+export type ValvePosition = "filter" | "backwash" | "rinse" | "waste" | "recirculate" | "closed";
+export const VALVE_POSITIONS: ValvePosition[] = ["filter", "backwash", "rinse", "waste", "recirculate", "closed"];
+
+/** Height of a pool's water surface in floor coordinates: below the ground, or near the rim of an above-ground pool. */
+export function poolWaterY(floor: Floor, a: OutdoorArea): number {
+  const g = groundLevel(floor) + (a.offset ?? 0);
+  return a.above ? g + poolHeight(a) - 0.15 : g + OUTDOOR_TOP.pool;
+}
+
+/** Wall height of an above-ground pool (m). */
+export function poolHeight(a: OutdoorArea): number {
+  return a.height && a.height > 0.3 ? a.height : 1.2;
+}
+
+/** The outline of a pool of the given shape inside a box: rectangle, circle (as wide as the box's short side) or oval (a stadium). */
+export function poolShapePoints(shape: "rect" | "round" | "oval", x0: number, z0: number, x1: number, z1: number): Vec2[] {
+  const r2 = (v: number) => Math.round(v * 1000) / 1000;
+  const w = x1 - x0;
+  const d = z1 - z0;
+  const cx = (x0 + x1) / 2;
+  const cz = (z0 + z1) / 2;
+  if (shape === "rect") return [[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
+  const n = 40;
+  if (shape === "round") {
+    const r = Math.min(w, d) / 2;
+    return Array.from({ length: n }, (_, i): Vec2 => [r2(cx + r * Math.cos((i / n) * Math.PI * 2)), r2(cz + r * Math.sin((i / n) * Math.PI * 2))]);
+  }
+  // oval: straight long sides and half circles at the short ends
+  const along = w >= d;
+  const r = (along ? d : w) / 2;
+  const half = Math.max(0, (along ? w : d) / 2 - r);
+  const pts: Vec2[] = [];
+  const m = n / 2;
+  for (let end = 0; end < 2; end++) {
+    const sign = end === 0 ? 1 : -1;
+    for (let i = 0; i <= m; i++) {
+      const a = -Math.PI / 2 + (i / m) * Math.PI + (end === 0 ? 0 : Math.PI);
+      const u = sign * half + r * Math.cos(a);
+      const v = r * Math.sin(a);
+      pts.push(along ? [r2(cx + u), r2(cz + v)] : [r2(cx + v), r2(cz + u)]);
+    }
+  }
+  return pts;
 }
 
 /** Energy flow: meter position and power sensors (W). Grid positive = import, battery positive = discharging. */
@@ -690,6 +835,9 @@ export interface EnergySettings {
   /** House consumption (W); null = from the balance of grid, solar and battery. */
   consumption: string | null;
   tariff: string | null;
+  /** Energie Pro: gas and water meters (counters such as m³ or litres); the house card shows today's use. */
+  gas?: string | null;
+  water?: string | null;
 }
 
 /** A person and the sensor whose state names the room they are in (ESPresense, Bermuda, …). */
@@ -857,6 +1005,11 @@ export const FURNITURE_TYPES = [
   "wallbox",
   "meter",
   "grid_point",
+  "pool_pump",
+  "pool_filter",
+  "pool_heat_pump",
+  "pool_dosing",
+  "pool_valve",
   "parking",
   "fridge_smart",
   "stairwell",
@@ -875,6 +1028,11 @@ export const FURNITURE_GROUPS: Record<string, FurnitureType[]> = {
 };
 
 /** Energy devices: placed and set up in the Energy tool (stored like furniture, not in the library). */
+/** Pool Pro: the devices of a pool's technical room (they stand in the plan like furniture, the pipes join them). */
+export const POOL_DEVICES = ["pool_pump", "pool_filter", "pool_heat_pump", "pool_dosing", "pool_valve"] as const;
+/** Height of a ball valve's pipe above the floor. */
+export const POOL_VALVE_Y = 0.3;
+
 export const ENERGY_DEVICES = ["meter", "inverter", "home_battery", "wallbox", "grid_point"] as const;
 
 /** Furniture that can show a linked entity (TV state, power, …). */
@@ -1029,6 +1187,9 @@ export const ELECTRIC_FURNITURE = new Set<string>([
   "home_battery",
   "wallbox",
   "meter",
+  "pool_pump",
+  "pool_heat_pump",
+  "pool_dosing",
   "tv_board",
   "tv_wall",
   "desk",
@@ -1066,6 +1227,12 @@ export const FURNITURE_SIZE: Record<FurnitureType, [number, number, number]> = {
   inverter: [0.5, 0.2, 0.65],
   home_battery: [0.6, 0.25, 1.1],
   wallbox: [0.3, 0.15, 0.42],
+  // Pool Pro's technical room: pump with pre-filter, sand filter with six-way valve, heat pump, dosing unit, ball valve
+  pool_pump: [0.7, 0.32, 0.4],
+  pool_filter: [0.6, 0.6, 1.0],
+  pool_heat_pump: [1.0, 0.45, 0.75],
+  pool_dosing: [0.4, 0.2, 0.5],
+  pool_valve: [0.16, 0.1, 0.14],
   // the meter cabinet hangs on the wall as well
   meter: [0.55, 0.21, 1.1],
   // the grid connection: a small street cabinet at the edge of the plot

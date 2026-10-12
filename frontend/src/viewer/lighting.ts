@@ -7,7 +7,7 @@
 
 import type { Floor, Vec2 } from "../model.ts";
 import { outdoorSurface } from "./outdoor.ts";
-import { outdoorStanding, pointInPolygon, roomLevel, roomHeight, floorTop } from "../model.ts";
+import { outdoorDrop, outdoorStanding, pointInPolygon, roomLevel, roomHeight, floorTop } from "../model.ts";
 import { roomTransition, wallLevels } from "../room-levels.ts";
 import type { Wall } from "../geometry/walls.ts";
 import type { OpeningInfo } from "./build.ts";
@@ -116,23 +116,32 @@ export function buildLightSurface(
     }
   });
 
-  // outside: one zone (index rooms.length) for all outdoor areas and the outer faces of the walls
+  // outside: one zone (index rooms.length) for all outdoor areas and the outer faces of the walls. All areas
+  // share one grid and every cell belongs to the topmost area over its centre (the one listed last, so a bed
+  // cut into the lawn owns its cells): neighbouring or overlapping areas no longer lie on top of each other
+  // and light their seams twice, and a sloped area's cells follow its slope instead of floating flat (#341)
   const outside = floor.rooms.length;
-  for (const a of floor.outdoor ?? []) {
-    if (a.points.length < 3 || outdoorStanding(a.type)) continue;
-    const y = outdoorSurface(floor, a) + LIFT;
-    const xs = a.points.map((p) => p[0]);
-    const zs = a.points.map((p) => p[1]);
-    const x0 = Math.min(...xs);
-    const z0 = Math.min(...zs);
+  const flat = (floor.outdoor ?? []).filter((a) => a.points.length >= 3 && !outdoorStanding(a.type));
+  if (flat.length) {
+    const xs = flat.flatMap((a) => a.points.map((p) => p[0]));
+    const zs = flat.flatMap((a) => a.points.map((p) => p[1]));
+    const x0 = Math.floor(Math.min(...xs) / cell) * cell;
+    const z0 = Math.floor(Math.min(...zs) / cell) * cell;
     const nx = Math.max(1, Math.ceil((Math.max(...xs) - x0) / cell));
     const nz = Math.max(1, Math.ceil((Math.max(...zs) - z0) / cell));
+    const yAt = (a: (typeof flat)[number], x: number, z: number) => outdoorSurface(floor, a) - (a.type === "pool" ? 0 : outdoorDrop(a, x, z)) + LIFT;
     for (let i = 0; i < nx; i++) {
       for (let j = 0; j < nz; j++) {
-        if (!pointInPolygon([x0 + (i + 0.5) * cell, z0 + (j + 0.5) * cell], a.points)) continue;
         const px = x0 + i * cell;
         const pz = z0 + j * cell;
-        quad([px, y, pz], [px, y, pz + cell], [px + cell, y, pz + cell], [px + cell, y, pz], [0, 1, 0], outside, -1);
+        let a: (typeof flat)[number] | undefined;
+        const c: Vec2 = [px + cell / 2, pz + cell / 2];
+        // a pool owns its cells whatever is listed after it (it is cut out of the lawn around it)
+        a = flat.find((o) => o.type === "pool" && pointInPolygon(c, o.points));
+        for (let k = flat.length - 1; k >= 0 && !a; k--) if (pointInPolygon(c, flat[k].points)) a = flat[k];
+        if (!a) continue;
+        const v = (x: number, z: number): [number, number, number] => [x, yAt(a, x, z), z];
+        quad(v(px, pz), v(px, pz + cell), v(px + cell, pz + cell), v(px + cell, pz), [0, 1, 0], outside, -1);
       }
     }
   }
@@ -217,7 +226,8 @@ export function buildLightSurface(
   const doors: LightSurface["doors"] = [];
   for (const o of openings) {
     if (o.opening.type !== "door") continue;
-    const w = walls.find((wall) => onWall(wall, o));
+    // on the wall piece the door's middle lies in: several rooms' walls can share one straight line (#444)
+    const w = walls.find((wall) => onWall(wall, o) && withinWall(wall, o));
     if (!w || !w.roomLeft || !w.roomRight) continue;
     const a = floor.rooms.findIndex((r) => r.id === w.roomLeft);
     const b = floor.rooms.findIndex((r) => r.id === w.roomRight);
@@ -233,6 +243,17 @@ function onWall(w: Wall, o: OpeningInfo): boolean {
   const len = Math.hypot(dx, dz) || 1;
   const off = Math.abs((o.start[0] - w.a[0]) * dz - (o.start[1] - w.a[1]) * dx) / len;
   return off < 0.02 && Math.abs((o.axis[0] * dx + o.axis[1] * dz) / len) > 0.99;
+}
+
+/** The middle of an opening lies within a wall's length (5 cm to spare at its ends). */
+function withinWall(w: Wall, o: OpeningInfo): boolean {
+  const dx = w.b[0] - w.a[0];
+  const dz = w.b[1] - w.a[1];
+  const len = Math.hypot(dx, dz) || 1;
+  const mx = o.start[0] + o.axis[0] * (o.width / 2);
+  const mz = o.start[1] + o.axis[1] * (o.width / 2);
+  const s = ((mx - w.a[0]) * dx + (mz - w.a[1]) * dz) / len;
+  return s > -0.05 && s < len + 0.05;
 }
 
 /** Door and window areas on a wall, along its axis (s from wall.a) and in height. */

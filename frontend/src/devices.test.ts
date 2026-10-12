@@ -13,7 +13,7 @@ test("a lamp switched by a relay takes colour and brightness from its colour ent
   // the bulb unavailable: the relay's own (plain) glow
   assert.deepEqual(lightGlow(relay as never, { ...bulb, state: "unavailable" } as never)!.color, [1, 0.71, 0.28]);
 });
-import { appColor, areaEntities, otherAreaEntities, roomClimateSensors, roomClimateValue, unassignedEntities, autoPlace, entityName, fridgeDoors, furnitureEntities, groupByDevice, isActive, kindOf, lightGlow, openingEntities, openingState, powerSensorsOf, primaryEntities, roomPanelEntities, windowPosition, confirmEntities, robotRoom, robotRoomSensor, roomKey } from "./devices.ts";
+import { appColor, carLocked, areaEntities, otherAreaEntities, roomClimateSensors, roomClimateValue, unassignedEntities, autoPlace, entityName, fridgeDoors, furnitureEntities, groupByDevice, isActive, kindOf, lightGlow, openingEntities, openingState, powerSensorsOf, primaryEntities, roomPanelEntities, windowPosition, confirmEntities, robotRoom, robotRoomSensor, roomKey, vacuumCleaning } from "./devices.ts";
 import type { Floor, Opening, Room } from "./model.ts";
 import { centroid, newFloor, pointInPolygon } from "./model.ts";
 import type { HomeAssistant } from "./types.ts";
@@ -476,7 +476,13 @@ test("a robot vacuum's current room is found on its device and matched by room o
   assert.equal(robotRoom(hass, rooms, "vacuum.robbi", "sensor.robbi_room")?.id, "c");
   hass.states["sensor.robbi_room"].state = "Keller";
   assert.equal(robotRoom(hass, rooms, "vacuum.robbi", "sensor.robbi_room"), null);
+  // the sensor names no room of the plan: what the vacuum itself says counts (#470)
+  hass.states["vacuum.robbi"].attributes.current_room = "Wohnzimmer";
+  assert.equal(robotRoom(hass, rooms, "vacuum.robbi", "sensor.robbi_room")?.id, "a");
   assert.equal(roomKey("Büro"), roomKey("Buero"));
+  // integrations that report their own cleaning states
+  for (const s of ["cleaning", "room_cleaning", "segment_cleaning", "Sweeping", "mopping"]) assert.equal(vacuumCleaning(s), true, s);
+  for (const s of ["docked", "returning", "idle", undefined]) assert.equal(vacuumCleaning(s), false, String(s));
 });
 
 test("a window marked 'ask first' puts its blind on the confirm list", () => {
@@ -637,4 +643,52 @@ test("a hub device for a whole house (MQTT): room sensors count, power sensors s
   // the kitchen meter belongs to the kitchen switch, not to the living room light
   assert.equal(powerSensorFor(hass, "switch.kitchen"), "sensor.kitchen_power");
   assert.equal(powerSensorFor(hass, "light.living"), null);
+});
+
+test("carLocked reads locks, lock binary sensors, text sensors and switches (#369)", () => {
+  const st = (entity_id: string, state: string, attributes: Record<string, unknown> = {}) => ({ entity_id, state, attributes }) as never;
+  assert.equal(carLocked(st("lock.auto", "locked")), true);
+  assert.equal(carLocked(st("lock.auto", "unlocked")), false);
+  // a binary_sensor of class lock is "on" while unlocked, as in Home Assistant
+  assert.equal(carLocked(st("binary_sensor.auto_tueren", "on", { device_class: "lock" })), false);
+  assert.equal(carLocked(st("binary_sensor.auto_tueren", "off", { device_class: "lock" })), true);
+  // BMW reports the door lock state as text
+  assert.equal(carLocked(st("sensor.118i_zustand_der_turen", "LOCKED")), true);
+  assert.equal(carLocked(st("sensor.118i_zustand_der_turen", "SECURED")), true);
+  assert.equal(carLocked(st("sensor.118i_zustand_der_turen", "UNLOCKED")), false);
+  assert.equal(carLocked(st("sensor.118i_zustand_der_turen", "SELECTIVE_LOCKED")), false);
+  assert.equal(carLocked(st("sensor.118i_zustand_der_turen", "unknown")), null);
+  assert.equal(carLocked(st("input_boolean.auto_zu", "on")), true);
+});
+
+test("a door in a free wall outside every room follows the contact chosen for it (#367)", () => {
+  const hass = hassWith();
+  hass.states["binary_sensor.haustuer"] = { entity_id: "binary_sensor.haustuer", state: "on", attributes: { device_class: "door" } };
+  const door: Opening = {
+    id: "d1", room_id: "wall1", wall: "wall1", edge: 0, offset: 1, width: 1, type: "door", sill: 0, height: 2.05, hinge: "left", leaves: 1, swing: "in",
+    cover: null, contact: "binary_sensor.haustuer", contact2: null, tilt: null,
+  };
+  const floor: Floor = { ...newFloor("f", "F", 0), openings: [door], walls: [{ id: "wall1", a: [0, 0], b: [4, 0], thickness: null, height: null }] };
+  const links = openingEntities(hass, [floor]);
+  assert.equal(links.get("d1")?.contact, "binary_sensor.haustuer");
+  assert.equal(openingState(hass, links.get("d1")!, "door").open, 1);
+});
+
+test("a room without a temperature sensor takes its thermostat's current temperature and humidity (#478)", () => {
+  const hass = {
+    language: "de",
+    config: { unit_system: { temperature: "°C" } },
+    areas: { bad: { area_id: "bad", name: "Bad" } },
+    devices: { d: { id: "d", area_id: "bad" } },
+    entities: { "climate.bad": { entity_id: "climate.bad", device_id: "d" } },
+    states: { "climate.bad": { entity_id: "climate.bad", state: "heat", attributes: { current_temperature: 21.5, current_humidity: 58, friendly_name: "Bad Thermostat" } } },
+  } as unknown as HomeAssistant;
+  const room: Room = { id: "r", name: "Bad", area_id: "bad", points: [[0, 0], [3, 0], [3, 3], [0, 3]], floor_material: "tiles" };
+  const floor = { ...newFloor("eg", "EG", 0), rooms: [room] };
+  assert.deepEqual(roomClimateSensors(hass, floor, room, "temperature"), ["climate.bad"]);
+  assert.equal(roomClimateValue(hass, floor, room, "temperature"), 21.5);
+  assert.equal(roomClimateValue(hass, floor, room, "humidity"), 58);
+  assert.deepEqual(roomClimateSensors(hass, floor, room, "co2"), []);
+  // chosen by hand works the same
+  assert.equal(roomClimateValue(hass, floor, { ...room, area_id: null, climate: { temperature: "climate.bad" } }, "temperature"), 21.5);
 });

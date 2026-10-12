@@ -1,6 +1,6 @@
 import { Color } from "three";
 import type { Building, Floor, Vec2 } from "../model.ts";
-import { pointInPolygon } from "../model.ts";
+import { pointInPolygon, roomLevel } from "../model.ts";
 import { roofFaces, topFloor, windowCorners } from "../solar.ts";
 import { sectionFloor } from "../roof-sections.ts";
 import { GeoBuffer } from "./geo.ts";
@@ -32,11 +32,12 @@ export function appendRoofSun(buf: GeoBuffer, building: Building, floor: Floor, 
     const center: Vec2 = [corners.reduce((s, p) => s + p[0], 0) / 4, corners.reduce((s, p) => s + p[2], 0) / 4];
     const room = floor.rooms.find((r) => pointInPolygon(center, r.points));
     if (!room) continue;
+    const ground = roomLevel(floor, room);
     const mix = (a: number[], b: number[], t: number) => a.map((v, i) => v + (b[i] - v) * t);
     const at = (u: number, v: number) => {
       const p = mix(mix(corners[0], corners[1], u), mix(corners[3], corners[2], u), v * (1 - cover));
-      const d = Math.min(7, (p[1] - floor.elevation) * reach);
-      return [p[0] - toSun[0] * d, 0.02, p[2] - toSun[1] * d];
+      const d = Math.min(7, (p[1] - floor.elevation - ground) * reach);
+      return [p[0] - toSun[0] * d, ground + 0.02, p[2] - toSun[1] * d];
     };
     const distance = (a: number[], b: number[]) => Math.hypot(...a.map((v, i) => v - b[i]));
     const cols = Math.max(1, Math.ceil(distance(at(0, 0), at(1, 0)) / 0.3));

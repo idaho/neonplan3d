@@ -291,7 +291,9 @@ export class Session implements TimeTravelSession {
       d && spec.energy
         ? { solar: building.energy.solar ? [building.energy.solar] : d.solar, soc: building.energy.battery_soc ? [building.energy.battery_soc] : d.soc, sunDown: (t: number) => this.sunDown(t) }
         : null;
-    this.allEvents = findEvents({ timeline, roles: this.roles, weather: this.weather, energy });
+    const outageId = building.settings.outage_entity;
+    const outage = outageId && this.live.states[outageId] ? { id: outageId, attributes: this.live.states[outageId].attributes } : null;
+    this.allEvents = findEvents({ timeline, roles: this.roles, weather: this.weather, energy, outage });
     this.events = this.allEvents.filter((e) => !MINOR.has(e.kind));
   }
 
@@ -312,7 +314,7 @@ export class Session implements TimeTravelSession {
   }
 
   private motion(): string[] {
-    return [...this.roles].filter(([, r]) => r === "motion").map(([id]) => id);
+    return [...this.roles].filter(([, r]) => r === "motion" || r === "camera").map(([id]) => id);
   }
 
   private updateNights(): void {

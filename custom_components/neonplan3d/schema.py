@@ -6,6 +6,7 @@ so saving keeps working after a frontend update until Home Assistant restarts wi
 
 from __future__ import annotations
 
+import math
 from math import isfinite
 
 import voluptuous as vol
@@ -29,7 +30,8 @@ _SENSOR_REF = vol.Any(None, vol.All(str, vol.Length(max=255)))
 # point's height is counted from that floor
 START_VIEW_SCHEMA = vol.Schema(
     {
-        vol.Required("theta"): vol.All(vol.Coerce(float), vol.Range(min=-10, max=10)),
+        # the camera may have turned round several times: the angle counts once round (#416)
+        vol.Required("theta"): vol.All(vol.Coerce(float), lambda v: math.remainder(v, math.tau)),
         vol.Required("phi"): vol.All(vol.Coerce(float), vol.Range(min=0, max=3.2)),
         vol.Required("radius"): vol.All(vol.Coerce(float), vol.Range(min=1, max=500)),
         vol.Optional("target"): {
@@ -93,6 +95,8 @@ def _finite_number(value: float) -> float:
     if not isfinite(value):
         raise vol.Invalid("height must be finite")
     return value
+
+
 ROOM_SCHEMA = vol.Schema(
     {
         vol.Optional("elevation", default=None): vol.Any(
@@ -214,6 +218,8 @@ OPENING_SCHEMA = vol.Schema(
         vol.Optional("shut", default=False): bool,
         # the contact sensors report the other way round (on = closed)
         vol.Optional("contact_invert", default=False): bool,
+        # no rain warning for this window
+        vol.Optional("rain_ignore", default=False): bool,
         # highlight in 3D while open (None) or while closed ("closed": a WC or a child's room door)
         vol.Optional("mark", default=None): vol.Any(None, vol.In(["closed"])),
         # ask before moving the blind or garage door (no moving by a swipe then)
@@ -326,11 +332,18 @@ FURNITURE_SCHEMA = vol.Schema(
         # screens: the screen around a rule picture is dark (default) or white
         vol.Optional("screen_bg", default="black"): vol.In(["black", "white"]),
         vol.Optional("vehicle", default=None): vol.Any(None, vol.All(str, vol.Length(max=96))),
+        # Pool Pro: the sand filter's six-way valve and whether a ball valve is open
+        vol.Optional("valve_position", default=None): vol.Any(
+            None, vol.In(["filter", "backwash", "rinse", "waste", "recirculate", "closed"])
+        ),
+        vol.Optional("valve_open", default=None): vol.Any(None, bool),
         # Auto Pro: the car's entities
         vol.Optional("car", default=None): vol.Any(None, CAR_SCHEMA),
         vol.Optional("scale", default=1.0): vol.All(vol.Coerce(float), vol.Range(min=0.2, max=2)),
         vol.Optional("type_entity", default=None): vol.Any(None, vol.All(str, vol.Length(max=255))),
         vol.Optional("types", default=[]): vol.All([_VEHICLE_TYPE_SCHEMA], vol.Length(max=20)),
+        # furniture block: items with the same group id move and turn together (a kitchen, a wall unit)
+        vol.Optional("group", default=None): vol.Any(None, vol.All(str, vol.Length(max=64))),
         # fixed against moving by accident
         vol.Optional("locked", default=None): vol.Any(None, bool),
     },
@@ -391,7 +404,75 @@ BACKGROUND_SCHEMA = vol.Schema(
     extra=vol.ALLOW_EXTRA,
 )
 
-OUTDOOR_TYPES = ["lawn", "terrace", "path", "driveway", "pool", "bed", "wild", "hedge", "fence", "pergola"]
+# Pool Pro: water temperature, heat pump, filter pump, light, pH, chlorine and cover of a pool
+_POOL_ENTITY = vol.Any(None, vol.All(str, vol.Length(max=255)))
+_POINT = vol.All([vol.Coerce(float)], vol.Length(min=2, max=2))
+POOL_PORT_SCHEMA = vol.Schema(
+    {
+        vol.Required("id"): vol.All(str, vol.Length(max=80)),
+        vol.Required("kind"): vol.In(["skimmer", "drain", "inlet", "waste"]),
+        vol.Required("x"): vol.Coerce(float),
+        vol.Required("z"): vol.Coerce(float),
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+POOL_FITTING_SCHEMA = vol.Schema(
+    {
+        vol.Required("id"): vol.All(str, vol.Length(max=80)),
+        vol.Required("kind"): vol.In(["valve", "sight"]),
+        vol.Required("at"): vol.All(vol.Coerce(float), vol.Range(min=0, max=1000)),
+        vol.Optional("open", default=True): bool,
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+POOL_PIPE_SCHEMA = vol.Schema(
+    {
+        vol.Required("id"): vol.All(str, vol.Length(max=80)),
+        vol.Required("from"): vol.All(str, vol.Length(max=120)),
+        vol.Required("to"): vol.All(str, vol.Length(max=120)),
+        vol.Required("floor_id"): vol.All(str, vol.Length(max=80)),
+        vol.Optional("points", default=list): vol.All([_POINT], vol.Length(max=80)),
+        vol.Optional("height", default=None): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=-5, max=10))),
+        # a height per point (laid on a wall: up from the floor, along, round the corner, down into the ground)
+        vol.Optional("heights", default=None): vol.Any(
+            None,
+            vol.All([vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=-5, max=10)))], vol.Length(max=80)),
+        ),
+        # ball valves and sight glasses in the pipe, at a distance along it
+        vol.Optional("fittings", default=None): vol.Any(None, vol.All([POOL_FITTING_SCHEMA], vol.Length(max=40))),
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+# a T-piece where pipes meet (a node of the pipes like a port or a device)
+POOL_JOINT_SCHEMA = vol.Schema(
+    {
+        vol.Required("id"): vol.All(str, vol.Length(max=80)),
+        vol.Required("x"): vol.Coerce(float),
+        vol.Required("z"): vol.Coerce(float),
+        vol.Required("y"): vol.All(vol.Coerce(float), vol.Range(min=-5, max=10)),
+        # a T- or Y-piece, or a hole through a wall (its normal into the room, the wall's depth) or the floor
+        vol.Optional("kind", default=None): vol.Any(None, vol.In(["tee", "y", "wall", "floor"])),
+        vol.Optional("name", default=None): vol.Any(None, vol.All(str, vol.Length(max=60))),
+        vol.Optional("nx", default=None): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("nz", default=None): vol.Any(None, vol.Coerce(float)),
+        vol.Optional("depth", default=None): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0, max=2))),
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+POOL_SCHEMA = vol.Schema(
+    {
+        **{
+            vol.Optional(role): _POOL_ENTITY
+            for role in ("temperature", "heater", "pump", "light", "ph", "chlorine", "cover")
+        },
+        vol.Optional("ports"): vol.All([POOL_PORT_SCHEMA], vol.Length(max=40)),
+        vol.Optional("pipes"): vol.All([POOL_PIPE_SCHEMA], vol.Length(max=80)),
+        vol.Optional("joints"): vol.All([POOL_JOINT_SCHEMA], vol.Length(max=80)),
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+OUTDOOR_TYPES = ["lawn", "terrace", "path", "driveway", "pool", "bed", "wild", "hedge", "fence", "pergola", "balcony"]
 
 _OUTDOOR_FIELDS = vol.Schema(
     {
@@ -413,6 +494,12 @@ _OUTDOOR_FIELDS = vol.Schema(
         vol.Optional("bracing", default=False): bool,
         # cut out of every area beneath it that contains it
         vol.Optional("cut", default=False): bool,
+        # pools: round or oval, resized as a whole
+        vol.Optional("pool_shape", default=None): vol.Any(None, vol.In(["round", "oval"])),
+        # pools: standing on the ground instead of let into it
+        vol.Optional("above", default=False): bool,
+        # Pool Pro: the pool's entities
+        vol.Optional("pool", default=None): vol.Any(None, POOL_SCHEMA),
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -671,6 +758,8 @@ SETTINGS_SCHEMA = vol.Schema(
         # which weather effects the 3D view shows (None = all but fog)
         # warning for a window open while it rains
         vol.Optional("rain_warning", default=True): bool,
+        # rain from an own weather station (a rain sensor or rain rate) instead of the weather entity
+        vol.Optional("rain_entity", default=None): vol.Any(None, vol.All(str, vol.Length(max=255))),
         # warnings name the device after the room
         vol.Optional("alert_names", default=True): bool,
         # an entity that reports a power outage (None = no outage warning)
@@ -700,6 +789,8 @@ ENERGY_DEFAULTS = {
     "battery_soc": None,
     "consumption": None,
     "tariff": None,
+    "gas": None,
+    "water": None,
 }
 
 # Power sensors in watts: grid positive = import, battery positive = discharging (both can be inverted)
@@ -714,6 +805,9 @@ ENERGY_SCHEMA = vol.Schema(
         vol.Optional("battery_soc", default=None): _ENTITY,
         vol.Optional("consumption", default=None): _ENTITY,
         vol.Optional("tariff", default=None): _ENTITY,
+        # Energie Pro: gas and water meters (counters, e.g. m³); the house card shows today's use
+        vol.Optional("gas", default=None): _ENTITY,
+        vol.Optional("water", default=None): _ENTITY,
     },
     extra=vol.ALLOW_EXTRA,
 )

@@ -17,6 +17,13 @@ def test_start_view_keeps_its_target() -> None:
     assert view["target"] == {"x": 1.0, "y": 0.5, "z": -2.0}
 
 
+def test_start_view_after_several_turns() -> None:
+    # a camera turned round twice saves its angle once round (#416)
+    view = START_VIEW_SCHEMA({"theta": 13.214, "phi": 0.8, "radius": 9})
+    assert -3.15 < view["theta"] < 3.15
+    assert abs(view["theta"] - (13.214 - 4 * 3.141592653589793)) < 1e-9
+
+
 def test_start_view_without_target() -> None:
     assert "target" not in START_VIEW_SCHEMA({"theta": 1, "phi": 0.8, "radius": 9})
 
@@ -57,3 +64,10 @@ def test_length_units_follow_home_assistant_unless_set() -> None:
     base = {"wall_exterior": 0.3, "wall_interior": 0.12, "grid": 0.05}
     assert SETTINGS_SCHEMA(base)["units"] is None
     assert SETTINGS_SCHEMA({**base, "units": "imperial"})["units"] == "imperial"
+
+
+def test_furniture_block() -> None:
+    """Furniture blocks: items with the same group id move together; none by default."""
+    item = {"id": "f1", "type": "kitchen", "x": 0, "z": 0, "rotation": 0, "w": 0.6, "d": 0.6, "h": 0.9, "variant": None}
+    assert FURNITURE_SCHEMA(item)["group"] is None
+    assert FURNITURE_SCHEMA({**item, "group": "block_1"})["group"] == "block_1"

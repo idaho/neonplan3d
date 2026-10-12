@@ -80,9 +80,17 @@ function copyFonts() {
 // raised 2026-10-06 for the 1.12 round (outdoor round, hip-end solar, marker names): still small enough for old wall tablets;
 // main raised to 440 KB on 2026-10-08 for the time travel's switch, texts and read-only guards (its own code loads lazily), to 450 KB the same day for room to fix things;; card editor 180 KB the same day (it carries the German and English texts)
 // the time travel bundle raised to 120 KB on 2026-10-08 for phases 2/3 (the week, live edge, events sheet, summaries – loaded only when travelling)
-// This candidate targets upstream v1.16.0. Use its published budgets, not older 1.13 limits.
-// Final readiness still requires rebuilding/testing again after all feature and upstream merges.
-const BUDGET = { "neonplan3d.js": 530 * 1024, "neonplan3d-timetravel.js": 120 * 1024, "neonplan3d-3d.js": 760 * 1024, "neonplan3d-editor.js": 730 * 1024, "neonplan3d-card-editor.js": 205 * 1024 };
+// main 480 KB, editor 570 KB, card editor 185 KB on 2026-10-09 for Pool Pro (pool state, glass card, alerts and its texts in German and English);
+// main 495 KB, editor 600 KB, card editor 190 KB the same day for the pool tool, its pipes, devices and texts
+// editor 620 KB on 2026-10-10 for the wall view (furniture on a wall from the front; later pipes and cables on walls)
+// editor 640 KB on 2026-10-10: the wall view grew (3D in the room, lift, turn, lock, tap into a room); the next wall update (doors, windows, runs) needs room too
+// main 510 KB, 3D 760 KB, editor 680 KB, card editor 196 KB on 2026-10-10 for pipes on walls (Pool Pro: runs with a height per point,
+// T-pieces, ball valves, real tubes in 3D) and their texts – the doors and windows of the wall view come next
+// editor 730 KB, card editor 205 KB on 2026-10-10 for the parts' cards (connections, drawings, joining) and their texts
+// main 530 KB on 2026-10-11 for the walk through the house (its controls and texts; the walking itself lives in the 3D bundle)
+// Custom integration adds XYZ transforms, room levels, free roof contours and roof effects.
+// Measured after merging upstream 1cca55b: 3D 763 KB, editor 746 KB, card editor 207 KB.
+const BUDGET = { "neonplan3d.js": 530 * 1024, "neonplan3d-timetravel.js": 120 * 1024, "neonplan3d-3d.js": 775 * 1024, "neonplan3d-editor.js": 760 * 1024, "neonplan3d-card-editor.js": 212 * 1024 };
 
 copyFonts();
 if (watch) {

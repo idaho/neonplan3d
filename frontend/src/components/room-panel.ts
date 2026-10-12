@@ -431,7 +431,7 @@ export class Fp3dRoomPanel extends LitElement {
         <button class="fp3d-btn fp3d-rp-small" aria-label=${this.t("previous")} ?disabled=${na} @click=${() => this.call("media_player", "media_previous_track", { entity_id: id })}>
           ${transport(TRANSPORT.previous)}
         </button>
-        <button class="fp3d-btn fp3d-rp-small" aria-label=${this.t("play_pause")} ?disabled=${isUnavailable(st)} @click=${() => this.call("media_player", "media_play_pause", { entity_id: id })}>
+        <button class="fp3d-btn fp3d-rp-small" aria-label=${this.t("play_pause")} ?disabled=${isUnavailable(st)} @click=${() => this.call("media_player", st.state === "playing" ? "media_pause" : "media_play", { entity_id: id })}>
           ${transport(st.state === "playing" ? TRANSPORT.pause : TRANSPORT.play)}
         </button>
         <button class="fp3d-btn fp3d-rp-small" aria-label=${this.t("next")} ?disabled=${na} @click=${() => this.call("media_player", "media_next_track", { entity_id: id })}>

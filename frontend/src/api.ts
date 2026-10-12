@@ -220,3 +220,27 @@ export function restoreBackup(
 export function installPack(hass: HomeAssistant, packId: string): Promise<ImportedPack & { release: number }> {
   return hass.callWS<ImportedPack & { release: number }>({ type: "neonplan3d/packs/install", pack_id: packId });
 }
+
+/** The opt-in reports ("help improve NeonPlan"): the setting and the exact next daily report. */
+export interface DiagnosticsStatus {
+  enabled: boolean;
+  /** Unix time in seconds of the last daily report (or of switching on). */
+  last_daily: number | null;
+  /** Reports went out under this or an earlier id and can be deleted on the server. */
+  can_delete: boolean;
+  preview: Record<string, unknown>;
+  endpoint: string;
+}
+
+export async function getDiagnostics(hass: HomeAssistant): Promise<DiagnosticsStatus> {
+  return hass.callWS<DiagnosticsStatus>({ type: "neonplan3d/diagnostics/get" });
+}
+
+export async function setDiagnostics(hass: HomeAssistant, enabled: boolean): Promise<DiagnosticsStatus> {
+  return hass.callWS<DiagnosticsStatus>({ type: "neonplan3d/diagnostics/set", enabled });
+}
+
+/** Ask the server to delete what was sent, forget the id and switch off (fails when the server is unreachable). */
+export async function deleteDiagnostics(hass: HomeAssistant): Promise<DiagnosticsStatus> {
+  return hass.callWS<DiagnosticsStatus>({ type: "neonplan3d/diagnostics/delete" });
+}

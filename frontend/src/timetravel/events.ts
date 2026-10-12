@@ -2,6 +2,7 @@
 // water, a window open in the rain, motion at night, the robot and a finished washing machine. People are
 // never an event (who was where stays private).
 
+import { isOutage } from "../outage.ts";
 import type { Role } from "./classify.ts";
 import { seriesValue } from "./numeric.ts";
 import { indexAt, type Timeline, type Track } from "./timeline.ts";
@@ -18,7 +19,9 @@ export type EventKind =
   | "lock"
   | "garage"
   | "motion"
+  | "camera"
   | "washer"
+  | "outage"
   | "robot_start"
   | "robot_done"
   | "window"
@@ -38,10 +41,12 @@ export const RANK: Record<EventKind, number> = {
   gas: 95,
   co: 95,
   water: 90,
+  outage: 88,
   rain: 70,
   door: 50,
   lock: 45,
   garage: 40,
+  camera: 38,
   motion: 35,
   washer: 25,
   robot_done: 20,
@@ -55,7 +60,7 @@ export const RANK: Record<EventKind, number> = {
 export const MINOR: ReadonlySet<EventKind> = new Set(["window", "battery_full", "pv_peak"]);
 
 /** Safety events: the replay can stop at them (a fast replay would rush past). */
-export const IMPORTANT: ReadonlySet<EventKind> = new Set(["alarm", "smoke", "gas", "co", "water"]);
+export const IMPORTANT: ReadonlySet<EventKind> = new Set(["alarm", "smoke", "gas", "co", "water", "outage"]);
 
 export type Category = "safety" | "openings" | "devices" | "energy";
 
@@ -65,7 +70,9 @@ export const CATEGORY: Record<EventKind, Category> = {
   gas: "safety",
   co: "safety",
   water: "safety",
+  outage: "safety",
   motion: "safety",
+  camera: "safety",
   door: "openings",
   lock: "openings",
   garage: "openings",
@@ -158,6 +165,8 @@ export interface EventInput {
   night?: (t: number) => boolean;
   /** Energie Pro: the solar power and battery charge sensors (a full battery, the day's solar peak). */
   energy?: EnergyInput | null;
+  /** The entity that reports a power outage (settings) with its device class and unit, which decide what counts. */
+  outage?: { id: string; attributes: Record<string, unknown> } | null;
 }
 
 /** A sensor's value at the centre of every five-minute slot between two moments (statistics or rows). */
@@ -231,7 +240,7 @@ export function energyEvents(timeline: Timeline, energy: EnergyInput): TTEvent[]
 }
 
 /** Every event of the timeline, in time order; the same thing again within a few minutes counts once. */
-export function findEvents({ timeline, roles, weather, night = sleepTime, energy = null }: EventInput): TTEvent[] {
+export function findEvents({ timeline, roles, weather, night = sleepTime, energy = null, outage = null }: EventInput): TTEvent[] {
   const raw: TTEvent[] = [];
   const add = (t: number, kind: EventKind, entity: string) => {
     if (t >= timeline.start && t <= timeline.end) raw.push({ t, kind, entity });
@@ -277,6 +286,10 @@ export function findEvents({ timeline, roles, weather, night = sleepTime, energy
         case "motion":
           if (c.to === "on" && c.from === "off" && night(c.t)) add(c.t, "motion", id);
           break;
+        case "camera":
+          // a camera's detection: always (a motion sensor only at night), the same camera again after 5 minutes
+          if (c.to === "on" && c.from !== "on") add(c.t, "camera", id);
+          break;
         case "robot":
           if (c.to === "cleaning" && c.from !== "cleaning" && c.from !== "paused") add(c.t, "robot_start", id);
           else if (c.to === "docked" && (c.from === "cleaning" || c.from === "returning" || c.from === "paused")) add(c.t, "robot_done", id);
@@ -285,6 +298,12 @@ export function findEvents({ timeline, roles, weather, night = sleepTime, energy
     }
   }
   if (energy) for (const e of energyEvents(timeline, energy)) add(e.t, e.kind, e.entity);
+  // a power outage: the moment the outage entity starts to report one (Mavyre, beta)
+  const outageTrack = outage ? timeline.tracks.get(outage.id) : undefined;
+  if (outage && outageTrack) {
+    const out = (state: string) => isOutage({ entity_id: outage.id, state, attributes: outage.attributes });
+    for (const c of changes(outageTrack)) if (c.from !== null && out(c.to) && !out(c.from)) add(c.t, "outage", outage.id);
+  }
   raw.sort((a, b) => a.t - b.t || RANK[b.kind] - RANK[a.kind]);
   // the same thing again soon after counts once (a door opened twice, motion all night long)
   const last = new Map<string, number>();

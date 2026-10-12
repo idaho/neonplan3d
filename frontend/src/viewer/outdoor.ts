@@ -6,7 +6,7 @@
 
 import { Color } from "three";
 import type { Floor, OutdoorArea, OutdoorType, Vec2 } from "../model.ts";
-import { bounds, groundLevel, isAxisRect, OUTDOOR_TOP, outdoorDrop, outdoorStanding, pointInPolygon, signedArea } from "../model.ts";
+import { bounds, groundLevel, isAxisRect, OUTDOOR_TOP, outdoorDrop, outdoorStanding, pointInPolygon, poolHeight, poolWaterY, signedArea } from "../model.ts";
 import { ALWAYS, type GeoBuffer, type LineBuffer, pushPrism, shade, triangulate } from "./geo.ts";
 
 interface Look {
@@ -27,10 +27,32 @@ const LOOKS: Record<OutdoorType, Look> = {
   hedge: { color: 0x16402f, side: 0x103024, edge: 0x3de0a0, edgeAlpha: 0.35 },
   fence: { color: 0x1d2946, side: 0x1d2946, edge: 0x5b7cff, edgeAlpha: 0.45 },
   pergola: { color: 0x2a2238, side: 0x1f1a2c, edge: 0x5b7cff, edgeAlpha: 0.5 },
+  balcony: { color: 0x1d2238, side: 0x161a2c, edge: 0x5b7cff, edgeAlpha: 0.5 },
 };
+
+/** Whether an edge runs along a room's outline on this floor (a balcony needs no railing at the house wall). */
+function againstWall(floor: Floor, p: Vec2, q: Vec2): boolean {
+  const mid: Vec2 = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+  const dx = q[0] - p[0];
+  const dz = q[1] - p[1];
+  const len = Math.hypot(dx, dz) || 1;
+  return floor.rooms.some((r) =>
+    r.points.some((a, i) => {
+      const b = r.points[(i + 1) % r.points.length];
+      const ex = b[0] - a[0];
+      const ez = b[1] - a[1];
+      const el = Math.hypot(ex, ez) || 1;
+      // parallel, and the edge's middle within 40 cm of the room's edge
+      if (Math.abs((dx * ez - dz * ex) / (len * el)) > 0.05) return false;
+      const t = Math.max(0, Math.min(1, ((mid[0] - a[0]) * ex + (mid[1] - a[1]) * ez) / (el * el)));
+      return Math.hypot(a[0] + ex * t - mid[0], a[1] + ez * t - mid[1]) < 0.4;
+    }),
+  );
+}
 
 /** Height of the visible surface of an area (for the lighting layer), at its high edge. */
 export function outdoorSurface(floor: Floor, a: OutdoorArea): number {
+  if (a.type === "pool") return poolWaterY(floor, a);
   return groundLevel(floor) + (a.offset ?? 0) + (outdoorStanding(a.type) ? 0.01 : OUTDOOR_TOP[a.type]);
 }
 
@@ -38,14 +60,17 @@ function ccw(points: Vec2[]): Vec2[] {
   return signedArea(points) >= 0 ? points : [...points].reverse();
 }
 
-/** The areas listed after `index` that are marked "cut" and lie entirely inside area `a`: its holes. */
+/**
+ * The holes of area `a`: the areas listed after it that are marked "cut", and every pool, lying entirely inside it
+ * (a pool drawn into the lawn would otherwise lie under the lawn's surface).
+ */
 export function outdoorHoles(areas: OutdoorArea[], index: number): Vec2[][] {
   const a = areas[index];
   if (outdoorStanding(a.type) || a.type === "pool") return [];
   const holes: Vec2[][] = [];
-  for (let i = index + 1; i < areas.length; i++) {
+  for (let i = 0; i < areas.length; i++) {
     const b = areas[i];
-    if (!b.cut || b.points.length < 3) continue;
+    if (i === index || !((b.cut && i > index) || b.type === "pool") || b.points.length < 3) continue;
     if (b.points.every((p) => pointInPolygon(p, a.points))) holes.push(ccw(b.points));
   }
   return holes;
@@ -113,24 +138,38 @@ export function pushOutdoor(buf: GeoBuffer, lines: LineBuffer, floor: Floor): vo
     };
     switch (a.type) {
       case "pool": {
-        // rim around the water, water surface below ground
+        // in the ground: water below the rim; above ground: a tub standing on the ground with the water near its rim
         const water = new Color(look.color);
+        const sideC = new Color(look.side);
+        const wy = poolWaterY(floor, a);
+        const rim = a.above ? g + poolHeight(a) : g + 0.06;
         for (const [i, j, k] of triangulate(poly)) {
           const p = poly[i];
           const q = poly[j];
           const r = poly[k];
-          buf.tri([p[0], g + look.top, p[1]], [r[0], g + look.top, r[1]], [q[0], g + look.top, q[1]], water, water, water, undefined, ALWAYS);
+          buf.tri([p[0], wy, p[1]], [r[0], wy, r[1]], [q[0], wy, q[1]], water, water, water, undefined, ALWAYS);
         }
         // inner sides from the water up to the rim, seen from inside the pool
-        const sideC = new Color(look.side);
         for (let i = 0; i < poly.length; i++) {
           const p = poly[i];
           const q = poly[(i + 1) % poly.length];
-          buf.tri([q[0], g + look.top, q[1]], [q[0], g + 0.06, q[1]], [p[0], g + 0.06, p[1]], sideC, sideC, sideC, undefined, ALWAYS);
-          buf.tri([q[0], g + look.top, q[1]], [p[0], g + 0.06, p[1]], [p[0], g + look.top, p[1]], sideC, sideC, sideC, undefined, ALWAYS);
+          buf.tri([q[0], wy, q[1]], [q[0], rim, q[1]], [p[0], rim, p[1]], sideC, sideC, sideC, undefined, ALWAYS);
+          buf.tri([q[0], wy, q[1]], [p[0], rim, p[1]], [p[0], wy, p[1]], sideC, sideC, sideC, undefined, ALWAYS);
         }
-        outline(() => g + 0.06);
-        outline(() => g + look.top + 0.005);
+        if (a.above) {
+          // the tub's outer wall from the ground up to the rim, a little lighter than the water's sides
+          const wall = new Color(0x1f3150);
+          const foot = new Color(0x121d33);
+          for (let i = 0; i < poly.length; i++) {
+            const p = poly[i];
+            const q = poly[(i + 1) % poly.length];
+            buf.tri([p[0], g, p[1]], [p[0], rim, p[1]], [q[0], rim, q[1]], foot, wall, wall, undefined, ALWAYS);
+            buf.tri([p[0], g, p[1]], [q[0], rim, q[1]], [q[0], g, q[1]], foot, wall, foot, undefined, ALWAYS);
+          }
+          outline(() => g + 0.005);
+        }
+        outline(() => rim);
+        outline(() => wy + 0.005);
         break;
       }
       case "fence": {
@@ -192,6 +231,34 @@ export function pushOutdoor(buf: GeoBuffer, lines: LineBuffer, floor: Floor): vo
           }
         }
         outline((x, z) => groundAt(x, z) + h + 0.004);
+        break;
+      }
+      case "balcony": {
+        // a thin slab at the floor's level and a see-through railing of bars; no railing along the
+        // house wall, so the balcony doors behind it stay open to view (#253)
+        const slab = 0.18;
+        pushPrism(buf, poly, g - slab, g + look.top, look.side, look.color, { aoFrom: g - slab });
+        outline(() => g + look.top + 0.004);
+        const rail = a.height && a.height > 0.3 ? a.height : 1.0;
+        const bar = shade(0x8fb4ff, 0.42);
+        const top = shade(0x37e0ff, 0.55);
+        for (let i = 0; i < poly.length; i++) {
+          const p = poly[i];
+          const q = poly[(i + 1) % poly.length];
+          if (againstWall(floor, p, q)) continue;
+          const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+          const y0 = g + look.top;
+          lines.seg([p[0], y0 + rail, p[1]], [q[0], y0 + rail, q[1]], top, ALWAYS);
+          lines.seg([p[0], y0 + 0.1, p[1]], [q[0], y0 + 0.1, q[1]], bar, ALWAYS);
+          // bars every 12 cm, posts at the ends
+          const n = Math.max(1, Math.round(len / 0.12));
+          for (let k = 0; k <= n; k++) {
+            const t = k / n;
+            const x = p[0] + (q[0] - p[0]) * t;
+            const z = p[1] + (q[1] - p[1]) * t;
+            lines.seg([x, y0, z], [x, y0 + rail, z], k === 0 || k === n ? top : bar, ALWAYS);
+          }
+        }
         break;
       }
       default: {
