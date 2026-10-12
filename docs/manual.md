@@ -404,7 +404,11 @@ A simple house gets a flat or gable roof over the whole top floor under **Settin
 
 #### Roof windows
 
-Below the roof sections, **+ Roof window** puts a window into a roof face (78 × 118 cm by default). Drag it in the plan, also onto another roof face. Like a window it has a **Blind**, a **Contact** and a **Tilt contact**: open, the sash swings out, hinged at the top; tilted, a little; the blind comes down over the glass from the top.
+Choose the **Pivot point** in the roof-window form: **Top**, **Middle** or **Bottom**. A middle pivot swings the lower half out and the upper half in; a bottom pivot swings the upper edge out. Motor and tilt states use the same pivot. Existing windows remain top-hung by default.
+
+Like wall windows, roof windows cast a warm sun patch onto the floor of the room below. Sun position, north orientation, roof slope, clouds and blind position determine its direction and strength; a closed blind blocks the sunlight.
+
+Below the roof sections, **+ Roof window** puts a window into a roof face (78 × 118 cm by default). Drag it in the plan, also onto another roof face. Like a window it has a **Blind**, a **Contact** and a **Tilt contact**: the sash opens around the selected pivot; tilted, a little; the blind comes down over the glass from the top.
 
 Every roof window has a **name** (optional), a **blind**, a **contact** and a **tilt contact** – and a **window motor**: Velux, Roto or Fakro report the window's position as a cover, and the sash opens in 3D as far as the motor stands. Open or tilted, the frame glows warm like a wall window's. In a roof section the window cuts a hole into the slope, so the attic looks out through it.
 
@@ -468,7 +472,7 @@ The 3D view has three levels:
 |---|---|
 | **Tall walls** / **Cut** | Walls at full height, the front ones as tinted glass, or all walls cut at hip height – tall furniture (wardrobe, stairs, tall units) is cut with them, so it hides nothing behind it. Each device remembers the choice |
 | **Apart** / **Stacked** | In the house view: floors pulled apart or on top of each other |
-| **Roof stays** | In the house view: the roof stays while zooming in instead of lifting and fading (in the editor's roof and energy tools it always stays) |
+| **Roof stays** | In the house view: the roof stays while zooming in instead of lifting and fading (in the editor's roof and energy tools it always stays). Like walls, camera-facing roof surfaces become transparent while opposite surfaces remain solid, independently of zoom. |
 | **Dimmed** / **Stacked** / **Alone** | With an open floor: what happens to the floors below |
 | **Normal** / **Temp.** / **Humidity** / **CO₂** / **Values** | Heatmap: floors coloured by the room's value; **Values** colours nothing and writes temperature, humidity and CO₂ as numbers under the room names |
 | **Room names** | Show or hide the room names |

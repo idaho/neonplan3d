@@ -399,13 +399,32 @@ shots.push(
   { name: "editor-room-levels-phone", query: "", width: 430, height: 1100, editor: true, editorScript: ROOM_LEVELS_SCRIPT, roomLevelsSide: "other", mockPrivatePacks: true },
   { name: "view-room-levels-high", query: "", width: 1280, height: 900, editor: true, editorScript: ROOM_LEVELS_SCRIPT, roomLevelsSide: "other", mockPrivatePacks: true, then3d: "Alle Etagen", camera: { theta: 0.9, phi: 0.8, radius: 12, target: { x: 4, y: 1.2, z: 2 } } },
 );
+shots.push(...[true, false].map((near) => ({ name: `view-kept-roof-${near ? 'near' : 'far'}`, query: "", width: 1280, height: 900, editor: true, editorScript: "e.fit();", then3d: "Alle Etagen", then3dAlso: "Gestapelt", keptRoofNear: near })));
 
 const errors = [];
+shots.push(...[false, true].map((closed) => ({ name: `view-roof-sun-${closed ? 'closed' : 'open'}`, query: "", width: 1280, height: 900, editor: true, roofSunClosed: closed, then3d: "Alle Etagen", then3dAlso: "Gestapelt", editorScript: `
+  const b = structuredClone(e._doc), f = b.floors[0]; b.floors = [f];
+  Object.assign(f, { elevation: 0, height: 2.5, rooms: [{ id: 'sunroom', name: 'Dachfenster-Test', area_id: null, points: [[0,0],[10,0],[10,8],[0,8]], floor_material: 'wood' }], openings: [], furniture: [], placements: [], outdoor: [], walls: [] });
+  b.settings.roof = { type: 'gable', pitch: 35, overhang: 0.4, windows: [{ id: 'sky', face: 'main:b', u: 5.25, v: 1.96, w: 1.2, h: 1.6 }] }; b.settings.north = 0;
+  e.setDoc(b); e._floorId = f.id; e.fit();
+` })));
 const only = process.env.SHOTS?.split(",");
+for (const side of [-1, 1]) {
+  const fixture = shots.find((s) => s.name === 'view-roof-sun-open');
+  shots.push({ ...fixture, name: `view-roof-gable-${side < 0 ? 'left' : 'right'}`, roofSunClosed: undefined, gableSide: side,
+    editorScript: fixture.editorScript + "e.change((b) => b.floors[0].furniture.push({ id: 'gable-chair', type: 'chair', x: 5, z: 4, w: 0.6, d: 0.6, h: 0.9, rotation: 0 }));" });
+}
+const kneeFixture = shots.find((s) => s.name === 'view-roof-gable-left');
+for (const hinge of ['middle', 'bottom']) shots.push({ ...kneeFixture, name: `view-roof-window-${hinge}`, gableSide: undefined, roofHinge: hinge,
+  editorScript: kneeFixture.editorScript + "e._tool = 'roof'; e._roofWinId = 'sky';" });
+for (const below of [true, false]) shots.push({ ...kneeFixture, name: `view-roof-solar-${below ? 'below' : 'above'}`, gableSide: undefined, solarBelow: below,
+  editorScript: kneeFixture.editorScript + "e.change((b) => { b.settings.roof.solar = [{ id: 'pv-test', face: 'main:b', u: 3, v: 1, rows: 2, cols: 3, portrait: true, look: 'blue' }]; });" });
+shots.push({ ...kneeFixture, name: 'view-roof-knee-outlines', gableSide: 0.5,
+  editorScript: kneeFixture.editorScript + "e.useRoofSections(); e.change((b) => { for (const s of b.settings.roof.sections) { s.eave_a += 1; s.eave_b += 1; } });" });
 for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
   const page = await browser.newPage();
   if (shot.freeformExercise || shot.spotsExercise) page.on("dialog", async (dialog) => { errors.push(`${shot.name}: ${dialog.message()}`); await dialog.dismiss(); });
-  if (shot.mockPrivatePacks) {
+  if (shot.mockPrivatePacks || shot.keptRoofNear !== undefined || shot.roofSunClosed !== undefined || shot.gableSide !== undefined || shot.solarBelow !== undefined || shot.roofHinge !== undefined) {
     await page.setRequestInterception(true);
     page.on("request", (request) => {
       const path = new URL(request.url()).pathname;
@@ -714,6 +733,19 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       }, shot.roomLevelsSide);
       console.log('verified independent heights, stair side, undo/redo and save: ' + shot.name);
     }
+    if (shot.roofHinge) {
+      await page.evaluate(async (hinge) => {
+        const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+        for (const value of ['top', 'middle', 'bottom', hinge]) {
+          await e.updateComplete;
+          const label = [...e.shadowRoot.querySelectorAll('label')].find((l) => l.textContent.includes('Angelpunkt'));
+          const select = label?.querySelector('select');
+          if (!select || select.disabled || select.options.length !== 3) throw new Error('Pivot selector is missing');
+          select.value = value; select.dispatchEvent(new Event('change', { bubbles: true }));
+          if (e._doc.settings.roof.windows[0].hinge !== value) throw new Error('Pivot selection was not stored');
+        }
+      }, shot.roofHinge);
+    }
     // DEBUG_EVAL="<code using e>" prints what the editor says (for looking into a scene)
     if (process.env.DEBUG_EVAL) {
       const out = await page.evaluate((code) => {
@@ -769,6 +801,92 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
         console.log("DEBUG_VIEW", out);
       }
     }
+  }
+  if (shot.keptRoofNear !== undefined) {
+    await page.evaluate((near) => {
+      const v = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-view3d").viewer;
+      v.setKeepRoof(true);
+      v.controls.view.radius = v.houseRadius * (near ? 0.6 : 1.1);
+      v.invalidate();
+    }, shot.keptRoofNear);
+    await new Promise((r) => setTimeout(r, 1600));
+    await page.evaluate(() => {
+      const v = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-view3d").viewer;
+      if (!v.roof?.group.visible || Math.abs(v.roof.solid.opacity - 1) > 0.005) throw new Error('Kept roof visibility is incorrect');
+      for (const part of v.roof.parts) {
+        const fv = v.floorMap.get(part.floorId);
+        if (Math.abs(part.group.position.y - (fv.floor.elevation + fv.y + part.base)) > 0.005) throw new Error('Kept roof lifted while zooming');
+      }
+      if (v.roof.solid.depthWrite) throw new Error('Glass roof still occludes the room');
+    });
+  }
+  if (shot.roofSunClosed !== undefined) {
+    await page.evaluate((closed) => {
+      const v = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-view3d").viewer;
+      v.setWeather(null); v.setSun({ elevation: 70, azimuth: 180 });
+      v.setRoofWindows(new Map([['sky', { open: 0, tilt: 0, cover: 0 }]]));
+      const fv = v.floors[0];
+      if (!fv.sunMesh.visible || !fv.sunMesh.geometry.getAttribute('position').count) throw new Error('Skylight sunlight is missing');
+      v.setRoofWindows(new Map([['sky', { open: 0, tilt: 0, cover: 1 }]]));
+      if (fv.sunMesh.visible || fv.sunMesh.geometry.getAttribute('position').count) throw new Error('Closed skylight blind still lets sunlight through');
+      if (!closed) v.setRoofWindows(new Map([['sky', { open: 0, tilt: 0, cover: 0 }]]));
+      v.setWallMode('cut');
+      Object.assign(v.controls.view, { radius: 12, theta: 0.5, phi: 0.65 });
+      v.controls.view.target.set(5, 0.5, 4); v.invalidate();
+    }, shot.roofSunClosed);
+    await new Promise((r) => setTimeout(r, 1600));
+  }
+  if (shot.gableSide !== undefined) {
+    await page.evaluate((side) => {
+      const v = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-view3d").viewer;
+      v.setFloor(null, false);
+      v.setKeepRoof(true);
+      Object.assign(v.controls.view, { radius: 16, theta: side * Math.PI / 2, phi: 1.3 });
+      v.controls.view.target.set(5, 2.5, 4); v.invalidate();
+    }, shot.gableSide);
+    await new Promise((r) => setTimeout(r, 1600));
+    await page.evaluate(() => {
+      const v = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-view3d").viewer;
+      if (!v.roof?.group.visible) throw new Error('Gable test roof is not visible');
+    });
+  }
+  if (shot.solarBelow !== undefined) {
+    await page.evaluate((below) => {
+      const v = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-view3d").viewer;
+      v.setFloor(null, false); v.setKeepRoof(true); v.setSolarLevels(new Map([['pv-test', 1]]));
+      Object.assign(v.controls.view, { radius: below ? 4 : 12, theta: below ? 0 : 0.4, phi: below ? 2 : 0.7 });
+      v.controls.view.target.set(5, 3.8, 4); v.invalidate();
+    }, shot.solarBelow);
+    await new Promise((r) => setTimeout(r, 1600));
+    await page.evaluate((below) => {
+      const v = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-view3d").viewer;
+      if (!v.roof?.group.visible) throw new Error('Solar test roof is hidden');
+      let count = 0;
+      v.roof.group.traverse((mesh) => {
+        if (!mesh.geometry || ![v.roof.solar, v.roof.solarLines, v.roof.live].includes(mesh.material)) return;
+        const n = mesh.geometry.getAttribute('solarNormal'), p = mesh.geometry.getAttribute('solarPoint');
+        if (!n?.count || p?.count !== n.count) throw new Error('Solar facing data missing');
+        for (let i = 0; i < n.count; i++) {
+          const normal = v.camera.position.clone().set(n.getX(i), n.getY(i), n.getZ(i)).transformDirection(mesh.matrixWorld);
+          const point = v.camera.position.clone().set(p.getX(i), p.getY(i), p.getZ(i)).applyMatrix4(mesh.matrixWorld);
+          const facing = normal.dot(v.camera.position.clone().sub(point));
+          if (below ? facing >= 0 : facing <= 0) throw new Error('Solar test camera is on the wrong side');
+        }
+        count++;
+      });
+      if (count < 3) throw new Error('Module, grid or live overlay is missing');
+    }, shot.solarBelow);
+  }
+  if (shot.roofHinge) {
+    await page.evaluate((hinge) => {
+      const v = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-view3d").viewer;
+      if (v.building.settings.roof.windows[0].hinge !== hinge) throw new Error('Pivot did not reach the viewer');
+      v.setFloor(null, false); v.setKeepRoof(true);
+      v.setRoofWindows(new Map([['sky', { open: 1, tilt: 0, cover: 0.4 }]]));
+      Object.assign(v.controls.view, { radius: 4, theta: 0.4, phi: 0.8 });
+      v.controls.view.target.set(5, 3.7, 5.5); v.invalidate();
+    }, shot.roofHinge);
+    await new Promise((r) => setTimeout(r, 1600));
   }
   if (shot.furnishDrag) {
     await clickText("Einrichten");

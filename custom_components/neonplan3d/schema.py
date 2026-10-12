@@ -518,6 +518,7 @@ ROOF_WINDOW_SCHEMA = vol.Schema(
         vol.Required("v"): vol.All(vol.Coerce(float), vol.Range(min=-50, max=200)),
         vol.Optional("w", default=None): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0.3, max=4))),
         vol.Optional("h", default=None): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0.3, max=4))),
+        vol.Optional("hinge", default="top"): vol.In(["top", "middle", "bottom"]),
         vol.Optional("cover", default=None): _ENTITY_REF,
         vol.Optional("contact", default=None): _ENTITY_REF,
         vol.Optional("tilt", default=None): _ENTITY_REF,

@@ -2772,6 +2772,11 @@ export class Fp3dEditor extends LitElement {
           ${this.len(this.t("height_m"), w.h ?? 1.18, (v) => set({ h: Math.max(0.3, Math.min(4, round(v))) }), 0.01, 0.3)}
           ${this.len(this.t("solar_u"), w.u, (v) => set({ u: round(v) }), 0.05)}
           ${this.len(this.t("solar_v"), w.v, (v) => set({ v: round(v) }), 0.05)}
+          <label class="fp3d-field fp3d-wide">${this.t("roof_window_hinge")}
+            <select ?disabled=${!admin} @change=${(e: Event) => set({ hinge: (e.target as HTMLSelectElement).value as RoofWindow["hinge"] })}>
+              ${(["top", "middle", "bottom"] as const).map((hinge) => html`<option value=${hinge} ?selected=${(w.hinge ?? "top") === hinge}>${this.t(`roof_window_hinge_${hinge}`)}</option>`)}
+            </select>
+          </label>
           ${this.entitySelect(this.t("cover_entity"), w.cover ?? null, undefined, covers, (v) => set({ cover: v === "none" ? null : v }))}
           ${this.entitySelect(this.t("contact_entity"), w.contact ?? null, undefined, contacts, (v) => set({ contact: v === "none" ? null : v }))}
           ${this.entitySelect(this.t("roof_window_tilt"), w.tilt ?? null, undefined, contacts, (v) => set({ tilt: v === "none" ? null : v }))}

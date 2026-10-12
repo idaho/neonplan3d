@@ -208,7 +208,7 @@ export class Fp3dView3d extends LitElement {
   declare roomId: string | null;
   declare wallMode: WallMode;
   declare explode: boolean;
-  /** The roof stays while zooming in (no lift, no fade). */
+  /** The roof stays in place; camera-facing surfaces turn into glass like walls. */
   declare keepRoof: boolean;
   declare markerMode: MarkerMode;
   /** Card option marker_names: every device with an own name shows it under its pin. */
