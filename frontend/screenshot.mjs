@@ -367,6 +367,22 @@ shots.push(
   { name: "editor-ceiling-spots-phone", query: "", width: 430, height: 1100, editor: true, editorScript: CEILING_SPOTS_SCRIPT, spotsExercise: true, mockPrivatePacks: true, showSpotForm: true },
   { name: "view-canopy-spots", query: "", width: 1280, height: 900, editor: true, editorScript: CEILING_SPOTS_SCRIPT, spotsExercise: true, mockPrivatePacks: true, then3d: "Alle Etagen", houseView: true, camera: { theta: 1.6, phi: 1.25, radius: 20, target: { x: 3.5, y: 1.2, z: 3 } } },
 );
+const ROTATION_SCRIPT = `
+  const floor = e._doc.floors[0];
+  const strip = floor.furniture.find((f) => f.type === 'led_strip');
+  Object.assign(strip, { mount_y: 1.2, x: 2.4, z: 1.3, rotation: 25, rotation_x: 40, rotation_z: 70, upright: false });
+  const sofa = floor.furniture.find((f) => f.type === 'sofa');
+  Object.assign(sofa, { mount_y: 0.6, rotation_x: 20, rotation_z: -25 });
+  const tv = floor.furniture.find((f) => f.type === 'tv_board');
+  if (tv) Object.assign(tv, { rotation_x: -15, rotation_z: 20 });
+  e.setDoc(structuredClone(e._doc));
+  e._roomId = 'wohnen'; e._furnitureId = strip.id;
+`;
+shots.push(
+  { name: "editor-inventory-rotation", query: "", width: 1400, height: 1000, editor: true, editorScript: ROTATION_SCRIPT + "e._split = true;", focusRotation: true, mockPrivatePacks: true },
+  { name: "editor-inventory-rotation-phone", query: "", width: 430, height: 1000, editor: true, editorScript: ROTATION_SCRIPT, focusRotation: true, mockPrivatePacks: true },
+  { name: "view-inventory-rotation", query: "", width: 1280, height: 800, editor: true, editorScript: ROTATION_SCRIPT, mockPrivatePacks: true, then3d: "Erdgeschoss", camera: { theta: 1.3, phi: 1.1, radius: 7, target: { x: 2.4, y: 1.1, z: 2 } } },
+);
 
 const errors = [];
 const only = process.env.SHOTS?.split(",");
@@ -762,6 +778,18 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
       e.shadowRoot.querySelector('.fp3d-spot-form')?.scrollIntoView({ block: 'center' });
     });
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  if (shot.focusRotation) {
+    const values = await page.evaluate(() => {
+      const editor = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
+      const labels = [...editor.shadowRoot.querySelectorAll("label.fp3d-field")];
+      const x = labels.find((label) => label.textContent.includes("Drehung X"));
+      const z = labels.find((label) => label.textContent.includes("Drehung Z"));
+      x?.scrollIntoView({ block: "center", inline: "nearest" });
+      return [x?.querySelector("input")?.value, z?.querySelector("input")?.value];
+    });
+    if (values[0] !== "40" || values[1] !== "70") throw new Error(`${shot.name}: rotation fields missing or stale (${values})`);
     await new Promise((r) => setTimeout(r, 300));
   }
   await page.screenshot({ path: join(outDir, `${shot.name}.png`) });

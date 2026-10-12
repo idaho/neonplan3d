@@ -78,6 +78,16 @@ def _simple_polygon(points: list[list[float]]) -> list[list[float]]:
 
 _FREE_POLYGON = vol.All([_POINT], vol.Length(min=3, max=MAX_POINTS), _simple_polygon)
 
+
+def _finite_angle(value: float) -> float:
+    """Do not allow NaN to pass through range checks into geometry."""
+    if not isfinite(value):
+        raise vol.Invalid("rotation must be finite")
+    return value
+
+
+_ANGLE = vol.All(vol.Coerce(float), _finite_angle, vol.Range(min=-360, max=360))
+
 ROOM_SCHEMA = vol.Schema(
     {
         # room climate read from chosen sensors (None = automatic, "none" = no value)
@@ -235,6 +245,9 @@ FURNITURE_SCHEMA = vol.Schema(
         vol.Required("x"): _COORD,
         vol.Required("z"): _COORD,
         vol.Required("rotation"): vol.Coerce(float),
+        # extra local axes, before the existing Y/plan rotation; old plans remain upright
+        vol.Optional("rotation_x", default=0.0): _ANGLE,
+        vol.Optional("rotation_z", default=0.0): _ANGLE,
         vol.Required("w"): _LENGTH,
         vol.Required("d"): _LENGTH,
         vol.Required("h"): _LENGTH,
