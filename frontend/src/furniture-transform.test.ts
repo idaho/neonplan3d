@@ -38,6 +38,16 @@ test("tilted resize keeps the opposite projected corner and scales dimensions un
   close([Math.min(...after.map(v => v[0])), Math.min(...after.map(v => v[1]))], [x0, z0]);
 });
 
+test("thin or flat tilted objects stay finite and do not jump to ten centimetres", () => {
+  for (const h of [0, 0.03]) {
+    const f = { x: 0, z: 0, w: 3.2, d: 0.04, h, rotation: 0, rotation_x: 40, rotation_z: 70 } as Furniture;
+    const p = furnitureFootprint(f);
+    const size = resizeFurniture(f, [1, 1], [Math.max(...p.map(v => v[0])), Math.max(...p.map(v => v[1]))], 0.01);
+    close([size.w, size.d, size.h!], [f.w, f.d, f.h]);
+    assert.ok(Object.values(size).every(Number.isFinite));
+  }
+});
+
 test("missing angles preserve old plans exactly, and the centre stays fixed", () => {
   const f = { x: 3, z: 7, rotation: 123 };
   assert.deepEqual(furnitureTransform(f, 2)(1, 4, 8), [1, 4, 8]);

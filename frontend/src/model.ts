@@ -936,10 +936,12 @@ export function resizeFurniture(f: Furniture, corner: [1 | -1, 1 | -1], p: Vec2,
     const points = furnitureFootprint(f), [sx, sz] = corner;
     const width = Math.max(...points.map(p => p[0])) - Math.min(...points.map(p => p[0]));
     const depth = Math.max(...points.map(p => p[1])) - Math.min(...points.map(p => p[1]));
+    if (width * width + depth * depth < 1e-12) return { x: f.x, z: f.z, w: f.w, d: f.d, h: f.h };
     const ax = f.x - sx * width / 2, az = f.z - sz * depth / 2;
     const raw = ((p[0] - ax) * sx * width + (p[1] - az) * sz * depth) / (width * width + depth * depth);
     const longest = Math.max(f.w, f.d, f.h);
-    const scale = Math.max(0.1 / Math.min(f.w, f.d, f.h), Math.round(raw * longest / grid) * grid / longest);
+    const smallest = Math.min(...[f.w, f.d, f.h].filter(v => v > 0));
+    const scale = Math.max(0.001 / smallest, Math.round(raw * longest / grid) * grid / longest);
     return { x: ax + sx * width * scale / 2, z: az + sz * depth * scale / 2, w: f.w * scale, d: f.d * scale, h: f.h * scale };
   }
   const a = (f.rotation * Math.PI) / 180;
