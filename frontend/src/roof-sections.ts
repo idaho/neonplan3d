@@ -2,7 +2,7 @@
 // proposal of sections from the rooms. No three.js here: the editor uses it as well.
 
 import type { Building, FreeWall, Room, RoofSection, Vec2 } from "./model.ts";
-import { floorTop, roomHeight, pointInPolygon, polygonArea, signedArea } from "./model.ts";
+import { floorTop, roomHeight, roomLevel, pointInPolygon, polygonArea, signedArea } from "./model.ts";
 import { generateWalls } from "./geometry/walls.ts";
 import { clipConvex, polygonContains, polygonSegment, polygonSignedArea, polygonTriangles } from "./geometry/polygon.ts";
 
@@ -627,7 +627,7 @@ export function wallTopUnder(b: Building, x0: number, z0: number, x1: number, z1
   // the roof on the ground floor (#166) – the highest floor any of nine points of the rectangle falls on
   const pts: Vec2[] = [];
   for (const u of [0.2, 0.5, 0.8]) for (const v of [0.2, 0.5, 0.8]) pts.push([x0 + (x1 - x0) * u, z0 + (z1 - z0) * v]);
-  const tops = b.floors.flatMap((f) => f.rooms.filter((r) => r.points.length >= 3 && pts.some((p) => pointInPolygon(p, r.points))).map((r) => (r.elevation ?? f.elevation) + roomHeight(f, r)));
+  const tops = b.floors.flatMap((f) => f.rooms.filter((r) => r.points.length >= 3 && pts.some((p) => pointInPolygon(p, r.points))).map((r) => f.elevation + roomLevel(f, r) + roomHeight(f, r)));
   return tops.length ? Math.max(...tops) : null;
 }
 

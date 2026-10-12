@@ -13,7 +13,7 @@
 import { Color, type BufferGeometry } from "three";
 import type { Floor, Opening, SolarField, Vec2 } from "../model.ts";
 import { roomLevel, roomLevelAt, floorTop, furnitureFootprint, isLamp, pointInPolygon, polygonArea, STAIR_TYPES } from "../model.ts";
-import { outsideBays, roomTransition, subtractBay, wallLevels } from "../room-levels.ts";
+import { outsideBays, roomTransition, stairBays, stairOpeningBottom, subtractBay, wallLevels } from "../room-levels.ts";
 import { generateWalls, locateOpening, openingHost, type Wall } from "../geometry/walls.ts";
 import { clipConvex, isConvex } from "../geometry/area.ts";
 import { holeInRoom, insetHole, mergeHoles } from "../geometry/holes.ts";
@@ -148,7 +148,7 @@ export function buildFloorGeometry(
     if (room.points.length < 3) continue;
     const poly = ccw(room.points);
     const level = roomLevel(floor, room);
-    const bays = transitions.filter((t) => t.stair?.recess && t.stair.room.id === room.id).map((t) => t.stair!.bay);
+    const bays = stairBays(floor, room, transitions);
     cutHoles.push(...bays);
     const look = FLOOR_LOOK[room.floor_material] ?? FLOOR_LOOK.wood;
     const top = new Color(look.color);
@@ -243,10 +243,12 @@ export function buildFloorGeometry(
     const toRoom: Vec2 = roomLeft ? nLeft : [-nLeft[0], -nLeft[1]];
     const transition = transitions.find((t) => t.opening.id === o.id);
     const baseline = transition?.threshold ?? roomLevel(floor, host.room);
+    const owner = transition?.room ?? host.room;
+    const heightBase = owner.wall_offset != null || owner.floor_offset != null ? roomLevel(floor, owner) : baseline;
     const ceiling = Math.min(transition?.ceiling ?? Infinity, wallLevels(floor, wall).top);
     if (transition?.other && ceiling - baseline < 0.12) continue;
-    const top = Math.min(lowestTop(wall.a, ax, s0, s0 + width, ceiling) - 0.02, baseline + o.sill + o.height);
-    const sill = Math.min(baseline + o.sill, top - 0.1);
+    const top = Math.min(lowestTop(wall.a, ax, s0, s0 + width, ceiling) - 0.02, heightBase + o.sill + o.height);
+    const sill = Math.min((transition?.stair ? stairOpeningBottom(transition) : baseline) + o.sill, top - 0.1);
     // looking at the wall from the room, "right" is (toRoom.z, -toRoom.x)
     const right: Vec2 = [toRoom[1], -toRoom[0]];
     const startIsLeft = ax[0] * right[0] + ax[1] * right[1] > 0;
@@ -359,8 +361,12 @@ export function buildFloorGeometry(
       const p = at(0, a), q = at(t.width, a);
       lines.seg([p[0], y + 0.003, p[1]], [q[0], y + 0.003, q[1]], EDGE_TOP);
     }
-    const landing = ccw([at(0, -t.wall.left - t.wall.right), at(t.width, -t.wall.left - t.wall.right), at(t.width, s.face), at(0, s.face)]);
-    pushPrism(wallBuf, landing, t.threshold - 0.02, t.threshold, color, color, { bottom: true });
+    // Retain legacy zero-offset landing; a negative offset never lays a slab over the treads.
+    const landingStart = s.offset === 0 ? -t.wall.left - t.wall.right : s.back;
+    if (s.face > landingStart + 1e-6) {
+      const landing = ccw([at(0, landingStart), at(t.width, landingStart), at(t.width, s.face), at(0, s.face)]);
+      pushPrism(wallBuf, landing, t.threshold - 0.02, t.threshold, color, color, { bottom: true });
+    }
   }
   const spansOf = (w: Wall, keep: (sp: Span) => boolean) => (spans.get(w) ?? []).filter(keep);
   for (const e of outline.edges) {

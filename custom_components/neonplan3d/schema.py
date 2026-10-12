@@ -99,6 +99,12 @@ def _finite_number(value: float) -> float:
 
 ROOM_SCHEMA = vol.Schema(
     {
+        vol.Optional("wall_offset"): vol.Any(
+            None, vol.All(vol.Coerce(float), _finite_number, vol.Range(min=-50, max=200))
+        ),
+        vol.Optional("floor_offset"): vol.Any(
+            None, vol.All(vol.Coerce(float), _finite_number, vol.Range(min=0, max=20))
+        ),
         vol.Optional("elevation", default=None): vol.Any(
             None, vol.All(vol.Coerce(float), _finite_number, vol.Range(min=-50, max=200))
         ),
@@ -133,7 +139,9 @@ ROOM_SCHEMA = vol.Schema(
             vol.Length(max=MAX_POINTS),
         ),
         # ceiling height of the room (None = the floor height)
-        vol.Optional("ceiling_height"): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=1, max=30))),
+        vol.Optional("ceiling_height"): vol.Any(
+            None, vol.All(vol.Coerce(float), _finite_number, vol.Range(min=1, max=30))
+        ),
         # thickness of the wall on each edge in m (None = the building's exterior / interior thickness)
         vol.Optional("wall_thickness"): vol.All(
             [vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0.02, max=1.5)))],
@@ -167,6 +175,7 @@ OPENING_SCHEMA = vol.Schema(
                 vol.Required("side"): vol.In(["room", "other"]),
                 vol.Required("count"): vol.All(int, vol.Range(min=1, max=30)),
                 vol.Required("depth"): vol.All(vol.Coerce(float), _finite_number, vol.Range(min=0.1, max=10)),
+                vol.Optional("offset"): vol.All(vol.Coerce(float), _finite_number, vol.Range(min=-10, max=10)),
             },
         ),
         vol.Required("id"): _ID,

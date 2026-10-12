@@ -32,6 +32,28 @@ OPENING = {
 
 
 class RoomLevelsTests(unittest.TestCase):
+    def test_new_room_profiles_and_signed_step_offsets_roundtrip(self):
+        r = schema.ROOM_SCHEMA({**ROOM, "wall_offset": 0.1, "floor_offset": 0.3, "ceiling_height": 2.5})
+        self.assertEqual(schema.ROOM_SCHEMA(json.loads(json.dumps(r))), r)
+        for offset in (-0.3, 0, 0.3):
+            o = schema.OPENING_SCHEMA(
+                {**OPENING, "steps": {"side": "room", "count": 3, "depth": 0.9, "offset": offset}}
+            )
+            self.assertEqual(schema.OPENING_SCHEMA(json.loads(json.dumps(o)))["steps"]["offset"], offset)
+
+    def test_new_offsets_reject_nonfinite_and_out_of_range_values(self):
+        for key, values in {
+            "wall_offset": [-51, 201, float("nan"), float("inf")],
+            "floor_offset": [-0.1, 21, float("nan"), float("inf")],
+            "ceiling_height": [0, 31, float("nan"), float("inf")],
+        }.items():
+            for value in values:
+                with self.subTest(key=key, value=value), self.assertRaises(vol.Invalid):
+                    schema.ROOM_SCHEMA({**ROOM, key: value})
+        for offset in (-11, 11, float("nan"), float("inf")):
+            with self.assertRaises(vol.Invalid):
+                schema.OPENING_SCHEMA({**OPENING, "steps": {"side": "room", "count": 3, "depth": 1, "offset": offset}})
+
     def test_old_rooms_and_openings_inherit_their_defaults(self):
         r = schema.ROOM_SCHEMA(ROOM)
         self.assertIsNone(r["elevation"])

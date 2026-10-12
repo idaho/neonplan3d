@@ -783,18 +783,22 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
           input.value = String(value); input.dispatchEvent(new Event('change')); await settle();
         };
         e.selectItem('room', 'low'); await settle(); await setNumber('Deckenhöhe (m)', 4);
-        e.selectItem('room', 'high'); await settle(); await setNumber('Höhe über Boden (m)', 0.6); await setNumber('Deckenhöhe (m)', 3.4);
+        e.selectItem('room', 'high'); await settle(); await setNumber('Wandbeginn über Etagenboden (m)', 0.1); await setNumber('Raumboden über Wandbeginn (m)', 0.5); await setNumber('Deckenhöhe (m)', 3.4);
         if (e._doc.floors[0].height !== 2.6 || e._doc.floors[0].elevation !== 0) throw new Error('Room editing changed floor defaults');
         const reset = [...e.shadowRoot.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Etagenhöhen übernehmen');
         if (!reset) throw new Error('Missing inheritance reset'); reset.click(); await settle();
-        if (e.room.elevation !== null || e.room.height !== null || e.room.ceiling_height !== null) throw new Error('Room defaults did not reset');
+        if (e.room.wall_offset !== null || e.room.floor_offset !== null || e.room.elevation !== null || e.room.height !== null || e.room.ceiling_height !== null) throw new Error('Room defaults did not reset');
         e.undo(); await settle();
-        if (e.room.elevation !== 0.6 || e.room.ceiling_height !== 3.4) throw new Error('Undo did not restore independent room heights');
+        if (e.room.wall_offset !== 0.1 || e.room.floor_offset !== 0.5 || e.room.ceiling_height !== 3.4) throw new Error('Undo did not restore independent room heights');
         e.selectItem('opening', 'level_passage'); await settle();
         const label = [...e.shadowRoot.querySelectorAll('label.fp3d-field')].find((l) => l.textContent.includes('Stufen in diesem Raum'));
         const select = label?.querySelector('select'); if (!select) throw new Error('Missing stair side selector');
         select.value = side; select.dispatchEvent(new Event('change')); await settle();
         await setNumber('Anzahl Stufen', 3); await setNumber('Gesamttiefe (m)', 1);
+        await setNumber('Stufenversatz (m)', 0.3);
+        if (!e.shadowRoot.querySelector('.fp3d-step-landing')) throw new Error('Missing positive-offset landing');
+        await setNumber('Stufenversatz (m)', -0.3);
+        if (e.shadowRoot.querySelector('.fp3d-step-landing')) throw new Error('Negative offset must not add a landing over the stairs');
         const before = JSON.stringify(e._doc); e.undo(); await settle(); e.redo(); await settle();
         if (JSON.stringify(e._doc) !== before) throw new Error('Level/step undo and redo did not preserve data');
         const svg = e.shadowRoot.querySelector('.fp3d-level-steps');
@@ -804,7 +808,7 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       await page.evaluate(async (side) => {
         const e = document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');
         const saved = (await e.hass.callWS({ type: 'neonplan3d/building/get' })).building.floors[0];
-        if (saved.rooms[1].elevation !== 0.6 || saved.rooms[1].ceiling_height !== 3.4 || saved.openings[0].steps.side !== side) throw new Error('Room levels and steps did not save');
+        if (saved.rooms[1].wall_offset !== 0.1 || saved.rooms[1].floor_offset !== 0.5 || saved.rooms[1].ceiling_height !== 3.4 || saved.openings[0].steps.side !== side || saved.openings[0].steps.offset !== -0.3) throw new Error('Room levels and steps did not save');
       }, shot.roomLevelsSide);
       console.log('verified independent heights, stair side, undo/redo and save: ' + shot.name);
     }

@@ -8,7 +8,7 @@
 import type { Floor, Vec2 } from "../model.ts";
 import { outdoorSurface } from "./outdoor.ts";
 import { outdoorDrop, outdoorStanding, pointInPolygon, roomLevel, roomHeight, floorTop } from "../model.ts";
-import { roomTransition, wallLevels } from "../room-levels.ts";
+import { roomTransition, stairBays, subtractBay, wallLevels, type RoomTransition } from "../room-levels.ts";
 import type { Wall } from "../geometry/walls.ts";
 import type { OpeningInfo } from "./build.ts";
 import { LOWER_OFFSET } from "./geo.ts";
@@ -86,9 +86,11 @@ export function buildLightSurface(
     }
   };
 
+  const transitions = floor.openings.map(o => roomTransition(floor, o, walls)).filter((t): t is RoomTransition => !!t);
   // floors: cells whose centre lies in the room
   floor.rooms.forEach((r, ri) => {
     if (r.points.length < 3) return;
+    const bays = stairBays(floor, r, transitions);
     const xs = r.points.map((p) => p[0]);
     const zs = r.points.map((p) => p[1]);
     const x0 = Math.min(...xs);
@@ -103,7 +105,7 @@ export function buildLightSurface(
         const cz = z0 + (j + 0.5) * cell;
         if (!pointInPolygon([cx, cz], r.points)) continue;
         // no light over a floor opening: one looks through it
-        if (holes.some((h) => pointInPolygon([cx, cz], h))) continue;
+        if (holes.some((h) => pointInPolygon([cx, cz], h)) && !bays.some(h => pointInPolygon([cx, cz], h))) continue;
         const a = x0 + i * cell;
         const b = z0 + j * cell;
         // the last row and column end at the room's edge: past it they would light a strip of the
@@ -111,7 +113,15 @@ export function buildLightSurface(
         const a1 = Math.min(a + cell, x1);
         const b1 = Math.min(b + cell, z1);
         const y = roomLevel(floor, r) + LIFT;
-        quad([a, y, b], [a, y, b1], [a1, y, b1], [a1, y, b], [0, 1, 0], ri, -1);
+        if (!bays.length) {
+          quad([a, y, b], [a, y, b1], [a1, y, b1], [a1, y, b], [0, 1, 0], ri, -1);
+        } else {
+          let pieces: Vec2[][] = [[[a, b], [a, b1], [a1, b1], [a1, b]]];
+          for (const bay of bays) pieces = pieces.flatMap(p => subtractBay(p, bay));
+          for (const p of pieces) for (let k = 1; k + 1 < p.length; k++) for (const v of [p[0], p[k], p[k + 1]]) {
+            pos.push(v[0], y, v[1]); normal.push(0, 1, 0); room.push(ri); fold.push(-1);
+          }
+        }
       }
     }
   });
@@ -219,6 +229,10 @@ export function buildLightSurface(
       const a = s.face + s.depth * i / s.count, b = s.face + s.depth * (i + 1) / s.count;
       const y = (s.recess ? t.low + (t.high - t.low) * (i + 1) / s.count : t.high - (t.high - t.low) * i / s.count) + LIFT;
       quad(at(0, a, y), at(t.width, a, y), at(t.width, b, y), at(0, b, y), [0, 1, 0], ri, -1);
+    }
+    if (s.offset > 0) {
+      const y = t.threshold + LIFT;
+      quad(at(0, s.wallFace, y), at(t.width, s.wallFace, y), at(t.width, s.face, y), at(0, s.face, y), [0, 1, 0], ri, -1);
     }
   }
 

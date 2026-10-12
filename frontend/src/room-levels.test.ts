@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { emptyBuilding, floorTop, newFloor, roomCeilingAt, roomHeight, roomLevel, type Opening, type Room } from "./model.ts";
+import { emptyBuilding, floorTop, newFloor, roomCeilingAt, roomHeight, roomLevel, roomWallLevel, type Opening, type Room } from "./model.ts";
 import { generateWalls } from "./geometry/walls.ts";
-import { roomTransition, subtractBay, wallLevels } from "./room-levels.ts";
+import { roomTransition, stairBays, stairOpeningBottom, subtractBay, wallLevels } from "./room-levels.ts";
 import { buildFloorGeometry } from "./viewer/build.ts";
 import { buildLightSurface } from "./viewer/lighting.ts";
 import { mountBase } from "./packs.ts";
@@ -20,6 +20,97 @@ export function splitFloor() {
   return floor;
 }
 const near = (a: number, b: number) => assert.ok(Math.abs(a - b) < 1e-5, `${a} != ${b}`);
+
+test("wall base, finished floor and clear ceiling height remain independent", () => {
+  const f = splitFloor(), r = f.rooms[0];
+  Object.assign(r, { wall_offset: 0.1, floor_offset: 0.3, ceiling_height: 2.5 });
+  near(roomWallLevel(f, r), 0.1);
+  near(roomLevel(f, r), 0.4);
+  near(roomCeilingAt(f, 2, 2), 2.9);
+  const w = generateWalls(f.rooms, { exterior: 0.24, interior: 0.12 }).walls.find(w => w.exterior && (w.roomLeft === r.id || w.roomRight === r.id))!;
+  near(wallLevels(f, w).bottom, 0.1);
+  near(wallLevels(f, w).top, 2.9);
+  f.elevation = 10;
+  near(roomLevel(f, r), 0.4);
+  near(roomWallLevel(f, r), 0.1);
+  near(mountBase(f, { type: "chair", x: 2, z: 2, h: 1, mount_y: 0.2 }), 0.6);
+});
+
+test("new door and window profiles measure sill and height from the owner's finished floor", () => {
+  const f = splitFloor();
+  Object.assign(f.rooms[0], { wall_offset: 0.1, floor_offset: 0.3, ceiling_height: 3 });
+  for (const type of ["door", "window"] as const) {
+    Object.assign(f.openings[0], { type, sill: 0.2, height: 1.5 });
+    const g = buildFloorGeometry(f, 0.24, 0.12);
+    near(g.openings[0].sill, 0.6);
+    near(g.openings[0].top, 2.1);
+  }
+});
+
+test("signed stair offsets preserve count and depth on either side and clear the raised floor", () => {
+  for (const side of ["room", "other"] as const) for (const offset of [-0.3, 0, 0.3]) {
+    const f = splitFloor();
+    f.openings[0].steps = { side, offset, count: 3, depth: 0.9 };
+    const walls = generateWalls(f.rooms, { exterior: 0.24, interior: 0.12 }).walls;
+    const t = roomTransition(f, f.openings[0], walls)!;
+    assert.ok(t.stair, `${side}: ${offset}`);
+    near(t.stair.face - t.stair.wallFace, offset);
+    near(t.stair.depth, 0.9);
+    assert.equal(t.stair.count, 3);
+    assert.equal(stairBays(f, f.rooms[1], [t]).length, side === "other" || offset < 0 ? 1 : 0);
+    assert.equal(stairBays(f, f.rooms[0], [t]).length, 0);
+    assert.ok(stairOpeningBottom(t) <= t.threshold);
+    const g = buildFloorGeometry(f, 0.24, 0.12);
+    for (const key of ["floor", "walls", "lines", "shadow"] as const) {
+      assert.ok([...g[key].getAttribute("position").array].every(Number.isFinite));
+      g[key].dispose();
+    }
+  }
+});
+
+test("invalid stair offsets are reported, never silently moved or clamped", () => {
+  const f = splitFloor(), walls = generateWalls(f.rooms, { exterior: 0.24, interior: 0.12 }).walls;
+  for (const offset of [-2, 5, NaN, Infinity]) {
+    f.openings[0].steps = { side: "room", offset, count: 3, depth: 0.9 };
+    const t = roomTransition(f, f.openings[0], walls)!;
+    assert.equal(t.stair, undefined);
+    assert.equal(t.issue, "fit");
+    assert.ok(Object.is(f.openings[0].steps.offset, offset));
+  }
+});
+
+test("stairs follow the doorway axis for rotated and mirrored plans", () => {
+  for (const angle of [0, 0.7, Math.PI / 2]) for (const mirror of [-1, 1]) for (const side of ["room", "other"] as const) {
+    const f = splitFloor(), c = Math.cos(angle), s = Math.sin(angle);
+    for (const r of f.rooms) r.points = r.points.map(([x, z]) => [mirror * x * c - z * s, mirror * x * s + z * c]);
+    f.openings[0].steps = { side, count: 3, depth: 0.9, offset: -0.3 };
+    const walls = generateWalls(f.rooms, { exterior: 0.24, interior: 0.12 }).walls;
+    const t = roomTransition(f, f.openings[0], walls)!;
+    assert.ok(t.stair);
+    near(t.axis[0] * t.stair.toward[0] + t.axis[1] * t.stair.toward[1], 0);
+    near(t.stair.face - t.stair.wallFace, -0.3);
+  }
+});
+
+test("equal finished floors need no stairs even with different wall bases", () => {
+  const f = splitFloor();
+  Object.assign(f.rooms[0], { wall_offset: 0.1, floor_offset: 0.3 });
+  Object.assign(f.rooms[1], { wall_offset: 0.4, floor_offset: 0 });
+  f.openings[0].steps = { side: "room", count: 3, depth: 0.9, offset: 0.3 };
+  const t = roomTransition(f, f.openings[0], generateWalls(f.rooms, { exterior: 0.24, interior: 0.12 }).walls)!;
+  near(t.high, t.low);
+  assert.equal(t.stair, undefined);
+});
+
+test("missing and zero stair offsets produce identical legacy geometry", () => {
+  const f = splitFloor();
+  f.openings[0].steps = { side: "other", count: 3, depth: 0.9 };
+  const before = buildFloorGeometry(f, 0.24, 0.12);
+  f.openings[0].steps.offset = 0;
+  const after = buildFloorGeometry(f, 0.24, 0.12);
+  for (const key of ["floor", "walls", "lines", "shadow"] as const)
+    assert.deepEqual([...before[key].getAttribute("position").array], [...after[key].getAttribute("position").array]);
+});
 
 test("upstream ceiling height wins over the legacy branch alias without moving the floor", () => {
   const f = splitFloor(), r = f.rooms[1];

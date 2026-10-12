@@ -29,7 +29,7 @@ import { bestFace, clampField, faceAt, faceCompass, fieldFace, fieldModules, GRO
 import { validPolygon } from "../geometry/polygon.ts";
 import { ceilingSpots, spotSurfaceKey, type SpotSurface } from "../ceiling-spots.ts";
 import { roomTransition } from "../room-levels.ts";
-import { roomAt, roomLevelAt, roomLevel, roomHeight } from "../model.ts";
+import { roomAt, roomLevelAt, roomLevel, roomWallLevel, roomHeight } from "../model.ts";
 import type { SurfaceGrab, SurfaceRay } from "../viewer/viewer3d.ts";
 import { storedImageIds } from "../transfer.ts";
 import { fromWall, furnitureOnWall, openingsOnWall, roomEdgeFrame, slideAlong, toWall, type WallFrame } from "../geometry/wall-frame.ts";
@@ -9106,8 +9106,9 @@ export class Fp3dEditor extends LitElement {
             ${this.len(this.t("width"), b.x1 - b.x0, (v) => this.setRect("w", v), 0.01, 0.05)}
             ${this.len(this.t("depth"), b.z1 - b.z0, (v) => this.setRect("d", v), 0.01, 0.05)}`
           : nothing}
-        ${this.len(this.t("elevation"), room.elevation ?? this.floor!.elevation, (v) => this.updateRoom({ elevation: Math.max(-50, Math.min(200, v)) }), 0.05)}
-        <button class="fp3d-btn fp3d-field-btn" ?disabled=${!admin} @click=${() => this.updateRoom({ elevation: null, height: null, ceiling_height: null })}>${this.t("room_inherit_heights")}</button>
+        ${this.len(this.t("room_wall_offset"), roomWallLevel(this.floor!, room), (v) => { if (Number.isFinite(v) && v >= -50 && v <= 200) this.updateRoom({ wall_offset: v, elevation: null }); }, 0.05, -50)}
+        ${this.len(this.t("room_floor_offset"), room.floor_offset ?? 0, (v) => { if (Number.isFinite(v) && v >= 0 && v <= 20) this.updateRoom({ floor_offset: v }); }, 0.05, 0)}
+        <button class="fp3d-btn fp3d-field-btn" ?disabled=${!admin} @click=${() => this.updateRoom({ wall_offset: null, floor_offset: null, elevation: null, height: null, ceiling_height: null })}>${this.t("room_inherit_heights")}</button>
         <p class="fp3d-sub fp3d-wide">${this.t("room_levels_hint")}</p>
       </div>
       <div class="fp3d-form">
@@ -9360,6 +9361,7 @@ export class Fp3dEditor extends LitElement {
       const P = (u: number, n: number) => this.toScreen([t.start[0] + t.axis[0] * u + s.toward[0] * n, t.start[1] + t.axis[1] * u + s.toward[1] * n]);
       const poly = [P(0, s.face), P(t.width, s.face), P(t.width, s.face + s.depth), P(0, s.face + s.depth)];
       return svg`<g data-opening=${o.id} class="fp3d-level-steps"><polygon points=${poly.map((p) => p.join(',')).join(' ')} />
+        ${s.offset > 0 ? svg`<polygon class="fp3d-step-landing" points=${[P(0, s.wallFace), P(t.width, s.wallFace), P(t.width, s.face), P(0, s.face)].map((p) => p.join(',')).join(' ')} />` : nothing}
         ${Array.from({ length: s.count + 1 }, (_, i) => { const a = P(0, s.face + s.depth * i / s.count), b = P(t.width, s.face + s.depth * i / s.count); return svg`<line x1=${a[0]} y1=${a[1]} x2=${b[0]} y2=${b[1]} />`; })}
       </g>`;
     })}`;
@@ -9375,7 +9377,7 @@ export class Fp3dEditor extends LitElement {
     if (rise < 0.001 && !o.steps) return nothing;
     const choose = (side: "room" | "other" | "") => {
       const count = Math.max(1, Math.min(30, Math.ceil(rise / 0.18)));
-      this.updateOpening({ steps: side ? { side, count: o.steps?.count ?? count, depth: o.steps?.depth ?? Math.min(10, count * 0.28) } : null });
+      this.updateOpening({ steps: side ? { side, count: o.steps?.count ?? count, depth: o.steps?.depth ?? Math.min(10, count * 0.28), offset: o.steps?.offset ?? 0 } : null });
     };
     return html`<section>
       <h3>${this.t("steps_title")}</h3>
@@ -9387,11 +9389,13 @@ export class Fp3dEditor extends LitElement {
       </label>
       ${o.steps && rise > 0.001 ? html`<div class="fp3d-form">
         ${this.num(this.t("steps_count"), o.steps.count, (v) => this.updateOpening({ steps: { ...o.steps!, count: Math.max(1, Math.min(30, Math.round(v))) } }), 1, 1)}
-        ${this.num(this.t("steps_depth"), o.steps.depth, (v) => this.updateOpening({ steps: { ...o.steps!, depth: Math.max(0.1, Math.min(10, v)) } }), 0.05, 0.1)}
+        ${this.len(this.t("steps_depth"), o.steps.depth, (v) => this.updateOpening({ steps: { ...o.steps!, depth: Math.max(0.1, Math.min(10, v)) } }), 0.05, 0.1)}
+        ${this.len(this.t("steps_offset"), o.steps.offset ?? 0, (v) => { if (Number.isFinite(v) && Math.abs(v) <= 10) this.updateOpening({ steps: { ...o.steps!, offset: v } }); }, 0.05, -10)}
       </div>` : nothing}
       <p class="fp3d-sub">${this.t("steps_hint")}</p>
+      ${o.steps ? html`<p class="fp3d-sub">${this.t("steps_offset_hint")}</p>` : nothing}
       ${o.steps && rise > 0.001 && !t.stair ? html`<p class="fp3d-warn">${this.t("steps_fit_warning")}</p>` : nothing}
-      ${t.ceiling - t.threshold - o.sill < o.height - 0.02 ? html`<p class="fp3d-warn">${this.t("steps_height_warning")}</p>` : nothing}
+      ${t.issue === "height" || t.ceiling - t.threshold - o.sill < o.height - 0.02 ? html`<p class="fp3d-warn">${this.t("steps_height_warning")}</p>` : nothing}
     </section>`;
   }
 

@@ -17,7 +17,11 @@ export interface RoomClimate {
 export type WallHeight = number | null | (number | null)[];
 
 export interface Room {
-  /** Absolute position of the room floor; null inherits the floor's elevation. */
+  /** Wall base relative to the storey. Unset preserves the legacy absolute elevation. */
+  wall_offset?: number | null;
+  /** Finished floor above the wall base, independent of slab thickness. */
+  floor_offset?: number | null;
+  /** Legacy absolute wall/floor base; used only when wall_offset is unset. */
   elevation?: number | null;
   /** Clear height above this room's own floor; null inherits the floor's height. */
   height?: number | null;
@@ -65,7 +69,7 @@ export type EntityRef = string | null;
 
 export interface Opening {
   /** Optional level transition at an interior doorway, on the owner's or neighbour's side. */
-  steps?: { side: "room" | "other"; count: number; depth: number } | null;
+  steps?: { side: "room" | "other"; count: number; depth: number; offset?: number } | null;
   id: string;
   room_id: string;
   /** Room edge the opening sits on (points[edge] -> points[edge + 1]); 0 in a free wall. */
@@ -1501,7 +1505,11 @@ export function pointInPolygon(p: Vec2, points: readonly Vec2[]): boolean {
 
 /** Room heights expressed in the floor group's local coordinates. */
 export function roomLevel(floor: Floor, room?: Room | null): number {
-  return (room?.elevation ?? floor.elevation) - floor.elevation;
+  return roomWallLevel(floor, room) + (room?.floor_offset ?? 0);
+}
+
+export function roomWallLevel(floor: Floor, room?: Room | null): number {
+  return room?.wall_offset ?? ((room?.elevation ?? floor.elevation) - floor.elevation);
 }
 
 export function roomHeight(floor: Floor, room?: Room | null): number {
@@ -1523,7 +1531,7 @@ export function roomCeilingAt(floor: Floor, x: number, z: number): number {
 
 export function floorTop(floor: Floor): number {
   const rooms = floor.rooms.filter((r) => r.points.length >= 3);
-  return rooms.length ? Math.max(...rooms.map((r) => (r.elevation ?? floor.elevation) + roomHeight(floor, r))) : floor.elevation + floor.height;
+  return rooms.length ? Math.max(...rooms.map((r) => floor.elevation + roomLevel(floor, r) + roomHeight(floor, r))) : floor.elevation + floor.height;
 }
 
 /** 3D model of each lamp type. */
