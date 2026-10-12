@@ -11,7 +11,7 @@ test("wall furniture height stays relative to the raised room floor", () => {
   const floor = newFloor("f", "Floor", 2.8);
   const raised = { ...room("raised", 0, 0, 4, 3), elevation: 3.4 };
   floor.rooms = [raised];
-  floor.furniture = [item("cupboard", "wall_cabinet", 1, 0.2, 0, 0.6, 0.35, 0.8, 1.2)];
+  floor.furniture = [item("cupboard", "kitchen_wall", 1, 0.2, 0, 0.6, 0.35, 0.8, 1.2)];
   const [hit] = furnitureOnWall(roomEdgeFrame(raised, 0), floor, raised);
   assert.ok(hit);
   assert.ok(Math.abs(hit.y0 - 1.2) < 1e-6);

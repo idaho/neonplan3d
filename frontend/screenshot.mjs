@@ -437,9 +437,9 @@ shots.push({
     b.floors = [f];
     f.rooms = [{ id: 'raised', name: 'Erhöhter Raum', area_id: null, points: [[0,0],[6,0],[6,5],[0,5]], floor_material: 'wood', elevation: f.elevation + 0.6, ceiling_height: 3.2 }];
     f.openings = []; f.walls = []; f.outdoor = []; f.placements = [];
-    f.furniture = ['a','b'].map((id,i) => ({ id, type: 'wall_cabinet', x: 1 + i, z: 0.2, w: 0.6, d: 0.35, h: 0.8, rotation: 0, rotation_x: i ? 0 : 20, rotation_z: 0, variant: null, mount_y: 1.2 }));
+    f.furniture = ['a','b'].map((id,i) => ({ id, type: 'kitchen_wall', x: 1 + i, z: 0.2, w: 0.6, d: 0.35, h: 0.8, rotation: 0, rotation_x: i ? 0 : 20, rotation_z: 0, variant: null, mount_y: 1.2 }));
     b.settings.roof = { type: 'none', sections: [], windows: [], solar: [], pitch: 30, overhang: 0 };
-    e.setDoc(b); e._floorId = f.id; e._tool = 'select'; e._split = true;
+    e.setDoc(b); e._floorId = f.id; e._tool = 'select'; e._split = true; e._wall3d = 'auto';
     e.setMulti(['a','b']); e.groupSelection();
     if (e.selection().length !== 2) throw new Error('Custom furniture lost block selection');
     e.rotateSelection(90);
