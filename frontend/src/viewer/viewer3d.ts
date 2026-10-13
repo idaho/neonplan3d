@@ -66,7 +66,7 @@ export const funLib = { Group, Mesh, MeshBasicMaterial, CanvasTexture, Color, Pl
 export type { PipeTube };
 import { mountBase, packItem, renderPackItem, setPacks, setProductColors, type FurniturePack } from "../packs.ts";
 import { CustomPackLayer } from "./custom-pack-layer.ts";
-import { lightCone, packSpotLights } from "./directed-light.ts";
+import { lightCone, packSpotLights, roomCeilingSurface } from "./directed-light.ts";
 import { setPackShapeQuality } from "./pack-shapes.ts";
 import { OPENING_TAU } from "./opening-motion.ts";
 import { MotionMemory, type PackMoment } from "../pack-runtime.ts";
@@ -1647,7 +1647,7 @@ export class FloorplanViewer {
   /** Light surface of a floor (rebuilt with the floor plan and when the detail level changes). */
   private buildLightSurface(fv: FloorView): void {
     const cell = this.lowQuality ? 0.5 : 0.25;
-    const surface = buildLightSurface(fv.floor, fv.geo.walls2d, fv.geo.wallBuckets, fv.geo.openings, cell, fv.geo.holes, fv.geo.roofUnder);
+    const surface = buildLightSurface(fv.floor, fv.geo.walls2d, fv.geo.wallBuckets, fv.geo.openings, cell, fv.geo.holes, fv.geo.roofUnder,roomCeilingSurface(fv.floor,fv.geo.roofUnder));
     // rooms joined by "no wall" form one zone: a lamp lights the open neighbour as if it stood in the same room
     const zones = lightZonesOf(fv.floor, fv.geo.openRooms);
     fv.lightZones = zones.some((z, i) => z !== i) ? zones : null;
@@ -2651,7 +2651,7 @@ export class FloorplanViewer {
       rotateFurniturePositions(hp, haloStart, d, lampPivot(d, H));
       rotateFurniturePositions(cones.p, coneStart, d, lampPivot(d, H));
     }
-    if(this.highQuality)for(const source of this.lightSources(fv))lightCone(cones,source,fv.floor,fv.lightSurface?.blockers??[]);
+    if(this.highQuality)for(const source of this.lightSources(fv))lightCone(cones,source,fv.floor,fv.lightSurface?.blockers??[],roomCeilingSurface(fv.floor,fv.geo.roofUnder));
     const g = new Geometry();
     g.setAttribute("position", new Float32BufferAttribute(hp, 3));
     g.setAttribute("color", new Float32BufferAttribute(hc, 3));

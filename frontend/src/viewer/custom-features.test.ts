@@ -3,11 +3,33 @@ import { test } from "node:test";
 import { GeoBuffer } from "./geo.ts";
 import { packShape } from "./pack-shapes.ts";
 import { lightColors, type LightSource, type LightSurface } from "./lighting.ts";
-import { packSpotLights, lightCone } from "./directed-light.ts";
+import { packSpotLights, lightCone, rayLength, roomCeilingSurface } from "./directed-light.ts";
+import { Vector3 } from 'three';
+import { buildLightSurface } from './lighting.ts';
 import { setPacks, setProductColors, renderPackItem } from "../packs.ts";
 import { newFloor, type Furniture } from "../model.ts";
 import type { HomeAssistant } from "../types.ts";
 const p={id:"p",shape:"box" as const,x:0,z:0,y:0,w:1,d:1,h:1,color:"body"};
+test('upward cones end at flat ceilings and pitched roof undersides',()=>{
+  const floor=newFloor('f','f',0);floor.rooms=[{id:'r',name:'r',area_id:null,floor_material:'wood',points:[[0,0],[4,0],[4,4],[0,4]],ceiling_height:3}];
+  const origin=new Vector3(2,1,2),up=new Vector3(0,1,0);
+  assert.ok(Math.abs(rayLength(origin,up,floor,[])-1.998)<0.001);
+  const slope=roomCeilingSurface(floor,(x)=>2+x*0.25);
+  const tilted=new Vector3(0.4,1,0).normalize();
+  const length=rayLength(origin,tilted,floor,[],slope),end=origin.clone().addScaledVector(tilted,length);
+  assert.ok(end.y<=slope(end.x,end.z)!);assert.ok(slope(end.x,end.z)!-end.y<0.004);
+  const cone=new GeoBuffer();lightCone(cone,{x:2,y:1,z:2,kind:'spot',room:0,direction:[0,1,0],angle:40,level:1,color:[1,1,1]},floor,[],slope);
+  for(let i=0;i<cone.p.length;i+=3)assert.ok(cone.p[i+1]<=slope(cone.p[i],cone.p[i+2])!+1e-6);
+  assert.equal(rayLength(origin,up,{...floor,rooms:[]},[]),5);
+});
+test('an upward directed spot illuminates the ceiling underside, not the floor',()=>{
+  const floor=newFloor('f','f',0);floor.rooms=[{id:'r',name:'r',area_id:null,floor_material:'wood',points:[[0,0],[4,0],[4,4],[0,4]],ceiling_height:3}];
+  const surface=buildLightSurface(floor,[],[],[],0.5,[],undefined,roomCeilingSurface(floor));
+  const colors=lightColors(surface,[{x:2,y:1,z:2,kind:'spot',room:0,direction:[0,1,0],angle:60,level:1,color:[1,0.8,0.2]}]);
+  let ceilingLit=false;
+  for(let i=0;i<surface.room.length;i++){if(surface.normal[i*3+1]<0&&colors[i*3]>0)ceilingLit=true;if(surface.normal[i*3+1]>0)assert.equal(colors[i*3],0);}
+  assert.ok(ceilingLit);
+});
 test("new curved and hollow forms produce finite bounded geometry with different detail levels",()=>{
   for(const shape of ["polygon","rounded_box","sphere","ellipsoid","pipe","torus","bowl","cyl"] as const){
     const g=packShape({...p,shape,points:[[-0.5,-0.5],[0.5,-0.5],[0.3,0.5],[-0.2,0.5]],path:[[-0.3,0,0],[0,0.3,0],[0.3,0,0]],detail:"high"},1,1,1)!;

@@ -1,6 +1,6 @@
 import { Color, Euler, Vector3 } from "three";
 import { packLightGlow } from "../pack-runtime.ts";
-import { pointInPolygon, roomLevelAt, type Floor, type Furniture } from "../model.ts";
+import { pointInPolygon, roomLevelAt, roomHeight, roomLevel, type Floor, type Furniture } from "../model.ts";
 import { mountBase, packItem } from "../packs.ts";
 import type { HomeAssistant } from "../types.ts";
 import type { Blocker, LightSource } from "./lighting.ts";
@@ -26,7 +26,15 @@ export function packSpotLights(f: Furniture,floor:Floor,hass:HomeAssistant):Ligh
   });
 }
 
-function rayLength(o:Vector3,d:Vector3,floor:Floor,blockers:Blocker[]):number{
+export type CeilingHeight=(x:number,z:number)=>number|null;
+export function roomCeilingSurface(floor:Floor,roofUnder?:CeilingHeight):CeilingHeight{
+  return (x,z)=>{
+    const roof=roofUnder?.(x,z);if(roof!=null)return roof;
+    const room=floor.rooms.find(r=>pointInPolygon([x,z],r.points));
+    return room?roomLevel(floor,room)+roomHeight(floor,room):null;
+  };
+}
+export function rayLength(o:Vector3,d:Vector3,floor:Floor,blockers:Blocker[],ceiling:CeilingHeight=roomCeilingSurface(floor)):number{
   let length=5;
   if(d.y < -0.001)length=Math.min(length,Math.max(0.01,(o.y-roomLevelAt(floor,o.x,o.z)-0.02)/-d.y));
   for(const wall of blockers){
@@ -39,9 +47,23 @@ function rayLength(o:Vector3,d:Vector3,floor:Floor,blockers:Blocker[]):number{
     if(wall.gaps.some(g=>s>=g.s0&&s<=g.s1&&y>=g.y0&&y<=g.y1))continue;
     length=t;
   }
+  // Height fields cover pitched/free-form roofs as well as flat room ceilings.
+  // Find the first underside crossing, then refine it; do not clip at an
+  // unrelated roof which starts above a source already outside that room.
+  let before=0,previous=ceiling(o.x,o.z);
+  let below=previous!=null&&o.y<=previous+0.001;
+  for(let t=0.025;t<=length+1e-9;t+=0.025){
+    const top=ceiling(o.x+d.x*t,o.z+d.z*t),y=o.y+d.y*t;
+    if(top!=null&&below&&y>=top){
+      let lo=before,hi=t;
+      for(let i=0;i<12;i++){const mid=(lo+hi)/2,h=ceiling(o.x+d.x*mid,o.z+d.z*mid);if(h!=null&&o.y+d.y*mid>=h)hi=mid;else lo=mid;}
+      length=Math.max(0,hi-0.002);break;
+    }
+    below=top!=null&&y<=top;previous=top;before=t;
+  }
   return length;
 }
-export function lightCone(buf:GeoBuffer,s:LightSource,floor:Floor,blockers:Blocker[]):void{
+export function lightCone(buf:GeoBuffer,s:LightSource,floor:Floor,blockers:Blocker[],ceiling?:CeilingHeight):void{
   if(!s.direction)return;
   const origin=new Vector3(s.x,s.y,s.z),dir=new Vector3(...s.direction).normalize();
   const axis=Math.abs(dir.y)<0.95?new Vector3(0,1,0):new Vector3(1,0,0);
@@ -49,7 +71,7 @@ export function lightCone(buf:GeoBuffer,s:LightSource,floor:Floor,blockers:Block
   const angle=(s.angle??60)*Math.PI/360,near=new Color(...s.color.map(c=>c*0.09*s.level) as [number,number,number]),far=new Color(0,0,0);
   const rim=(i:number)=>{
     const a=i*Math.PI/8,d=dir.clone().multiplyScalar(Math.cos(angle)).addScaledVector(u,Math.cos(a)*Math.sin(angle)).addScaledVector(v,Math.sin(a)*Math.sin(angle)).normalize();
-    return origin.clone().addScaledVector(d,rayLength(origin,d,floor,blockers)).toArray();
+    return origin.clone().addScaledVector(d,rayLength(origin,d,floor,blockers,ceiling)).toArray();
   };
   for(let i=0;i<16;i++)buf.tri(origin.toArray(),rim(i),rim(i+1),near,far,far);
 }

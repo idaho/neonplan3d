@@ -509,6 +509,11 @@ shots.push({name:"editor-custom-features",query:"",width:1400,height:1000,editor
       f.furniture=[{id:"unit",type:"pack:preview.custom:unit",x:2,z:2,w:1,d:0.5,h:1,rotation:0,variant:null,bindings:{door:"binary_sensor.custom_door",status:"sensor.custom_status",temperature:"sensor.custom_temperature"}}];b.settings.roof.type="none";});
     e._split=true;e._tool="select";e.selectItem("furniture","unit");e.fit();
   `});
+shots.push({name:'view-upward-spot-roof',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,upwardSpot:true,then3d:'Alle Etagen',then3dAlso:['Dach bleibt'],camera:{theta:0.5,phi:0.9,radius:9,target:{x:2.5,y:1.8,z:2.5}},editorScript:`
+  const panel=document.querySelector('neonplan3d-panel');panel._quality='high';
+  panel.hass={...panel.hass,states:{...panel.hass.states,'light.led_band':{entity_id:'light.led_band',state:'on',attributes:{brightness:255,rgb_color:[255,200,90]}}}};
+  e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[{id:'up',name:'Spot unter Dach',area_id:null,points:[[0,0],[5,0],[5,5],[0,5]],floor_material:'wood'}];f.height=3;f.openings=[];f.outdoor=[];f.walls=[];f.placements=[];f.furniture=[{id:'up',type:'lamp_spot',x:2,z:2.5,w:0.15,d:0.15,h:0.2,mount_y:1.2,rotation:0,rotation_x:150,beam_angle:40,entity:'light.led_band',variant:null}];b.settings.roof.type='custom';b.settings.roof.sections=[{id:'roof',shape:'gable',axis:'x',x0:0,z0:0,x1:5,z1:5,eave_a:1.5,eave_b:1.5,pitch_a:35,pitch_b:35,base:1.5,overhang:0}];});e.fit();
+`});
 if(process.env.ROUND_PACK_DIR){
   const directory=resolve(process.env.ROUND_PACK_DIR);
   const load=category=>JSON.parse(readFileSync(join(directory,`v2.${category}_farben.json`),'utf8')).items;
@@ -1068,6 +1073,18 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       e.shadowRoot.querySelector('.fp3d-spot-form')?.scrollIntoView({ block: 'center' });
     });
     await new Promise((r) => setTimeout(r, 300));
+  }
+  if(shot.upwardSpot){
+    await page.evaluate(()=>{
+      const view=document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-view3d'),v=view.viewer,fv=v.floors[0];
+      if(!v.lightSources(fv).some(s=>s.direction?.[1]>0.5))throw new Error('Upward source missing');
+      const pos=fv.coneMesh.geometry.getAttribute('position');if(!pos.count)throw new Error('Upward cone missing');
+      for(let i=0;i<pos.count;i++){const top=fv.geo.roofUnder?.(pos.getX(i),pos.getZ(i));if(top!=null&&pos.getY(i)>top+0.003)throw new Error('Cone passes through roof');}
+      const surface=fv.lightSurface,colors=fv.glowMesh.geometry.getAttribute('color');let lit=false;
+      for(let i=0;i<surface.room.length;i++)if(surface.normal[i*3+1]<-0.1&&colors.getX(i)>0.01)lit=true;
+      if(!lit)throw new Error('Roof underside receives no light');
+    });
+    console.log('verified upward cone is bounded by the roof and lights its underside');
   }
   if(shot.customPackExercise){
     await page.evaluate(async()=>{

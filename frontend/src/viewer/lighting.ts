@@ -75,6 +75,7 @@ export function buildLightSurface(
   cell: number,
   holes: Vec2[][] = [],
   roofUnder?: (x: number, z: number) => number | null,
+  ceilingAt?: (x:number,z:number)=>number|null,
 ): LightSurface {
   const pos: number[] = [];
   const normal: number[] = [];
@@ -115,6 +116,20 @@ export function buildLightSurface(
         // neighbouring room behind the wall (#300) and lie twice in a passage (#290)
         const a1 = Math.min(a + cell, x1);
         const b1 = Math.min(b + cell, z1);
+        if(ceilingAt){
+          const corners=[[a,b],[a1,b],[a1,b1],[a,b1]];
+          // No light overlay across concave boundaries or outside the actual roof.
+          if(corners.every(([x,z])=>pointInPolygon([x+(cx-x)*1e-6,z+(cz-z)*1e-6],r.points))){
+            const heights=corners.map(([x,z])=>ceilingAt(x,z));
+            if(heights.every((y):y is number=>y!=null)){
+              const dx=(heights[1]+heights[2]-heights[0]-heights[3])/(2*(a1-a));
+              const dz=(heights[2]+heights[3]-heights[0]-heights[1])/(2*(b1-b));
+              const len=Math.hypot(dx,1,dz),n=[dx/len,-1/len,dz/len];
+              const vertices=corners.map(([x,z],i)=>[x,heights[i]-LIFT,z]);
+              quad(vertices[0],vertices[1],vertices[2],vertices[3],n,ri,-1);
+            }
+          }
+        }
         const y = roomLevel(floor, r) + LIFT;
         if (!bays.length) {
           quad([a, y, b], [a, y, b1], [a1, y, b1], [a1, y, b], [0, 1, 0], ri, -1);
