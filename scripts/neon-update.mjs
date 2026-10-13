@@ -191,6 +191,22 @@ export function updater(root, config, releaseProvider) {
     git(['update-ref', 'refs/heads/' + config.customBranch, state.head, state.previousCustom ?? '0'.repeat(state.head.length)]);
     state.status = 'adopted'; state.adoptedAt = new Date().toISOString(); save(state); return state;
   }
+  function recheck() {
+    const state = status();
+    if (!['ready', 'checks_failed'].includes(state.status)) throw new Error('No checked candidate to revalidate');
+    safeRun(state);
+    if (git(['status', '--porcelain', '--untracked-files=all'], state.worktree)) throw new Error('Commit candidate changes before recheck');
+    if (state.head && !ancestor(state.head, revision(state.branch))) throw new Error('Candidate history was replaced');
+    if (state.artifact && existsSync(state.artifact)) {
+      if (state.artifact !== join(state.runDirectory, 'neonplan3d.zip')) throw new Error('Invalid candidate artifact path');
+      const archived = join(state.runDirectory, 'neonplan3d-checked-' + state.head.slice(0, 12) + '-' + Date.now() + '.zip');
+      renameSync(state.artifact, archived);
+      state.previousArtifact = { path: archived, sha256: state.sha256, head: state.head };
+    }
+    delete state.artifact; delete state.sha256;
+    state.status = 'testing'; save(state);
+    return finish(state);
+  }
   async function locked(fn) {
     mkdirSync(directory, { recursive: true }); const lock = join(directory, 'lock.json');
     if (existsSync(lock)) {
@@ -215,7 +231,7 @@ export function updater(root, config, releaseProvider) {
     writeFileSync(file, data, { mode: 0o600 });
     return { status: 'template_only', file, dailyLocalTime: '08:30', label, installed: false };
   }
-  return { check, prepare, resume, adopt, status, locked, schedule };
+  return { check, prepare, resume, recheck, adopt, status, locked, schedule };
 }
 async function releaseProvider(config) {
   const response = await fetch(config.releaseApi, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'neonplan-local-updater' }, signal: AbortSignal.timeout(20000) });
@@ -224,10 +240,11 @@ async function releaseProvider(config) {
 }
 const help = `Local NeonPlan update automation (Node.js 24+)
 Usage from this repository:
-  node scripts/neon-update.mjs check     Latest published upstream release + feature branch commits
+  node scripts/neon-update.mjs check     Latest original main (or configured release) + custom commits
   node scripts/neon-update.mjs prepare   Separate candidate worktree, merges, tests, build, ZIP
   node scripts/neon-update.mjs status    Last candidate, conflicts, logs and ZIP path
   node scripts/neon-update.mjs resume    Retry after manual merge resolution/commit or failed tests
+  node scripts/neon-update.mjs recheck   Verify a committed follow-up; preserve the previous checked ZIP
   node scripts/neon-update.mjs adopt     Explicitly advance LOCAL custom branch to a checked candidate
   node scripts/neon-update.mjs watch     Check and prepare if needed; unresolved candidate blocks new runs
   node scripts/neon-update.mjs schedule  Write optional launchd template (daily 08:30); does not install it
@@ -249,7 +266,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('Node.js 24+ required');
     const root = resolve(import.meta.dirname, '..'), config = JSON.parse(readFileSync(join(import.meta.dirname, 'neon-update.config.json'), 'utf8'));
     const app = updater(root, config, releaseProvider);
-    const commands = { check: app.check, prepare: app.prepare, status: app.status, resume: app.resume, adopt: app.adopt, schedule: app.schedule,
+    const commands = { check: app.check, prepare: app.prepare, status: app.status, resume: app.resume, recheck: app.recheck, adopt: app.adopt, schedule: app.schedule,
       watch: async () => { const result = await app.check(); return result.needsPreparation ? app.prepare() : { status: 'up_to_date', ...result }; } };
     if (!commands[command]) throw new Error('Unknown command: ' + command);
     const result = command === 'status' ? app.status() : await app.locked(commands[command]);

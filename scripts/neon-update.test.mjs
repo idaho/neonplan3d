@@ -104,4 +104,13 @@ test('a custom build cannot become ready while an agreed feature is absent', asy
   assert.equal(f.app.status().status, 'checks_failed');
   assert.throws(() => f.app.adopt(), /fully checked/);
 });
-
+test('recheck verifies committed follow-ups and preserves the previously checked archive', async t => {
+  const f = fixture(t), before = await f.app.prepare();
+  writeFileSync(join(before.worktree, 'followup.txt'), 'verified follow-up');
+  execFileSync('git', ['add', 'followup.txt'], { cwd: before.worktree });
+  execFileSync('git', ['commit', '-m', 'follow-up'], { cwd: before.worktree, stdio: 'pipe' });
+  assert.throws(() => f.app.adopt(), /changed since validation/);
+  const after = f.app.recheck();
+  assert.equal(after.status, 'ready'); assert.notEqual(after.head, before.head);
+  assert(existsSync(after.previousArtifact.path)); assert(existsSync(after.artifact));
+});

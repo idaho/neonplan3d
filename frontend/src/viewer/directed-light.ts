@@ -1,5 +1,5 @@
 import { Color, Euler, Vector3 } from "three";
-import { lightGlow } from "../devices.ts";
+import { packLightGlow } from "../pack-runtime.ts";
 import { pointInPolygon, roomLevelAt, type Floor, type Furniture } from "../model.ts";
 import { mountBase, packItem } from "../packs.ts";
 import type { HomeAssistant } from "../types.ts";
@@ -11,7 +11,7 @@ export function packSpotLights(f: Furniture,floor:Floor,hass:HomeAssistant):Ligh
   return (item?.spots??[]).flatMap(s=>{
     const cfg=f.spot_config?.[s.id],id=cfg?.entity??(s.binding?f.bindings?.[s.binding]:null)??f.entity;
     const st=id?hass.states[id]:undefined;if(!st||st.state!=="on")return [];
-    const glow=lightGlow(st);if(!glow)return [];const pivot=s.pivot??s.position;
+    const glow=packLightGlow(f,hass,id);if(!glow)return [];const pivot=s.pivot??s.position;
     const source=new Vector3(s.position[0]*f.w,s.position[1]*f.h,s.position[2]*f.d);
     const centre=new Vector3(pivot[0]*f.w,pivot[1]*f.h,pivot[2]*f.d);
     const local=new Euler((cfg?.rotation_x??0)*Math.PI/180,-(cfg?.rotation_y??0)*Math.PI/180,(cfg?.rotation_z??0)*Math.PI/180,"YZX");

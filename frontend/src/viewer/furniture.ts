@@ -54,9 +54,10 @@ class Builder {
   shape(p: PackItem["parts"][number], w: number, d: number, h: number, base: number, color: number): boolean {
     const g = packShape(p,w,d,h);
     if (!g) return false;
-    const flat=g.index ? g.toNonIndexed() : g, pos=flat.getAttribute("position"), col=new Color(color);
+    const flat=g.index ? g.toNonIndexed() : g, pos=flat.getAttribute("position"), normals=flat.getAttribute("normal"), col=new Color(color);
     const at=(i: number) => { const [x,z]=this.tf(pos.getX(i),pos.getZ(i));return [x,base+pos.getY(i),z]; };
-    for(let i=0;i<pos.count;i+=3) this.buf.tri(at(i),at(i+(this.mirrored?2:1)),at(i+(this.mirrored?1:2)),col);
+    const tint=(i:number)=>col.clone().multiplyScalar(0.78+0.2*Math.max(0,normals.getY(i))+0.14*(normals.getX(i)*-0.55+normals.getZ(i)*0.83));
+    for(let i=0;i<pos.count;i+=3){const b=i+(this.mirrored?2:1),c=i+(this.mirrored?1:2);this.buf.tri(at(i),at(b),at(c),tint(i),tint(b),tint(c));}
     if(flat!==g)flat.dispose();g.dispose();
     return true;
   }

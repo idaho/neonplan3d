@@ -1,13 +1,12 @@
-import { CanvasTexture, Color, DoubleSide, Float32BufferAttribute, Group, Material, Mesh, MeshBasicMaterial, PlaneGeometry } from "three";
+import { CanvasTexture, Color, DoubleSide, Float32BufferAttribute, Group, Material, Mesh, MeshBasicMaterial, Plane, PlaneGeometry, Vector3 } from "three";
 import type { Floor, Furniture } from "../model.ts";
 import { mountBase, renderPackItem, type PackDisplayField, type PackMotion, type PackPart } from "../packs.ts";
-import { clockParts, displayText, historicalMotion, motionState, MotionMemory, statusAppearance, type MotionState, type PackMoment } from "../pack-runtime.ts";
-import { lightGlow } from "../devices.ts";
+import { clockParts, displayText, historicalMotion, motionState, MotionMemory, packLightGlow, statusAppearance, type MotionState, type PackMoment } from "../pack-runtime.ts";
 import type { HomeAssistant } from "../types.ts";
 import { packPartGeometry } from "./furniture.ts";
 import { OPENING_TAU, OPEN_ANGLE, DOOR_ANGLE, TILT_ANGLE } from "./opening-motion.ts";
 
-interface PartView { part: PackPart; mesh: Mesh; key: string }
+interface PartView { part: PackPart; mesh: Mesh; key: string; baseColors:Float32Array }
 interface MotionView { definition: PackMotion; group: Group; state: MotionState; shown: number; tilt: number }
 interface ItemView { f: Furniture; group: Group; parts: PartView[]; motions: MotionView[]; displays: {field:PackDisplayField;mesh:Mesh;texture:CanvasTexture;key:string}[]; unclear: Mesh; unclearTexture:CanvasTexture }
 const palette:Record<string,number>={body:0x172238,fabric:0x1a2644,cushion:0x243661,wood:0x19233c,white:0x1d2946,metal:0x2a3a60,dark:0x0b111f,glass:0x1c3a52,plant:0x12302e,pot:0x1d2640,accent:0x2b8fb3};
@@ -30,10 +29,13 @@ export class CustomPackLayer {
   private global=true;
   private timer:ReturnType<typeof setTimeout>|undefined;
   private initial=true;
+  private seconds=0;
+  private plane=new Plane(new Vector3(0,-1,0),0);
+  private clipped=false;
   private material:Material;
   private invalidate:()=>void;
   constructor(floor:Floor, material:Material, invalidate:()=>void, memory?:MotionMemory) {
-    this.material=material;this.invalidate=invalidate;
+    this.material=material.clone();this.material.onBeforeCompile=material.onBeforeCompile;this.material.customProgramCacheKey=material.customProgramCacheKey;this.invalidate=invalidate;
     if(memory)this.memory=memory;
     for(const f of floor.furniture){
       const item=renderPackItem(f);if(!item)continue;
@@ -45,7 +47,9 @@ export class CustomPackLayer {
       group.scale.x=f.mirror?-1:1;this.group.add(group);
       const views:PartView[]=parts.map(part=>{
         const geo=packPartGeometry({...item,parts:[part]},f);geo.translate(0,-f.h/2,0);
-        const mesh=new Mesh(geo,part.status?new MeshBasicMaterial({vertexColors:true,side:DoubleSide}):this.material);group.add(mesh);return {part,mesh,key:""};
+        const mesh=new Mesh(geo,part.status?new MeshBasicMaterial({vertexColors:true,side:DoubleSide}):this.material);group.add(mesh);
+        mesh.userData.furnitureId=f.id;
+        return {part,mesh,key:"",baseColors:Float32Array.from(geo.getAttribute("color").array)};
       });
       const motions:MotionView[]=(item.motions??[]).map(definition=>{
         const g=new Group(),[x,y,z]=definition.pivot;g.position.set(x*f.w,(y-0.5)*f.h,z*f.d);group.add(g);
@@ -59,6 +63,7 @@ export class CustomPackLayer {
       }
       const displays=(item.displays??[]).map(field=>{
         const s=textSurface(field.size[0]*f.w,field.size[1]*f.h),[x,y,z]=field.position;
+        s.mesh.userData.furnitureId=f.id;
         if(field.kind==="analog")(s.texture.image as HTMLCanvasElement).height=512;
         s.mesh.position.set(x*f.w,(y-0.5)*f.h,z*f.d);
         s.mesh.rotation.set(...(field.rotation??[0,0,0]).map(v=>v*Math.PI/180) as [number,number,number],"YZX");
@@ -73,6 +78,16 @@ export class CustomPackLayer {
       this.items.push({f,group,parts:views,motions,displays,unclear:unclear.mesh,unclearTexture:unclear.texture});
     }
   }
+  meshes():Mesh[]{return this.items.flatMap(i=>[...i.parts.map(p=>p.mesh),...i.displays.map(d=>d.mesh)]).filter(m=>m.visible);}
+  clip(cut:number|null,worldY:number,opacity:number):void{
+    const enabled=cut!==null;this.plane.constant=worldY+(cut??0);
+    this.material.opacity=opacity;
+    for(const mesh of this.items.flatMap(i=>[...i.parts.map(p=>p.mesh),...i.displays.map(d=>d.mesh)])){
+      const mat=mesh.material as Material;mat.opacity=opacity;mat.transparent=true;
+      if(enabled!==this.clipped){mat.clippingPlanes=enabled?[this.plane]:null;mat.needsUpdate=true;}
+    }
+    this.clipped=enabled;
+  }
   update(hass:HomeAssistant,moment:PackMoment,global:boolean):void{
     const instant=this.initial||moment.historical&&(moment.seek!==this.moment.seek||!this.moment.historical);
     this.initial=false;
@@ -83,7 +98,9 @@ export class CustomPackLayer {
         const a=statusAppearance(p.part,item.f,hass),key=JSON.stringify(a);p.mesh.visible=a.visible;
         if(p.key!==key || p.part.glow || item.motions.some(m=>m.definition.parts.includes(p.part.id??"")&&m.state.running)){
           p.key=key;const c=new Color(color(a.color)),arr=p.mesh.geometry.getAttribute("color") as Float32BufferAttribute;
-          for(let i=0;i<arr.count;i++)arr.setXYZ(i,c.r,c.g,c.b);arr.needsUpdate=true;
+          if(a.color===p.part.color)(arr.array as Float32Array).set(p.baseColors);
+          else for(let i=0;i<arr.count;i++)arr.setXYZ(i,c.r,c.g,c.b);
+          arr.needsUpdate=true;
         }
       }
       for(const m of item.motions){
@@ -95,10 +112,10 @@ export class CustomPackLayer {
       }
       for(const spot of renderPackItem(item.f)?.spots??[]){
         const id=item.f.spot_config?.[spot.id]?.entity ?? (spot.binding?item.f.bindings?.[spot.binding]:null) ?? item.f.entity;
-        const glow=id?lightGlow(hass.states[id]):null;
+        const glow=packLightGlow(item.f,hass,id);
         if(!glow)continue;
         for(const p of item.parts.filter(p=>p.part.glow&&spot.parts.includes(p.part.id??""))){
-          const a=p.mesh.geometry.getAttribute("color") as Float32BufferAttribute,c=new Color(...glow.color);
+          const a=p.mesh.geometry.getAttribute("color") as Float32BufferAttribute,c=new Color(...glow.color.map(v=>Math.min(1,v*(0.55+0.45*glow.level))) as [number,number,number]);
           for(let i=0;i<a.count;i++)a.setXYZ(i,c.r,c.g,c.b);a.needsUpdate=true;
         }
       }
@@ -143,6 +160,7 @@ export class CustomPackLayer {
     if(kind==="window"){const tiltAngle=c?.tilt_angle??m.definition.tilt_angle;m.group.rotation.x=-(tiltAngle==null?TILT_ANGLE:tiltAngle*Math.PI/180)*m.tilt;}
   }
   step(dt:number):boolean{
+    this.seconds+=dt/1000;
     let moving=false;
     for(const item of this.items)for(const m of item.motions){
       const enabled=this.global&&item.f.animations!==false;
@@ -151,9 +169,11 @@ export class CustomPackLayer {
         if(m.definition.kind==="fan")m.group.rotation[m.definition.axis??"z"]+=dt*0.008;
         else {
           // Same cyan running indicator as the original appliances, with a subtle breathing effect.
-          const level=0.75+0.08*Math.sin(this.moment.time/1000);
+          const level=0.75+0.08*Math.sin(this.seconds);
           for(const p of item.parts.filter(p=>p.part.id&&m.definition.parts.includes(p.part.id))){
-            const c=new Color(0.3*level,0.85*level,level),a=p.mesh.geometry.getAttribute("color") as Float32BufferAttribute;
+            const appearance=this.hass?statusAppearance(p.part,item.f,this.hass):null;
+            const c=appearance&&p.part.status?new Color(color(appearance.color)).multiplyScalar(level):new Color(0.3*level,0.85*level,level);
+            const a=p.mesh.geometry.getAttribute("color") as Float32BufferAttribute;
             for(let i=0;i<a.count;i++)a.setXYZ(i,c.r,c.g,c.b);a.needsUpdate=true;
           }
         }
@@ -171,5 +191,6 @@ export class CustomPackLayer {
     if(this.timer)clearTimeout(this.timer);
     for(const i of this.items){for(const p of i.parts){p.mesh.geometry.dispose();if(p.mesh.material!==this.material)(p.mesh.material as Material).dispose();}for(const d of i.displays){d.mesh.geometry.dispose();(d.mesh.material as Material).dispose();d.texture.dispose();}i.unclear.geometry.dispose();(i.unclear.material as Material).dispose();i.unclearTexture.dispose();}
     this.group.removeFromParent();this.items=[];
+    this.material.dispose();
   }
 }

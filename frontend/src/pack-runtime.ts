@@ -1,10 +1,16 @@
-import { openingState, windowPosition } from "./devices.ts";
+import { lightGlow, onlyColor, openingState, windowPosition } from "./devices.ts";
+import { scaleGlow } from "./markers.ts";
 import type { Furniture } from "./model.ts";
 import type { PackDisplayField, PackMotion, PackPart } from "./packs.ts";
 import type { HassEntity, HomeAssistant } from "./types.ts";
 import type { HistoryRow } from "./trail.ts";
 
 export interface PackMoment { time: number; historical: boolean; playing: boolean; seek: number; history?: (ids:readonly string[],from:number,to:number)=>Record<string,HistoryRow[]> }
+export function packLightGlow(f:Furniture,hass:HomeAssistant,id:string|null|undefined){
+  const st=id ? hass.states[id] : undefined;
+  const secondary=id===f.entity && f.color_entity && f.color_entity!=="none" ? hass.states[f.color_entity] : undefined;
+  return st ? scaleGlow(onlyColor(lightGlow(st,secondary),f.only_color),f.glow_scale) : null;
+}
 export function knownState(st: HassEntity | undefined): boolean {
   return !!st && !["unknown","unavailable",""].includes(st.state.toLowerCase());
 }
@@ -38,8 +44,9 @@ export function displayText(field: PackDisplayField, f: Furniture, hass: HomeAss
 export function statusAppearance(part: PackPart, f: Furniture, hass: HomeAssistant): {color:string;visible:boolean} {
   const id=boundEntity(f,part.status?.binding), st=id ? hass.states[id] : undefined;
   if(!part.status||!knownState(st))return {color:part.color,visible:part.visible!==false};
-  return {color:f.status_colors?.[part.id!]?.[st!.state] ?? part.status.colors?.[st!.state] ?? part.color,
-    visible:part.status.visibility?.[st!.state] ?? part.visible!==false};
+  const own=<T>(map:Record<string,T>|undefined,key:string):T|undefined=>map&&Object.prototype.hasOwnProperty.call(map,key)?map[key]:undefined;
+  return {color:own(own(f.status_colors,part.id!),st!.state) ?? own(part.status.colors,st!.state) ?? part.color,
+    visible:own(part.status.visibility,st!.state) ?? part.visible!==false};
 }
 export interface MotionState { open: number; tilt: number; known: boolean; running: boolean }
 export function motionState(m: PackMotion, f: Furniture, hass: HomeAssistant): MotionState {

@@ -34,5 +34,8 @@ test("head entity and angle overrides are independent and follow parent XYZ rota
   setPacks([{id:"lamp",name:"lamp",publisher:"test",licensee:null,items:[{id:"two",name:{en:"Two"},size:[1,1,1],light:"spot",parts:[p],spots:[{id:"a",parts:["p"],position:[0,0.5,0],direction:[0,-1,0],angle:40}]}]}]);
   const f: Furniture={id:"l",type:"pack:lamp:two",x:0,z:0,w:1,d:1,h:1,rotation:0,rotation_x:90,variant:null,entity:"light.main",spot_config:{a:{entity:"light.head",beam_angle:80}}};
   const h={states:{"light.main":{state:"off",attributes:{}},"light.head":{state:"on",attributes:{brightness:255,rgb_color:[255,0,0]}}}} as unknown as HomeAssistant;
-  const [s]=packSpotLights(f,newFloor("f","f",0),h);assert.equal(s.angle,80);assert.ok(s.direction![2]<-0.99);assert.ok(Math.abs(s.direction![1])<1e-6);setPacks([]);
+  const [s]=packSpotLights(f,newFloor("f","f",0),h);assert.equal(s.angle,80);assert.ok(s.direction![2]<-0.99);assert.ok(Math.abs(s.direction![1])<1e-6);
+  assert.equal(packSpotLights({...f,only_color:"#00ff00"},newFloor("f","f",0),h).length,0);
+  assert.ok(packSpotLights({...f,glow_scale:0.5},newFloor("f","f",0),h)[0].level<s.level);
+  setPacks([]);
 });

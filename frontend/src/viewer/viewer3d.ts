@@ -1513,6 +1513,7 @@ export class FloorplanViewer {
     const renderer = new WebGLRenderer({ antialias: !low, alpha: true, powerPreference: low ? "low-power" : "default" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, low ? 1 : quality === "high" ? 2.5 : 2));
     renderer.setClearColor(0x000000, 0);
+    renderer.localClippingEnabled=true;
     renderer.outputColorSpace = SRGBColorSpace;
     renderer.domElement.className = "fp3d-canvas";
     this.host.prepend(renderer.domElement);
@@ -3081,12 +3082,18 @@ export class FloorplanViewer {
   private pick(x: number, y: number): { entity: string } | { floorId: string; roomId: string | null } | null {
     const ray = this.rayAt(x, y);
     const floors = this.activeFloors();
-    const meshes = floors.flatMap((f) => [f.lampMesh, f.coneMesh, f.framesMesh, f.glassMesh, f.blindsMesh, f.wallMesh, f.floorMesh].filter((m) => m.visible));
+    const custom=(f:FloorView)=>this.customLayers.get(f.floor.id)?.meshes()??[];
+    const meshes = floors.flatMap((f) => [f.lampMesh, f.coneMesh, f.framesMesh, f.glassMesh, f.blindsMesh, f.wallMesh, f.floorMesh,...custom(f)].filter((m) => m.visible));
     const inRange = (list: { id: string; start: number; end: number }[], tri: number) => list.find((r) => tri >= r.start && tri < r.end)?.id;
     for (const hit of ray.intersectObjects(meshes, false)) {
       if (hit.faceIndex == null) continue;
       const tri = hit.faceIndex;
-      const fv = floors.find((f) => f.group === hit.object.parent)!;
+      const fv = floors.find((f) => f.group === hit.object.parent || custom(f).includes(hit.object as Mesh))!;
+      if(hit.object.userData.furnitureId){
+        if(this.wallMode==="cut"&&hit.point.y>fv.group.position.y+fv.floor.cut_height)continue;
+        const entity=this.pickFurniture.get(String(hit.object.userData.furnitureId));if(entity)return {entity};
+        continue;
+      }
       if (hit.object === fv.lampMesh || hit.object === fv.coneMesh) {
         // a camera's wedge on the floor is a far bigger target than the camera itself
         const id = inRange(hit.object === fv.lampMesh ? fv.lampTris : fv.coneTris, tri);
@@ -3152,12 +3159,16 @@ export class FloorplanViewer {
     const ray = this.rayAt(x, y);
     const floors = this.activeFloors();
     // a TV's screen and its picture, a smart fridge's doors are meshes of their own: they belong to the item too
-    const extra = (f: FloorView) => [f.screenMesh, f.fridgeMesh, ...[...f.screenPics.values()].map((p) => p.mesh)];
+    const extra = (f: FloorView) => [f.screenMesh, f.fridgeMesh, ...[...f.screenPics.values()].map((p) => p.mesh),...(this.customLayers.get(f.floor.id)?.meshes()??[])];
     const meshes = floors.flatMap((f) => [f.lampMesh, f.wallMesh, ...extra(f)].filter((m) => m.visible));
     for (const hit of ray.intersectObjects(meshes, false)) {
       if (hit.faceIndex == null) continue;
       const fv = floors.find((f) => f.group === hit.object.parent || extra(f).includes(hit.object as Mesh))!;
       if (!fv) continue;
+      if(hit.object.userData.furnitureId){
+        if(this.wallMode==="cut"&&hit.point.y>fv.group.position.y+fv.floor.cut_height)continue;
+        return {fv,id:String(hit.object.userData.furnitureId),y:hit.point.y};
+      }
       if (hit.object !== fv.lampMesh && hit.object !== fv.wallMesh) {
         const id = this.furnitureNear(fv, hit.point.x, hit.point.z);
         if (id) return { fv, id, y: hit.point.y };
@@ -3782,7 +3793,10 @@ export class FloorplanViewer {
     const cameraMoving = this.controls.update(now);
     const floorsMoving = this.stepFloors(dt);
     let customMoving=false;
-    for(const [id,layer] of this.customLayers)if((this.floorMap.get(id)?.o??0)>0.02)customMoving=layer.step(dt)||customMoving;
+    for(const [id,layer] of this.customLayers){const fv=this.floorMap.get(id);if(!fv)continue;
+      layer.clip(this.wallMode==="cut"?fv.floor.cut_height:null,fv.group.position.y,fv.o);
+      if(fv.o>0.02)customMoving=layer.step(dt)||customMoving;
+    }
     const openingsMoving = this.stepOpenings(dt) || this.stepFridges(dt) || customMoving;
     let flashing = false;
     if (this.flashes.size) {

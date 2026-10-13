@@ -22,6 +22,7 @@ test("status affects only described parts and unknown states restore base visibi
   const p={id:"led",shape:"box" as const,color:"#112233",visible:false,x:0,z:0,y:0,w:1,d:1,h:1,status:{binding:"status",colors:{running:"#00ff00"},visibility:{running:true}}};
   assert.deepEqual(statusAppearance(p,f,hass({"sensor.status":"running"})),{color:"#00ff00",visible:true});
   assert.deepEqual(statusAppearance(p,f,hass({"sensor.status":"unknown"})),{color:"#112233",visible:false});
+  assert.deepEqual(statusAppearance(p,f,hass({"sensor.status":"toString"})),{color:"#112233",visible:false});
   assert.equal(statusAppearance(p,{...f,status_colors:{led:{running:"#ff0000"}}},hass({"sensor.status":"running"})).color,"#ff0000");
 });
 test("opening uncertainty preserves a valid live position and cannot carry future/live state into replay",()=>{
