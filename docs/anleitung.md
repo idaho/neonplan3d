@@ -856,7 +856,7 @@ Die mittlere Kachelreihe zeigt die Pro-Erweiterungen. Aktive tragen ein ✓, ges
 | Bad | Waschtische, Duschen, Wannen, WCs |
 | Kinderzimmer, Büro & Gaming, Garten & Terrasse, Garage & Werkstatt, Fitness, Smart-Home & Technik | Möbel und Geräte für den jeweiligen Bereich |
 | Fahrzeuge | Autos, Transporter, Motorräder und mehr für Stellplätze |
-| Treppen & Geländer | Gerade, L- und U-Treppen, Wendeltreppe, Raumspartreppe, Außentreppe, Podest, Geländer aus Metall, Glas und Holz |
+| Treppen & Geländer (16) | Gerade, L- und U-Treppen, gerade Treppen unten offen, viertelgewendelt oder mit Eckpodest, offene U-Treppe zweimal viertelgewendelt, Wendeltreppe, Raumspartreppe, Außentreppe, Podest, Geländer aus Metall, Glas und Holz |
 | Heimkino & Hi-Fi | Leinwand, Beamer, Lautsprecher, Subwoofer, AV-Receiver, Plattenspieler, Kinosessel, Smart Speaker und Smart Displays – Geräte leuchten beim Abspielen |
 | Hauswirtschaft & Haustechnik | Therme, Wärmepumpe, Pufferspeicher, Lüftung, Zählerschrank, Wasserenthärter, Gefriertruhe, Bügelstation |
 | Haustiere | Kratzbaum, Hundebett, Futterautomat, Trinkbrunnen, Katzenklo, Käfige, Aquarium und Terrarium mit Licht |
