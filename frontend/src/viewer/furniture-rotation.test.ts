@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { FURNITURE_TYPES, LAMP_MODEL, type Furniture } from "../model.ts";
-import { setPacks, type PackItem } from "../packs.ts";
+import { canLift, FURNITURE_TYPES, LAMP_MODEL, newFloor, type Furniture } from "../model.ts";
+import { mountBase, setPacks, type PackItem } from "../packs.ts";
+import { stairHoles } from './build.ts';
 import { furnitureTransform } from "../furniture-transform.ts";
 import { GeoBuffer, LineBuffer } from "./geo.ts";
 import { pushFridgeDoors, pushFurniture, pushPackGlow, pushPackLamp } from "./furniture.ts";
@@ -10,6 +11,23 @@ import { pushLampModel } from "./viewer3d.ts";
 const base = 1.2;
 const plain: Furniture = { id: "f", type: "shelf", x: 3, z: 4, rotation: 37, w: 1.2, d: 0.5, h: 0.8, variant: null };
 const tilted = { rotation_x: 65, rotation_z: -40 };
+test('standard straight and U stairs move vertically without changing their footprint or height',()=>{
+  const floor=newFloor('f','f',0),above=newFloor('above','above',3);
+  for(const type of ['stairs','stairs_u']){
+    const f: Furniture={...plain,type,h:2.5,w:1.5,d:3},lifted={...f,mount_y:0.8};
+    assert.equal(canLift(f),true);assert.equal(mountBase(floor,f),0);assert.equal(mountBase(floor,lifted),0.8);
+    const a=new GeoBuffer(),b=new GeoBuffer(),la=new LineBuffer(),lb=new LineBuffer();
+    pushFurniture(a,la,new GeoBuffer(),f,mountBase(floor,f));pushFurniture(b,lb,new GeoBuffer(),lifted,mountBase(floor,lifted));
+    for(const [before,after] of [[a.p,b.p],[la.p,lb.p]]){
+      assert.equal(before.length,after.length);
+      before.forEach((v,i)=>assert.ok(Math.abs(after[i]-v-(i%3===1?0.8:0))<1e-8));
+    }
+    floor.furniture=[f];assert.equal(stairHoles([floor,above],above).length,0);
+    floor.furniture=[lifted];assert.equal(stairHoles([floor,above],above).length,1);
+    assert.equal(lifted.h,f.h);
+  }
+  assert.equal(canLift({type:'stairwell'}),false);
+});
 const item: PackItem = { id: "model", name: { en: "Model" }, size: [1.2, 0.5, 0.8], parts: [
   { shape: "box", x: 0.1, z: 0, w: 0.8, d: 1, y: 0, h: 0.8, color: "body", glow: true, edges: true },
   { shape: "cyl", axis: "x", x: -0.3, z: 0, w: 0.15, d: 0.2, y: 0, h: 0.2, color: "dark" },

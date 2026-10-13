@@ -509,6 +509,9 @@ shots.push({name:"editor-custom-features",query:"",width:1400,height:1000,editor
       f.furniture=[{id:"unit",type:"pack:preview.custom:unit",x:2,z:2,w:1,d:0.5,h:1,rotation:0,variant:null,bindings:{door:"binary_sensor.custom_door",status:"sensor.custom_status",temperature:"sensor.custom_temperature"}}];b.settings.roof.type="none";});
     e._split=true;e._tool="select";e.selectItem("furniture","unit");e.fit();
   `});
+shots.push({name:'editor-standard-stair-height',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,stairHeight:true,editorScript:`
+  e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[{id:'stairs',name:'Treppen',area_id:null,points:[[0,0],[6,0],[6,6],[0,6]],floor_material:'wood'}];f.openings=[];f.outdoor=[];f.walls=[];f.placements=[];f.furniture=['stairs','stairs_u'].map((type,i)=>({id:type,type,x:1.5+i*3,z:3,w:1.2,d:2.8,h:2.3,rotation:0,variant:null}));b.settings.roof.type='none';});e._split=true;e.selectItem('furniture','stairs');e.fit();
+`});
 shots.push({name:'view-upward-spot-roof',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,upwardSpot:true,then3d:'Alle Etagen',then3dAlso:['Dach bleibt'],camera:{theta:0.5,phi:0.9,radius:9,target:{x:2.5,y:1.8,z:2.5}},editorScript:`
   const panel=document.querySelector('neonplan3d-panel');panel._quality='high';
   panel.hass={...panel.hass,states:{...panel.hass.states,'light.led_band':{entity_id:'light.led_band',state:'on',attributes:{brightness:255,rgb_color:[255,200,90]}}}};
@@ -1079,6 +1082,23 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       e.shadowRoot.querySelector('.fp3d-spot-form')?.scrollIntoView({ block: 'center' });
     });
     await new Promise((r) => setTimeout(r, 300));
+  }
+  if(shot.stairHeight){
+    await page.evaluate(async()=>{
+      const e=document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');
+      const settle=async()=>{await e.updateComplete;await new Promise(r=>setTimeout(r,80));};
+      for(const type of ['stairs','stairs_u']){
+        e.selectItem('furniture',type);await settle();const before=structuredClone(e.floor.furniture.find(f=>f.id===type));
+        const input=[...e.shadowRoot.querySelectorAll('label.fp3d-field')].find(l=>l.textContent.trim().startsWith(e.t('mount_height')))?.querySelector('input');
+        if(!input)throw new Error(type+' has no vertical position field');
+        input.value='0.6';input.dispatchEvent(new Event('change',{bubbles:true}));await settle();
+        const f=e.floor.furniture.find(f=>f.id===type);
+        if(f.mount_y!==0.6||f.x!==before.x||f.z!==before.z||f.h!==before.h)throw new Error('Stair height control changed the wrong coordinates');
+        e.undo();await settle();if(e.floor.furniture.find(f=>f.id===type).mount_y!=null)throw new Error('Vertical stair undo failed');
+        e.redo();await settle();if(e.floor.furniture.find(f=>f.id===type).mount_y!==0.6)throw new Error('Vertical stair redo failed');
+      }
+    });
+    console.log('verified standard straight/U stair height fields and undo/redo without changing X/Z or model height');
   }
   if(shot.fridgesForward){
     await page.evaluate(()=>{

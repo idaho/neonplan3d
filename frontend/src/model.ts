@@ -1163,7 +1163,9 @@ export const WALL_LAMP_Y = 1.75;
  * light (a downstand beam, ceiling beams) start under the ceiling and can be lowered (#287).
  */
 export function canLift(f: Pick<Furniture, "type">): boolean {
-  if (["lamp_ceiling", "lamp_panel", "lamp_pendant", "stairwell", "parking"].includes(f.type) || STAIR_TYPES.has(f.type)) return false;
+  // Built-in stairs can be offset vertically, like pack stairs. A stairwell
+  // remains a floor opening rather than a movable physical stair model.
+  if (["lamp_ceiling", "lamp_panel", "lamp_pendant", "stairwell", "parking"].includes(f.type)) return false;
   const item = packItem(f.type);
   return !(item?.mount === "ceiling" && item.light);
 }
