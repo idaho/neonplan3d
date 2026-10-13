@@ -509,6 +509,10 @@ shots.push({name:"editor-custom-features",query:"",width:1400,height:1000,editor
       f.furniture=[{id:"unit",type:"pack:preview.custom:unit",x:2,z:2,w:1,d:0.5,h:1,rotation:0,variant:null,bindings:{door:"binary_sensor.custom_door",status:"sensor.custom_status",temperature:"sensor.custom_temperature"}}];b.settings.roof.type="none";});
     e._split=true;e._tool="select";e.selectItem("furniture","unit");e.fit();
   `});
+shots.push({name:'editor-glass-sliding-door',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,glassSlider:true,editorScript:`
+  const panel=document.querySelector('neonplan3d-panel');panel.hass={...panel.hass,states:{...panel.hass.states,'binary_sensor.preview_glass':{entity_id:'binary_sensor.preview_glass',state:'on',attributes:{device_class:'door'}}}};
+  e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[{id:'left',name:'Raum links',area_id:null,points:[[0,0],[4,0],[4,4],[0,4]],floor_material:'wood'},{id:'right',name:'Raum rechts',area_id:null,points:[[4,0],[8,0],[8,4],[4,4]],floor_material:'wood'}];f.furniture=[];f.openings=[{id:'glass',room_id:'left',edge:1,offset:2,width:1.1,type:'door',sill:0,height:2.1,style:'interior',hinge:'left',leaves:1,swing:'in',contact:'binary_sensor.preview_glass',contact2:null,tilt:null,cover:null}];f.outdoor=[];f.walls=[];f.placements=[];b.settings.roof.type='none';});e._split=true;e.selectItem('opening','glass');e.fit();
+`});
 shots.push({name:'editor-standard-stair-height',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,stairHeight:true,editorScript:`
   e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[{id:'stairs',name:'Treppen',area_id:null,points:[[0,0],[6,0],[6,6],[0,6]],floor_material:'wood'}];f.openings=[];f.outdoor=[];f.walls=[];f.placements=[];f.furniture=['stairs','stairs_u'].map((type,i)=>({id:type,type,x:1.5+i*3,z:3,w:1.2,d:2.8,h:2.3,rotation:0,variant:null}));b.settings.roof.type='none';});e._split=true;e.selectItem('furniture','stairs');e.fit();
 `});
@@ -1082,6 +1086,22 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       e.shadowRoot.querySelector('.fp3d-spot-form')?.scrollIntoView({ block: 'center' });
     });
     await new Promise((r) => setTimeout(r, 300));
+  }
+  if(shot.glassSlider){
+    await page.evaluate(async()=>{
+      const panel=document.querySelector('neonplan3d-panel'),e=panel.shadowRoot.querySelector('fp3d-editor');
+      const select=[...e.shadowRoot.querySelectorAll('select')].find(s=>[...s.options].some(o=>o.value==='sliding_glass'));
+      if(!select)throw new Error('Glass slider absent from opening style selector');
+      select.value='sliding_glass';select.dispatchEvent(new Event('change',{bubbles:true}));await e.updateComplete;await new Promise(r=>setTimeout(r,800));
+      if(e.floor.openings[0].style!=='sliding_glass'||e.floor.openings[0].contact!=='binary_sensor.preview_glass'||e.floor.furniture.length)throw new Error('Glass slider did not remain a linked opening');
+      const view=e.shadowRoot.querySelector('fp3d-view3d'),fv=view.viewer.floors[0];
+      if(!fv.geo.openings.some(o=>o.opening.id==='glass')||!fv.glassMesh.geometry.getAttribute('position').count)throw new Error('Missing wall opening or glass pane');
+      if(fv.openings.get('glass').open<0.99)throw new Error('Glass slider does not follow contact');
+      panel.hass={...panel.hass,states:{...panel.hass.states,'binary_sensor.preview_glass':{entity_id:'binary_sensor.preview_glass',state:'off',attributes:{device_class:'door'}}}};
+      await panel.updateComplete;await new Promise(r=>setTimeout(r,900));
+      if(fv.openings.get('glass').open>0.01)throw new Error('Glass slider does not close');
+    });
+    console.log('verified glass sliding door selection, wall opening, glass pane and contact-driven open/close without inventory furniture');
   }
   if(shot.stairHeight){
     await page.evaluate(async()=>{

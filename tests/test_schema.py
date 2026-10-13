@@ -12,6 +12,25 @@ from custom_components.neonplan3d.schema import (
 ROOM = {"id": "r1", "name": "Bad", "area_id": None, "points": [[0, 0], [2, 0], [2, 2]], "floor_material": "tiles"}
 
 
+def test_glass_sliding_door_is_an_opening_not_furniture() -> None:
+    door = {
+        "id": "glass-slide",
+        "room_id": "r1",
+        "edge": 0,
+        "offset": 1,
+        "width": 0.9,
+        "type": "door",
+        "sill": 0,
+        "height": 2.1,
+        "style": "sliding_glass",
+        "contact": "binary_sensor.door",
+    }
+    clean = OPENING_SCHEMA(door)
+    assert clean["type"] == "door"
+    assert clean["style"] == "sliding_glass"
+    assert clean["contact"] == "binary_sensor.door"
+
+
 def test_start_view_keeps_its_target() -> None:
     view = START_VIEW_SCHEMA({"theta": 1, "phi": 0.8, "radius": 9, "target": {"x": 1, "y": 0.5, "z": -2}})
     assert view["target"] == {"x": 1.0, "y": 0.5, "z": -2.0}

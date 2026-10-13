@@ -174,14 +174,19 @@ export function buildOpeningParts(infos: readonly OpeningInfo[], states: Readonl
       }
       const leaves: [boolean, number][] = passage ? [] : [[info.hingeAtStart, st.open]];
       if (two && !passage) leaves.push([!info.hingeAtStart, st.open2 ?? 0]);
+      const glassSliding=style==="sliding_glass",sliding=style==="sliding"||glassSliding;
+      if(glassSliding){
+        const track=face+s*0.055;
+        splitBox(frames,tf,x0-(info.hingeAtStart||two?lw:0),x1+(!info.hingeAtStart||two?lw:0),track-0.025,track+0.025,T+0.025,T+0.075,new Color(HANDLE),new Color(HANDLE_TOP),cut,bucket);
+      }
       for (const [atStart, openness] of leaves) {
         const open = Math.min(1, Math.max(0, openness));
-        const theta = style === "sliding" ? 0 : open * DOOR_ANGLE;
+        const theta = sliding ? 0 : open * DOOR_ANGLE;
         // a sliding leaf runs along the wall face past the hinge side instead of turning
-        const slide = style === "sliding" ? open * lw : 0;
+        const slide = sliding ? open * lw : 0;
         const leafTf: Tf = (u, n, y) => {
           const along = u * Math.cos(theta) - n * Math.sin(theta) - slide;
-          const nn = face + s * (n * Math.cos(theta) + u * Math.sin(theta) + (slide ? 0.05 : 0));
+          const nn = face + s * (n * Math.cos(theta) + u * Math.sin(theta) + (glassSliding ? 0.055 : slide ? 0.05 : 0));
           return tf(atStart ? x0 + along : x1 - along, nn, y);
         };
         // an open leaf leaves its wall: keep it visible when the wall folds away
@@ -189,7 +194,7 @@ export function buildOpeningParts(infos: readonly OpeningInfo[], states: Readonl
         const warm = markClosed ? !!st.sensed && open < 0.05 : open > 0.9;
         const leafC = warm ? shade(OPEN_WARM, 0.7) : new Color(front ? LEAF_FRONT : LEAF);
         const leafTop = warm ? shade(OPEN_WARM, 0.9) : new Color(front ? LEAF_FRONT_TOP : LEAF_TOP);
-        if (style === "glass") {
+        if (style === "glass" || glassSliding) {
           // a glass door: slim stiles and rails around a pane
           splitBox(frames, leafTf, 0, 0.05, -thick, 0, 0.01, T - 0.01, leafC, leafTop, cut, leafBucket);
           splitBox(frames, leafTf, lw - 0.05, lw, -thick, 0, 0.01, T - 0.01, leafC, leafTop, cut, leafBucket);
@@ -203,9 +208,9 @@ export function buildOpeningParts(infos: readonly OpeningInfo[], states: Readonl
         else if (front) panel(glass, leafTf, 0.1, 0.18, 0.001, 0.3, T - 0.3, GLASS, cut, leafBucket);
         // handle on both sides: a knob on a room door, a bar on a front door
         const hy = Math.min(1.05, T * 0.5);
-        const hh = front ? 0.3 : 0.012;
-        const hx0 = front ? lw - 0.11 : lw - 0.16;
-        const hx1 = front ? lw - 0.08 : lw - 0.05;
+        const hh = front ? 0.3 : glassSliding ? 0.18 : 0.012;
+        const hx0 = front || glassSliding ? lw - 0.11 : lw - 0.16;
+        const hx1 = front || glassSliding ? lw - 0.08 : lw - 0.05;
         splitBox(frames, leafTf, hx0, hx1, 0.004, 0.05, hy - hh, hy + hh, new Color(HANDLE), new Color(HANDLE_TOP), cut, leafBucket);
         splitBox(frames, leafTf, hx0, hx1, -thick - 0.05, -thick - 0.004, hy - hh, hy + hh, new Color(HANDLE), new Color(HANDLE_TOP), cut, leafBucket);
       }

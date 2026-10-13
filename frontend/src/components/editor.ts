@@ -9186,7 +9186,7 @@ export class Fp3dEditor extends LitElement {
         symbol = svg`${paneLines}${
           style === "passage"
             ? svg`<line class="fp3d-open-passage" x1=${q(p0, mid)[0]} y1=${q(p0, mid)[1]} x2=${q(p1, mid)[0]} y2=${q(p1, mid)[1]} />`
-            : style === "sliding"
+            : style === "sliding" || style === "sliding_glass"
             ? svg`<line x1=${q(l0, face)[0]} y1=${q(l0, face)[1]} x2=${q(l1, face)[0]} y2=${q(l1, face)[1]} />`
             : two
               ? svg`${arc(l0, midP)}${arc(l1, midP)}`
