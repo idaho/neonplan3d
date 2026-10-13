@@ -362,7 +362,7 @@ clearTimeout(this.cleanTimer);
                 if (!this._clean) this.armClean();
                 else clearTimeout(this.cleanTimer);
               }}
-              ?weather=${c?.weather !== false}
+              .weather=${c?.weather !== false}
               .weatherEntityId=${c?.weather_entity ?? null}
               .dimmed=${this._night}
               .autoOrbit=${this._orbit}

@@ -5,6 +5,17 @@
 import { roomLevelAt, roomCeilingAt, builtinBase, ELECTRIC_FURNITURE, FURNITURE_SIZE, LIFT_SPOTS, spotDepth, surfaceHeight, WALL_LAMP_Y, type Floor, type Furniture } from "./model.ts";
 import type { LampModel } from "./viewer/viewer3d.ts";
 
+/** A cooking zone of a pack cooktop: a thin disc lying on the item's top. */
+export function isCooktopZone(p: Pick<PackPart, "shape" | "y" | "h" | "axis">): boolean {
+  return p.shape === "cyl" && (p.axis ?? "y") === "y" && p.y > 0.9 && p.h < 0.02;
+}
+
+/** A pack item with a cooktop (a hob unit, a cooker, an island with a hob): its zones glow while it cooks. */
+export function isPackCooktop(type: string): boolean {
+  const item = packItem(type);
+  return !!item && /(hob|cooker|stove|herd)/.test(type) && item.parts.filter(isCooktopZone).length >= 2;
+}
+
 export interface PackPart {
   id?: string;
   visible?: boolean;

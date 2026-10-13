@@ -9,7 +9,7 @@ All notable changes to NeonPlan 3D. The full notes in German and English are on 
 ### New
 
 - **Air conditioner (wall)** item with a glow in the colour of its mode (heat red, cool blue, auto green, dry yellow, fan white).
-- **Cooktops glow** while they cook; operating-state sensors (`run` / `ready` / `inactive`) supported.
+- **Cooktops glow** while they cook (built-in stove and the Kitchen pack's hobs and cookers); operating-state sensors (`run` / `ready` / `inactive`) supported. Kitchen pack R4: no zone painted red for ever.
 - **Lamps in one colour only** (*Glow in one colour only*): a colour light used as a signal shows only that colour.
 - **Running from (watts):** own power threshold for appliances behind smart plugs (default 10 W).
 - **Roof windows in the room card** and sunlight through them (#482).
@@ -20,6 +20,7 @@ All notable changes to NeonPlan 3D. The full notes in German and English are on 
 
 ### Fixed
 
+- Weather outside switched off stayed on after a reload (panel and card) (#509).
 - Echo speakers: play after pause works while the speaker still reports playing (#400).
 
 ## 1.17.1

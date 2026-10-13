@@ -804,7 +804,7 @@ export class Floorplan3dPanel extends LitElement {
             this._clean = !this._clean;
             prefs.set("clean", this._clean ? "1" : "0");
           }}
-          ?weather=${this._weather}
+          .weather=${this._weather}
           .panelOpen=${!!this._roomId}
           .floorId=${b.floors.length > 1 ? this._floorId : (b.floors[0]?.id ?? null)}
           .roomId=${this._roomId}
