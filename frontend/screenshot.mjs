@@ -1098,8 +1098,11 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       if(!fv.geo.openings.some(o=>o.opening.id==='glass')||!fv.glassMesh.geometry.getAttribute('position').count)throw new Error('Missing wall opening or glass pane');
       if(fv.openings.get('glass').open<0.99)throw new Error('Glass slider does not follow contact');
       panel.hass={...panel.hass,states:{...panel.hass.states,'binary_sensor.preview_glass':{entity_id:'binary_sensor.preview_glass',state:'off',attributes:{device_class:'door'}}}};
-      await panel.updateComplete;await new Promise(r=>setTimeout(r,900));
-      if(fv.openings.get('glass').open>0.01)throw new Error('Glass slider does not close');
+      await panel.updateComplete;
+      const deadline=Date.now()+6000;
+      while(view.viewer.floors[0].openings.get('glass').open>0.01&&Date.now()<deadline)await new Promise(r=>setTimeout(r,100));
+      const latest=view.viewer.floors[0];
+      if(latest.openings.get('glass').open>0.01)throw new Error('Glass slider does not close: '+JSON.stringify({open:latest.openings.get('glass').open,target:latest.openings.get('glass').targetOpen,view:view.hass.states['binary_sensor.preview_glass'].state,panel:panel.hass.states['binary_sensor.preview_glass'].state}));
     });
     console.log('verified glass sliding door selection, wall opening, glass pane and contact-driven open/close without inventory furniture');
   }
