@@ -3,6 +3,18 @@ import { test } from "node:test";
 import { upgrade, enrich } from "./upgrade-custom-packs.mjs";
 import { modernize, winderPoints } from './pack-round-shapes.mjs';
 const part={shape:"box",x:0,z:0,y:0,w:1,d:1,h:1,color:"body"};
+test('all refrigerator doors swing forward from their actual left/right hinges',()=>{
+  for(const id of ['samsung_rs80f65kdfef','siemens_kg36ealca','mini_fridge_60','liebherr_fna6635_20']){
+    const item=enrich({id,parts:Array.from({length:12},()=>({...part}))});
+    for(const motion of item.motions){
+      const [hingeX,,hingeZ]=motion.pivot;
+      // A point on the closed door inside its hinge: runtime rotation is -angle*direction.
+      const dx=hingeX<0?0.3:-0.3,angle=-1.5*motion.direction;
+      const openedZ=hingeZ-Math.sin(angle)*dx;
+      assert.ok(openedZ>hingeZ,`${id} ${motion.id} opened into its cabinet`);
+    }
+  }
+});
 test('winders meet on identical boundaries and widen away from the stair well',()=>{
   const a=winderPoints(0,Math.PI/6,0.15,1.05,0,0),b=winderPoints(Math.PI/6,Math.PI/3,0.15,1.05,0,0);
   assert.deepEqual(a[1],b[0]);assert.deepEqual(a[2],b.at(-1));

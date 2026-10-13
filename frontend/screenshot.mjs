@@ -517,6 +517,12 @@ shots.push({name:'view-upward-spot-roof',query:'',width:1400,height:1000,editor:
 if(process.env.ROUND_PACK_DIR){
   const directory=resolve(process.env.ROUND_PACK_DIR);
   const load=category=>JSON.parse(readFileSync(join(directory,`v2.${category}_farben.json`),'utf8')).items;
+  const refrigerators=load('kuechengeraete').filter(i=>['samsung_rs80f65kdfef','siemens_kg36ealca','mini_fridge_60','liebherr_fna6635_20'].includes(i.id));
+  const fridgeFurniture=refrigerators.map((i,n)=>({id:i.id,type:`pack:preview.fridges:${i.id}`,x:1+n*2,z:2.5,w:i.size[0],d:i.size[1],h:i.size[2],rotation:0,variant:null,animations:false,bindings:Object.fromEntries((i.motions??[]).map(m=>[m.binding,'binary_sensor.preview_fridge']))}));
+  shots.push({name:'pack-fridges-forward',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,fridgesForward:true,shapePack:{id:'preview.fridges',name:'Fridges',publisher:'Preview',items:refrigerators},then3d:'Erdgeschoss',camera:{theta:0.3,phi:0.9,radius:10,target:{x:4,y:0.8,z:2.5}},editorScript:`
+    const panel=document.querySelector('neonplan3d-panel');panel.hass={...panel.hass,states:{...panel.hass.states,'binary_sensor.preview_fridge':{entity_id:'binary_sensor.preview_fridge',state:'on',attributes:{device_class:'door'}}}};
+    e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[{id:'fridges',name:'Kühlschranktüren',area_id:null,points:[[0,0],[8,0],[8,5],[0,5]],floor_material:'wood'}];f.furniture=${JSON.stringify(fridgeFurniture)};f.openings=[];f.outdoor=[];f.walls=[];f.placements=[];b.settings.roof.type='none';});e.fit();
+  `});
   const stairs=load('treppen').filter(i=>/^open_[ul]_stair/.test(i.id));
   const round=[...load('garten').filter(i=>/^football_size_/.test(i.id)),...load('multimedia').filter(i=>/^echo_dot[34]_/.test(i.id))];
   for(const [name,items,scale] of [...stairs.map(i=>[i.id,[i],1]),['round-devices',round,8]]){
@@ -1073,6 +1079,20 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       e.shadowRoot.querySelector('.fp3d-spot-form')?.scrollIntoView({ block: 'center' });
     });
     await new Promise((r) => setTimeout(r, 300));
+  }
+  if(shot.fridgesForward){
+    await page.evaluate(()=>{
+      const view=document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-view3d'),v=view.viewer;
+      let doors=0;for(const layer of v.customLayers.values())for(const item of layer.items)for(const motion of item.motions){
+        if(motion.shown!==1)throw new Error('Refrigerator door did not open');
+        motion.group.updateWorldMatrix(true,false);
+        const hinge=motion.group.localToWorld(motion.group.position.clone().set(0,0,0));
+        const edge=motion.group.localToWorld(motion.group.position.clone().set((motion.definition.pivot[0]<0?0.3:-0.3)*item.f.w,0,0));
+        if(edge.z<=hinge.z)throw new Error(item.f.id+' opens into its cabinet');doors++;
+      }
+      if(doors!==6)throw new Error('Expected six independent refrigerator doors');
+    });
+    console.log('verified six refrigerator doors swing forward around their declared hinges');
   }
   if(shot.upwardSpot){
     await page.evaluate(()=>{

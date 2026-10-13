@@ -37,10 +37,11 @@ export function enrich(item,baseId=item.id){
       item.displays=[{id:"remaining",kind:"duration",binding:"remaining",position:[screen.x,screen.y+screen.h/2,screen.z+screen.d/2+0.005],size:[screen.w,screen.h]}];
     }
   }
-  if(baseId==="samsung_rs80f65kdfef"){door("door_left",[1,4,5,6,7],[-0.496,0.5,0.457],"door","y",-1);door("door_right",[2,8],[0.496,0.5,0.457]);}
-  if(baseId==="siemens_kg36ealca"){door("door_left",[3,6,8],[-0.486,0.2,0.472],"door","y",-1);door("door_right",[4,7,9,10,11],[-0.486,0.6,0.472],"door","y",-1);}
-  if(baseId==="mini_fridge_60")door("door_right",[3,4,5,6],[-0.484,0.5,0.46],"door","y",-1);
-  if(baseId==="liebherr_fna6635_20")door("door_right",[3,4,5,6],[0.49,0.5,0.476]);
+  // Model fronts face +z; pose() applies -angle*direction around the hinge.
+  if(baseId==="samsung_rs80f65kdfef"){door("door_left",[1,4,5,6,7],[-0.496,0.5,0.457],"door","y",1);door("door_right",[2,8],[0.496,0.5,0.457],"door","y",-1);}
+  if(baseId==="siemens_kg36ealca"){door("door_left",[3,6,8],[-0.486,0.2,0.472],"door","y",1);door("door_right",[4,7,9,10,11],[-0.486,0.6,0.472],"door","y",1);}
+  if(baseId==="mini_fridge_60")door("door_right",[3,4,5,6],[-0.484,0.5,0.46],"door","y",1);
+  if(baseId==="liebherr_fna6635_20")door("door_right",[3,4,5,6],[0.49,0.5,0.476],"door","y",-1);
   if(/samsung_rs80|mini_fridge|siemens_kg|liebherr_fna/.test(baseId)){
     const screen=item.parts.find(p=>p.screen);if(screen)display(screen,0,baseId.startsWith("samsung")?"door_left":"door_right");
   }
@@ -104,7 +105,7 @@ export function run(args){
   const manifestPath=join(dir,"CUSTOM-FEATURES.json");
   if(existsSync(manifestPath)){
     const previous=JSON.parse(readFileSync(manifestPath,"utf8"));
-    if(previous.contract===5 && source.every((p,i)=>previous.payloadHashes?.[files[i]]===hash(p))){console.log(JSON.stringify({upToDate:true,packs:source.length}));return;}
+    if(previous.contract===6 && source.every((p,i)=>previous.payloadHashes?.[files[i]]===hash(p))){console.log(JSON.stringify({upToDate:true,packs:source.length}));return;}
   }
   const {packs,geometryChanges}=upgrade(source,mapping);
   const modulePath=resolve(moduleArg);
@@ -130,7 +131,7 @@ export function run(args){
     writeFileSync(join(dir,name.replace(/\.json$/,".canonical.json")),bytes+"\n");
     writeFileSync(join(dir,exportDir,packName),JSON.stringify(signed)+"\n");
   }
-  writeFileSync(manifestPath,JSON.stringify({contract:5,version:2,packs:packs.length,geometryChanges,backup:basename(backup),publicKey:key,payloadHashes:Object.fromEntries(packs.map((p,i)=>[files[i],hash(p)]))},null,2)+"\n");
+  writeFileSync(manifestPath,JSON.stringify({contract:6,version:2,packs:packs.length,geometryChanges,backup:basename(backup),publicKey:key,payloadHashes:Object.fromEntries(packs.map((p,i)=>[files[i],hash(p)]))},null,2)+"\n");
   console.log(JSON.stringify({packs:packs.length,geometryChanges,backup}));
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))run(process.argv.slice(2));
