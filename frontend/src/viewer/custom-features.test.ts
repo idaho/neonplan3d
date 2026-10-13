@@ -9,7 +9,7 @@ import { newFloor, type Furniture } from "../model.ts";
 import type { HomeAssistant } from "../types.ts";
 const p={id:"p",shape:"box" as const,x:0,z:0,y:0,w:1,d:1,h:1,color:"body"};
 test("new curved and hollow forms produce finite bounded geometry with different detail levels",()=>{
-  for(const shape of ["polygon","rounded_box","sphere","ellipsoid","pipe","torus","bowl"] as const){
+  for(const shape of ["polygon","rounded_box","sphere","ellipsoid","pipe","torus","bowl","cyl"] as const){
     const g=packShape({...p,shape,points:[[-0.5,-0.5],[0.5,-0.5],[0.3,0.5],[-0.2,0.5]],path:[[-0.3,0,0],[0,0.3,0],[0.3,0,0]],detail:"high"},1,1,1)!;
     assert.ok(g.getAttribute("position").count>0);assert.ok([...g.getAttribute("position").array].every(Number.isFinite));g.dispose();
   }
@@ -21,6 +21,12 @@ test("product appearance switches colours without changing stored type or dimens
   const f={type:"pack:c:red",w:1,d:1,h:1} as Furniture,before=structuredClone(f);
   setProductColors(false);assert.equal(renderPackItem(f)!.parts[0].color,"body");
   setProductColors(true);assert.equal(renderPackItem(f)!.parts[0].color,"#ff0000");assert.deepEqual(f,before);setProductColors(false);setPacks([]);
+});
+test('vertical polygon panels fit the declared bounds without tilting the whole object',()=>{
+  for(const axis of ['x','z'] as const){
+    const g=packShape({...p,shape:'polygon',axis,points:[[-0.5,-0.5],[0.5,-0.5],[0.5,0.5],[-0.5,0.5]]},2,4,3)!;
+    g.computeBoundingBox();assert.deepEqual(g.boundingBox!.min.toArray(),[-1,0,-2]);assert.deepEqual(g.boundingBox!.max.toArray(),[1,3,2]);g.dispose();
+  }
 });
 test("a directed light cannot illuminate behind its aperture; a wider angle reaches a wider footprint",()=>{
   const source:LightSource={x:0,y:1,z:0,kind:"spot",room:0,color:[1,1,1],level:1,direction:[0,-1,0],angle:20};

@@ -37,6 +37,8 @@ def check(directory: Path) -> None:
         "path",
         "radius",
         "thickness",
+        "visible",
+        "detail",
     )
     for color, base in mapping["color_to_neon"].items():
         a, b = models[color], models[base]

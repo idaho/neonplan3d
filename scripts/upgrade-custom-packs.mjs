@@ -4,6 +4,7 @@ import { resolve, join, basename } from "node:path";
 import { createPrivateKey, createPublicKey, createHash, sign } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { modernize } from './pack-round-shapes.mjs';
 
 const partId=i=>`p${String(i).padStart(3,"0")}`;
 const geometry=p=>Object.fromEntries(Object.entries(p).filter(([k])=>!["color","top","edges","glow","screen","id","status","visible"].includes(k)));
@@ -86,8 +87,9 @@ export function upgrade(source,map){
     variants.forEach((variant,i)=>{variant.product={base,variant:variant.id,label:variant.name.de??variant.name.en??variant.id,default:i===0};});
   }
   for(const p of packs){
-    p.version=2;p.release=(p.release??1)+1;
-    for(const item of p.items){const type=`pack:${p.id}:${item.id}`,base=map.color_to_neon[type]??type;enrich(item,base.split(":").at(-1));}
+    const before=canonical(source.find(old=>old.id===p.id));p.version=2;
+    for(const item of p.items){const type=`pack:${p.id}:${item.id}`,base=map.color_to_neon[type]??type;enrich(item,base.split(":").at(-1));modernize(item,base.split(':').at(-1));}
+    if(canonical(p)!==before)p.release=(p.release??1)+1;
   }
   return {packs,geometryChanges};
 }
@@ -102,7 +104,7 @@ export function run(args){
   const manifestPath=join(dir,"CUSTOM-FEATURES.json");
   if(existsSync(manifestPath)){
     const previous=JSON.parse(readFileSync(manifestPath,"utf8"));
-    if(previous.contract===3 && source.every((p,i)=>previous.payloadHashes?.[files[i]]===hash(p))){console.log(JSON.stringify({upToDate:true,packs:source.length}));return;}
+    if(previous.contract===5 && source.every((p,i)=>previous.payloadHashes?.[files[i]]===hash(p))){console.log(JSON.stringify({upToDate:true,packs:source.length}));return;}
   }
   const {packs,geometryChanges}=upgrade(source,mapping);
   const modulePath=resolve(moduleArg);
@@ -128,7 +130,7 @@ export function run(args){
     writeFileSync(join(dir,name.replace(/\.json$/,".canonical.json")),bytes+"\n");
     writeFileSync(join(dir,exportDir,packName),JSON.stringify(signed)+"\n");
   }
-  writeFileSync(manifestPath,JSON.stringify({contract:3,version:2,packs:packs.length,geometryChanges,backup:basename(backup),publicKey:key,payloadHashes:Object.fromEntries(packs.map((p,i)=>[files[i],hash(p)]))},null,2)+"\n");
+  writeFileSync(manifestPath,JSON.stringify({contract:5,version:2,packs:packs.length,geometryChanges,backup:basename(backup),publicKey:key,payloadHashes:Object.fromEntries(packs.map((p,i)=>[files[i],hash(p)]))},null,2)+"\n");
   console.log(JSON.stringify({packs:packs.length,geometryChanges,backup}));
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))run(process.argv.slice(2));

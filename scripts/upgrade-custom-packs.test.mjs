@@ -1,7 +1,22 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { upgrade, enrich } from "./upgrade-custom-packs.mjs";
+import { modernize, winderPoints } from './pack-round-shapes.mjs';
 const part={shape:"box",x:0,z:0,y:0,w:1,d:1,h:1,color:"body"};
+test('winders meet on identical boundaries and widen away from the stair well',()=>{
+  const a=winderPoints(0,Math.PI/6,0.15,1.05,0,0),b=winderPoints(Math.PI/6,Math.PI/3,0.15,1.05,0,0);
+  assert.deepEqual(a[1],b[0]);assert.deepEqual(a[2],b.at(-1));
+  const distance=(p,q)=>Math.hypot(p[0]-q[0],p[1]-q[1]);assert.ok(distance(a[0],a[1])>distance(a[2],a[3]));
+  assert.equal(b.length,6); // square outer/inner corners are part of the plate, not a landing
+});
+test('round models retain dimensions, part IDs and migration is idempotent',()=>{
+  for(const id of ['football_size_3','echo_dot4_clock_bluegrey','echo_dot3_outlet_black']){
+    const item={id,size:[1,1,1],parts:Array.from({length:60},(_,i)=>({...part,id:'p'+i,color:i===0?'white':'dark'})),displays:[{id:'clock'}]};
+    const ids=item.parts.map(p=>p.id);modernize(item,id);const before=structuredClone(item);modernize(item,id);
+    assert.deepEqual(item,before);assert.deepEqual(item.parts.map(p=>p.id),ids);assert.deepEqual(item.size,[1,1,1]);assert.deepEqual(item.displays,[{id:'clock'}]);
+    assert.ok(item.parts.some(p=>p.shape==='sphere'||p.shape==='ellipsoid'));
+  }
+});
 test("product geometry is preserved and its neon counterpart is corrected with stable IDs",()=>{
   const input=[{id:"neon",items:[{id:"base",size:[1,1,1],parts:[part]}]},{id:"color",items:[{id:"brown",name:{de:"Braun"},size:[1,1,1],parts:[{...part,w:0.9,color:"#443322"}]}]}];
   const map={neon_to_colors:{"pack:neon:base":["pack:color:brown"]},color_to_neon:{"pack:color:brown":"pack:neon:base"}};

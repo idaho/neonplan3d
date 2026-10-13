@@ -509,6 +509,17 @@ shots.push({name:"editor-custom-features",query:"",width:1400,height:1000,editor
       f.furniture=[{id:"unit",type:"pack:preview.custom:unit",x:2,z:2,w:1,d:0.5,h:1,rotation:0,variant:null,bindings:{door:"binary_sensor.custom_door",status:"sensor.custom_status",temperature:"sensor.custom_temperature"}}];b.settings.roof.type="none";});
     e._split=true;e._tool="select";e.selectItem("furniture","unit");e.fit();
   `});
+if(process.env.ROUND_PACK_DIR){
+  const directory=resolve(process.env.ROUND_PACK_DIR);
+  const load=category=>JSON.parse(readFileSync(join(directory,`v2.${category}_farben.json`),'utf8')).items;
+  const stairs=load('treppen').filter(i=>/^open_[ul]_stair/.test(i.id));
+  const round=[...load('garten').filter(i=>/^football_size_/.test(i.id)),...load('multimedia').filter(i=>/^echo_dot[34]_/.test(i.id))];
+  for(const [name,items,scale] of [...stairs.map(i=>[i.id,[i],1]),['round-devices',round,8]]){
+    const pack={id:'preview.round',name:'Native Shapes',publisher:'Preview',items};
+    const furniture=items.map((i,n)=>({id:i.id,type:`pack:preview.round:${i.id}`,x:items.length===1?3:1+(n%4)*1.4,z:items.length===1?3:1+Math.floor(n/4)*1.7,w:i.size[0]*scale,d:i.size[1]*scale,h:i.size[2]*scale,rotation:0,variant:null}));
+    shots.push({name:`pack-${name}`,query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,shapePack:pack,then3d:'Erdgeschoss',camera:{theta:0.5,phi:0.7,radius:items.length===1?8:10,target:{x:3,y:items.length===1?1.5:0.4,z:2.8}},editorScript:`e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[{id:'shapes',name:'Formen',area_id:null,ceiling_height:5,points:[[0,0],[6,0],[6,6],[0,6]],floor_material:'concrete'}];f.openings=[];f.outdoor=[];f.placements=[];f.walls=[];f.furniture=${JSON.stringify(furniture)};b.settings.roof.type='none';});e.fit();`});
+  }
+}
 for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
   const page = await browser.newPage();
   if (shot.freeformExercise || shot.spotsExercise) page.on("dialog", async (dialog) => { errors.push(`${shot.name}: ${dialog.message()}`); await dialog.dismiss(); });
@@ -517,7 +528,7 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
     page.on("request", (request) => {
       const path = new URL(request.url()).pathname;
       if (path === "/private/packs/starter.json" || path === "/private/packs/src/index.json") {
-        request.respond({ status: 200, contentType: "application/json", body: JSON.stringify(path.endsWith("index.json") ? [] : shot.customPackExercise ? CUSTOM_PACK : { id: "preview.empty", name: "Preview", publisher: "Preview", items: [] }) });
+        request.respond({ status: 200, contentType: "application/json", body: JSON.stringify(path.endsWith("index.json") ? [] : shot.shapePack ?? (shot.customPackExercise ? CUSTOM_PACK : { id: "preview.empty", name: "Preview", publisher: "Preview", items: [] })) });
       } else request.continue();
     });
   }
