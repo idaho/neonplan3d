@@ -4,15 +4,7 @@
   "releaseApi": "https://api.github.com/repos/Mastershort/neonplan3d/releases/latest",
   "customBranch": "custom",
   "initialBase": "main",
-  "featureBranches": [
-    "feature/freeform-outdoor-roofs",
-    "feature/inventory-xyz-rotation",
-    "feature/split-level-rooms",
-    "feature/transparent-roofs",
-    "feature/room-height-offsets",
-    "feature/inventory-xyz-projection",
-    "feature/custom-features-complete"
-  ],
+  "featureBranches": ["feature/custom-features-complete"],
   "stateDirectory": "private/update-automation",
   "featureDefinitionsStatus": "approved_requirements_under_full_verification",
   "customFeatureManifest": "docs/custom-features.json",
