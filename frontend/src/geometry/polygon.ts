@@ -37,6 +37,13 @@ export function validPolygon(p: readonly Vec2[]): boolean {
   return true;
 }
 
+/** Moving a corner must preserve its gesture-start contour, including an inserted midpoint. */
+export function movedPolygonVertex(points:readonly Vec2[],index:number,position:Vec2):Vec2[]|null{
+  if(!Number.isInteger(index)||index<0||index>=points.length)return null;
+  const next=points.map((p,i)=>[...(i===index?position:p)] as Vec2);
+  return validPolygon(next)?next:null;
+}
+
 /** Ear clipping for a simple, possibly concave polygon, in either winding. */
 export function polygonTriangles(p: readonly Vec2[]): number[][] {
   const ids = p.map((_, i) => i);

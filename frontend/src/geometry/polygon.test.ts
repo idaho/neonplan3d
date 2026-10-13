@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Vec2 } from "../model.ts";
-import { clipConvex, polygonContains, polygonContainsPolygon, polygonSegment, polygonSignedArea, polygonTriangles, validPolygon } from "./polygon.ts";
+import { clipConvex, movedPolygonVertex, polygonContains, polygonContainsPolygon, polygonSegment, polygonSignedArea, polygonTriangles, validPolygon } from "./polygon.ts";
 
 const L: Vec2[] = [[0, 0], [6, 0], [6, 2], [2, 2], [2, 6], [0, 6]];
+test('moving a newly inserted midpoint preserves every original neighbour and the undo contour',()=>{
+  const original:Vec2[]=[[0,0],[4,0],[4,3],[0,3]],gesture:Vec2[]=[original[0],[2,0],...original.slice(1)];
+  const moved=movedPolygonVertex(gesture,1,[2,-0.2])!;assert.equal(moved.length,5);
+  assert.deepEqual(moved.filter((_,i)=>i!==1),original);assert.deepEqual(gesture[1],[2,0]);
+  assert.equal(movedPolygonVertex(gesture,1,[4,3]),null);assert.equal(movedPolygonVertex(gesture,20,[1,1]),null);
+});
 
 test("simple concave polygons triangulate in either winding without filling the missing corner", () => {
   for (const poly of [L, [...L].reverse(), [[0, 0], [3, 0], [6, 0], ...L.slice(2)] as Vec2[]]) {

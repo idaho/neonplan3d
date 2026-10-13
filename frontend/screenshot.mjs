@@ -509,6 +509,9 @@ shots.push({name:"editor-custom-features",query:"",width:1400,height:1000,editor
       f.furniture=[{id:"unit",type:"pack:preview.custom:unit",x:2,z:2,w:1,d:0.5,h:1,rotation:0,variant:null,bindings:{door:"binary_sensor.custom_door",status:"sensor.custom_status",temperature:"sensor.custom_temperature"}}];b.settings.roof.type="none";});
     e._split=true;e._tool="select";e.selectItem("furniture","unit");e.fit();
   `});
+shots.push({name:'editor-contour-press-drag',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,contourPressDrag:true,editorScript:`
+  e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[];f.furniture=[];f.openings=[];f.walls=[];f.placements=[];f.outdoor=[{id:'area',type:'terrace',points:[[0,0],[4,0],[4,3],[0,3]]}];b.settings.roof.type='custom';b.settings.roof.sections=[{id:'canopy',shape:'flat',axis:'x',x0:0,z0:0,x1:4,z1:3,eave_a:2.6,eave_b:2.6,pitch_a:0,pitch_b:0,base:2.6,overhang:0}];});e._split=false;e.selectItem('outdoor','area');e.fit();
+`});
 shots.push({name:'editor-gravel-bed',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,gravelBed:true,editorScript:`
   e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[];f.furniture=[];f.openings=[];f.walls=[];f.placements=[];f.outdoor=[{id:'gravel',type:'lawn',freeform:true,points:[[0,0],[4,0],[4,2],[2,2],[2,4],[0,4]],offset:0.2,slope:0.08,slope_dir:'x'}];b.settings.roof.type='none';});e._split=true;e.selectItem('outdoor','gravel');e.fit();
 `});
@@ -1111,6 +1114,27 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       e.shadowRoot.querySelector('.fp3d-spot-form')?.scrollIntoView({ block: 'center' });
     });
     await new Promise((r) => setTimeout(r, 300));
+  }
+  if(shot.contourPressDrag){
+    for(const kind of ['outdoor','roof']){
+      const at=await page.evaluate(async kind=>{
+        const e=document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');
+        if(kind==='roof'){e._tool='roof';e._roofId='canopy';}else e.selectItem('outdoor','area');
+        await e.updateComplete;await new Promise(r=>setTimeout(r,100));
+        const marker=e.shadowRoot.querySelector(`[data-contour-mid="${kind}:${kind==='roof'?'canopy':'area'}:0"] circle:not(.fp3d-hit)`);
+        if(!marker)throw new Error('Missing + marker');const r=marker.getBoundingClientRect();return [r.left+r.width/2,r.top+r.height/2];
+      },kind);
+      await page.mouse.move(...at);await page.mouse.down();await new Promise(r=>setTimeout(r,100));
+      await page.mouse.move(at[0]+1,at[1]+1,{steps:2});await new Promise(r=>setTimeout(r,100));await page.mouse.up();
+      await page.evaluate(async kind=>{
+        const e=document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');await e.updateComplete;
+        const points=()=>kind==='roof'?e.roofSection.points:e.outdoorArea.points;
+        if(points()?.length!==5)throw new Error('Click/press movement lost the inserted '+kind+' vertex: '+points()?.length);
+        e.undo();await e.updateComplete;if((kind==='roof'?e.roofPoints(e.roofSection):e.outdoorArea.points).length!==4)throw new Error('Insertion undo failed');
+        e.redo();await e.updateComplete;if(points().length!==5)throw new Error('Insertion redo failed');
+      },kind);
+    }
+    console.log('verified + press with mouse jitter preserves inserted outdoor/roof corners and undo/redo');
   }
   if(shot.gravelBed){
     await page.evaluate(async()=>{

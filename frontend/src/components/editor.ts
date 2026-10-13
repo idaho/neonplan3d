@@ -27,7 +27,7 @@ import { deviceSensors, energySummary, flowSegments, gridPoint, powerSensorFor, 
 import { CLIMATE_ATTRS, isStatusSensor, robotRoomSensor, TOGGLE_KINDS } from "../devices.ts";
 import { sectionFloor, dormerParent, effectiveDormer, proposeDormer, sectionGeometry, floorOutline, polygonBox, headroomLines, ridgeHeight, sectionCutsBelow, roofSectionsFromRooms, sectionFrame, wallTopUnder } from "../roof-sections.ts";
 import { bestFace, clampField, faceAt, faceCompass, fieldFace, fieldModules, GROUND, moveField, pointOnFace, proposeField, proposeGroundField, proposeWindow, proposeWallField, roofFaces, rowCounts, turnGroundField, fieldCenter, wallFaces, windowAsField, windowCorners, onFace, onField, rayOnFace, type RoofFace } from "../solar.ts";
-import { validPolygon } from "../geometry/polygon.ts";
+import { movedPolygonVertex, validPolygon } from "../geometry/polygon.ts";
 import { ceilingSpots, spotSurfaceKey, type SpotSurface } from "../ceiling-spots.ts";
 import { syncSurfaceSpots } from "../surface-binding.ts";
 import { OPEN_ANGLE, DOOR_ANGLE, TILT_ANGLE } from "../viewer/opening-motion.ts";
@@ -159,14 +159,14 @@ type Drag =
   | { kind: "roofmove"; id: string; start: Vec2; startScreen: [number, number]; base: Building; moved: boolean }
   | { kind: "solarturn"; id: string; base: Building; moved: boolean }
   | { kind: "solarmove"; id: string; start: Vec2; startScreen: [number, number]; base: Building; moved: boolean; grab: { du: number; ds: number } | null; win?: boolean }
-  | { kind: "outvertex"; id: string; index: number; base: Building; moved: boolean }
+  | { kind: "outvertex"; id: string; index: number; base: Building; points?:Vec2[]; moved: boolean }
   | { kind: "outbox"; id: string; corner: number; base: Building; moved: boolean }
   | { kind: "pipept"; pool: string; pipe: string; index: number; base: Building; moved: boolean }
   | { kind: "poolport"; pool: string; id: string; base: Building; moved: boolean }
   | { kind: "pooldev"; id: string; start: Vec2; base: Building; moved: boolean }
   | { kind: "pooljoint"; pool: string; id: string; start: Vec2; base: Building; moved: boolean }
   | { kind: "roofcorner"; id: string; corner: [0 | 1, 0 | 1]; base: Building; moved: boolean }
-  | { kind: "roofvertex"; id: string; index: number; base: Building; moved: boolean }
+  | { kind: "roofvertex"; id: string; index: number; base: Building; points?:Vec2[]; moved: boolean }
   | { kind: "cablept"; id: string; index: number; base: Building; moved: boolean }
   | { kind: "holopt"; base: Building; moved: boolean }
   | { kind: "bgmove"; start: Vec2; bx: number; bz: number; base: Building; moved: boolean }
@@ -1416,6 +1416,7 @@ export class Fp3dEditor extends LitElement {
       if (!points) return;
       const base = this._doc;
       let index = Number(rawIndex);
+      let gesturePoints:Vec2[]|undefined;
       if (roof) this._roofId = id;
       else this.selectItem("outdoor", id);
       if (inserting) {
@@ -1423,13 +1424,14 @@ export class Fp3dEditor extends LitElement {
         const p = points[index], q = points[(index + 1) % points.length], next = [...points];
         next.splice(++index, 0, [round((p[0] + q[0]) / 2), round((p[1] + q[1]) / 2)]);
         if (!validPolygon(next)) return;
+        gesturePoints=next;
         this.change((doc, floor) => {
           if (roof) Object.assign(doc.settings.roof.sections!.find((s) => s.id === id)!, { points: next, ...polygonBox(next) });
           else Object.assign(floor.outdoor.find((a) => a.id === id)!, { points: next, freeform: true });
         }, base, false);
       }
       this._contourVertex = { kind: roof ? "roof" : "outdoor", id, index };
-      this.drag = { kind: roof ? "roofvertex" : "outvertex", id, index, base, moved: inserting };
+      this.drag = { kind: roof ? "roofvertex" : "outvertex", id, index, base, points:gesturePoints, moved: inserting };
       return;
     }
     if (this._tool === "pool" && this.poolDown(e, target, world, local)) return;
@@ -2045,14 +2047,13 @@ export class Fp3dEditor extends LitElement {
         const p = this.snap(world, undefined, e.altKey);
         const src = drag.base.floors.find((f) => f.id === this._floorId)?.outdoor.find((a) => a.id === drag.id);
         if (!src) return;
+        const pts=movedPolygonVertex(drag.points??src.points,drag.index,[round(p[0]),round(p[1])]);
+        if(!pts)return; // Keep the last valid live contour, not the pre-insertion undo snapshot.
         this.change(
           (_, floor) => {
             const a = floor.outdoor.find((x) => x.id === drag.id);
             if (!a) return;
-            const pts = src.points.map((q) => [...q] as Vec2);
-            const i = drag.index;
-            pts[i] = [round(p[0]), round(p[1])];
-            if (validPolygon(pts)) { a.points = pts; a.freeform = true; }
+            a.points = pts; a.freeform = true;
           },
           drag.base,
           false,
@@ -2135,14 +2136,14 @@ export class Fp3dEditor extends LitElement {
       case "roofvertex": {
         drag.moved = true;
         const p = this.snap(world, undefined, e.altKey);
+        const src=drag.base.settings.roof.sections?.find(s=>s.id===drag.id);
+        if(!src)return;
+        const points=movedPolygonVertex(drag.points??this.roofPoints(src),drag.index,[round(p[0]),round(p[1])]);
+        if(!points)return;
         this.change(
           (doc) => {
             const sec = doc.settings.roof.sections?.find((x) => x.id === drag.id);
             if (!sec) return;
-            const old = this.roofPoints(sec);
-            if (drag.index >= old.length) return;
-            const points = old.map((q, i) => i === drag.index ? [round(p[0]), round(p[1])] as Vec2 : q);
-            if (!validPolygon(points)) return;
             sec.points = points;
             Object.assign(sec, polygonBox(points));
           },
