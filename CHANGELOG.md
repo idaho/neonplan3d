@@ -4,6 +4,42 @@ All notable changes to NeonPlan 3D. The full notes in German and English are on 
 [releases page](https://github.com/Mastershort/neonplan3d/releases). Ideas and votes:
 [Discussions → Ideas](https://github.com/Mastershort/neonplan3d/discussions/categories/ideas).
 
+## 1.17.2
+
+### New
+
+- **Air conditioner (wall)** item with a glow in the colour of its mode (heat red, cool blue, auto green, dry yellow, fan white).
+- **Cooktops glow** while they cook; operating-state sensors (`run` / `ready` / `inactive`) supported.
+- **Lamps in one colour only** (*Glow in one colour only*): a colour light used as a signal shows only that colour.
+- **Running from (watts):** own power threshold for appliances behind smart plugs (default 10 W).
+- **Roof windows in the room card** and sunlight through them (#482).
+
+### Changed
+
+- Roof windows fade out with the roof again; *Show over the room without the roof* keeps one over its room (#482).
+
+### Fixed
+
+- Echo speakers: play after pause works while the speaker still reports playing (#400).
+
+## 1.17.1
+
+### New
+
+- **Pets (fun pack, a present):** cat, rabbit and five dog breeds walk through the house, take the stairs, rest on sofas and beds, stop at shut doors (contact sensors), sleep at night; fish in the Pets pack's aquariums. Free in the shop for customers; *Extensions → Fun packs*, card option `pets: false`, a one-time note in the editor.
+- **Extensions page:** the shop's packs and the installed packs fold into summary bars (installed, updates, missing) with *Install/update all*.
+- **Wall view zoom:** mouse wheel towards the pointer, two fingers, ＋ / − / ⤢ and arrows in *Wall from the front*.
+- **Pools with depth:** basin depth and rim above the lawn; see-through water onto the basin's walls and floor (when the pool lies in a lawn or other area; without ground around it, it stays flat).
+- **Terrace doors** can open outwards (*Reverse opening direction*), sashes swing outside in 3D (#492).
+
+### Fixed
+
+- **Robot vacuum with dock** (Smart Home pack): current-room sensor, auto link and driving in 3D like the built-in robot (#470, #490).
+- **Smoke detectors** take binary sensors; other items alarm-class binary sensors (#490).
+- **Roof windows** stay in the slope when the roof fades over a floor or room; closed rim between roof and frame (#482, #490).
+- **Wall view:** Del no longer reaches the item chosen in the plan behind it.
+- **Pool warnings** no longer make every room pulse; they show at the top only.
+
 ## 1.17.0
 
 ### New

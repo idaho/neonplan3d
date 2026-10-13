@@ -298,6 +298,8 @@ KNOWN_FEATURES = [
     "auto_pro",
     "time_travel",
     "pool",
+    # fun packs: free extras one picks up in the shop (pets, later seasonal ones)
+    "fun_pets",
 ]
 
 PAYLOAD_SCHEMA = vol.Schema(

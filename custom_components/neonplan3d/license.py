@@ -189,7 +189,7 @@ def _offers(raw: Any) -> list[dict[str, Any]]:
                 "teaser": str(o.get("teaser") or "")[:200],
                 "image": _https(o.get("image")),
                 "url": _https(o.get("url")),
-                "kind": o.get("kind") if o.get("kind") in ("pack", "pro", "bundle") else "pack",
+                "kind": o.get("kind") if o.get("kind") in ("pack", "pro", "bundle", "fun") else "pack",
                 "price": str(o.get("price") or "")[:40],
                 "new": bool(o.get("new")),
             }

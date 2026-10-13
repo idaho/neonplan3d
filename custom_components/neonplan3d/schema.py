@@ -472,6 +472,8 @@ POOL_PORT_SCHEMA = vol.Schema(
         vol.Required("kind"): vol.In(["skimmer", "drain", "inlet", "waste"]),
         vol.Required("x"): vol.Coerce(float),
         vol.Required("z"): vol.Coerce(float),
+        # skimmer and inlet: how far below the water line (m)
+        vol.Optional("depth", default=None): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0, max=5))),
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -558,6 +560,9 @@ _OUTDOOR_FIELDS = vol.Schema(
         vol.Optional("pool_shape", default=None): vol.Any(None, vol.In(["round", "oval"])),
         # pools: standing on the ground instead of let into it
         vol.Optional("above", default=False): bool,
+        # pool: depth of the basin (rim to floor) and, in the ground, the rim's height above the lawn
+        vol.Optional("depth", default=None): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0, max=5))),
+        vol.Optional("rim", default=None): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=-0.5, max=2))),
         # Pool Pro: the pool's entities
         vol.Optional("pool", default=None): vol.Any(None, POOL_SCHEMA),
     },
@@ -673,6 +678,8 @@ ROOF_WINDOW_SCHEMA = vol.Schema(
         vol.Optional("window", default=None): _ENTITY_REF,
         vol.Optional("name", default=None): vol.Any(None, vol.All(str, vol.Length(max=64))),
         vol.Optional("locked", default=False): bool,
+        # stays over its room when the roof fades out (off: shown in the roof only)
+        vol.Optional("float", default=False): bool,
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -829,6 +836,36 @@ SETTINGS_SCHEMA = vol.Schema(
         vol.Optional("sun_patches", default=True): bool,
         vol.Optional("weather_effects", default=None): vol.Any(
             None, [vol.In(["rain", "snow", "fog", "clouds", "lightning", "sky"])]
+        ),
+        # fun pack "pets": animals that live in the 3D house (switched on and off)
+        vol.Optional("pets", default=None): vol.Any(
+            None,
+            vol.Schema(
+                {
+                    vol.Optional("on", default=True): bool,
+                    vol.Optional("list", default=list): vol.All(
+                        [
+                            vol.Schema(
+                                {
+                                    vol.Required("id"): vol.All(str, vol.Length(min=1, max=64)),
+                                    vol.Required("kind"): vol.In(["cat", "dog", "rabbit"]),
+                                    vol.Optional("name", default=""): vol.All(str, vol.Length(max=30)),
+                                    vol.Optional("fur", default="orange"): vol.All(str, vol.Length(max=20)),
+                                    vol.Optional("breed", default=None): vol.Any(
+                                        None, vol.All(str, vol.Length(max=20))
+                                    ),
+                                    vol.Optional("floor_id", default=None): vol.Any(
+                                        None, vol.All(str, vol.Length(max=64))
+                                    ),
+                                },
+                                extra=vol.ALLOW_EXTRA,
+                            )
+                        ],
+                        vol.Length(max=8),
+                    ),
+                },
+                extra=vol.ALLOW_EXTRA,
+            ),
         ),
     },
     extra=vol.ALLOW_EXTRA,

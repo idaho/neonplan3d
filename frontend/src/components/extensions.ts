@@ -18,7 +18,8 @@ import {
   type LicenseStatus,
 } from "../api.ts";
 import { DISCORD_URL, isBeta, supporterUrl } from "../beta.ts";
-import { FEATURES, knownFeature, manualUrl, released, shopUrl, unlockedFeatures } from "../features.ts";
+import { FEATURES, FUN, knownFeature, manualUrl, released, shopUrl, unlockedFeatures } from "../features.ts";
+import { DOG_BREEDS, PET_FURS_OF, type Building, type Pet } from "../model.ts";
 import { translate, type I18nKey } from "../i18n.ts";
 import { packName, type FurniturePack } from "../packs.ts";
 import { controls, tokens } from "../styles.ts";
@@ -28,15 +29,19 @@ export class Extensions extends LitElement {
   static properties = {
     hass: { attribute: false },
     packs: { attribute: false },
+    building: { attribute: false },
     _packMsg: { state: true },
     _license: { state: true },
     _licenseKey: { state: true },
     _licenseBusy: { state: true },
     _licenseMsg: { state: true },
+    _open: { state: true },
   };
 
   declare hass: HomeAssistant | undefined;
   declare packs: FurniturePack[] | undefined;
+  /** The plan (the fun packs keep their settings in it, e.g. the pets). */
+  declare building: Building | null | undefined;
   private declare _packMsg: { ok: boolean; text: string } | null;
   /** The shop connection (loaded when the page opens); null until then. */
   private declare _license: LicenseStatus | null;
@@ -44,6 +49,8 @@ export class Extensions extends LitElement {
   /** What runs right now: "activate", "refresh", "remove" or a pack id being installed. */
   private declare _licenseBusy: string | null;
   private declare _licenseMsg: { ok: boolean; text: string } | null;
+  /** Long lists opened by the viewer (the shop's packs, the installed packs); closed, a bar sums them up. */
+  private declare _open: Set<string>;
   private licenseLoading = false;
   /** Updates not seen before this visit (kept while the page is open). */
   private freshUpdates: import("../api.ts").PackUpdate[] | null = null;
@@ -55,6 +62,44 @@ export class Extensions extends LitElement {
     this._licenseKey = "";
     this._licenseBusy = null;
     this._licenseMsg = null;
+    let open: string[] = [];
+    try {
+      open = JSON.parse(localStorage.getItem("neonplan3d.ext.open") ?? "[]") as string[];
+    } catch {
+      // nothing remembered
+    }
+    this._open = new Set(open);
+  }
+
+  private toggleOpen(key: string): void {
+    const next = new Set(this._open);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    this._open = next;
+    try {
+      localStorage.setItem("neonplan3d.ext.open", JSON.stringify([...next]));
+    } catch {
+      // a private window: it stays open for this visit only
+    }
+  }
+
+  /**
+   * A list summed up in one bar: how many are there (installed), have an update, are still to get – the parts of the
+   * bar in their colours, the numbers beside it, a tap opens the list.
+   */
+  private summaryBar(key: string, parts: { n: number; label: string; tone: "ok" | "update" | "missing" }[]) {
+    const total = parts.reduce((s, p) => s + p.n, 0);
+    const open = this._open.has(key);
+    return html`<button class="fp3d-sum" aria-expanded=${open} @click=${() => this.toggleOpen(key)}>
+      <span class="fp3d-sum-bar">
+        ${parts.filter((p) => p.n > 0).map((p) => html`<i class="fp3d-sum-${p.tone}" style="flex:${p.n}"></i>`)}
+      </span>
+      <span class="fp3d-sum-text">
+        ${parts.filter((p) => p.n > 0 || p.tone === "ok").map((p) => html`<b class="fp3d-sum-${p.tone}-text">${p.n}</b> ${p.label}`)}
+        ${total ? nothing : html`<span class="fp3d-sub">–</span>`}
+      </span>
+      <span class="fp3d-sum-caret">${open ? "▾" : "▸"} ${this.t(open ? "ext_hide_list" : "ext_show_list")}</span>
+    </button>`;
   }
 
   private get isAdmin(): boolean {
@@ -102,8 +147,91 @@ export class Extensions extends LitElement {
           )}
         </div>
       </section>
-      ${this.renderPacks()}
+      ${this.renderFun(unlocked)} ${this.renderPacks()}
     </div>`;
+  }
+
+  /** A changed plan goes to the panel, which saves it. */
+  private editBuilding(fn: (b: Building) => void): void {
+    if (!this.building) return;
+    const next = structuredClone(this.building);
+    fn(next);
+    this.dispatchEvent(new CustomEvent("building-edit", { detail: next, bubbles: true, composed: true }));
+  }
+
+  /**
+   * Fun packs: free extras picked up in the shop (0 €, give what you like), switched on and off here – the pets with
+   * their names, kinds and fur.
+   */
+  private renderFun(unlocked: Set<string>) {
+    // unlocked by an installed pack (this page's own list), or shown to test with the lab switch
+    const shown = FUN.filter((f) => unlocked.has(f) || released(f));
+    if (!shown.length) return nothing;
+    const pets = this.building?.settings.pets ?? null;
+    const list = pets?.list ?? [];
+    const on = pets?.on !== false;
+    // the floors to live on, lowest first (a pet without a floor lives on the lowest)
+    const floors = (this.building?.floors ?? []).filter((f) => f.rooms.length).sort((a, b) => a.elevation - b.elevation);
+    const set = (fn: (p: { on: boolean; list: Pet[] }) => void) =>
+      this.editBuilding((b) => {
+        const p = { on: b.settings.pets?.on !== false, list: [...(b.settings.pets?.list ?? [])] };
+        fn(p);
+        b.settings.pets = p;
+      });
+    const change = (id: string, patch: Partial<Pet>) => set((p) => (p.list = p.list.map((x) => (x.id === id ? { ...x, ...patch } : x))));
+    return html`<section class="fp3d-ext-card">
+      <h3>🎈 ${this.t("fun_title")}</h3>
+      <p class="fp3d-sub">${this.t("fun_intro")}</p>
+      ${shown.map((f) =>
+        unlocked.has(f)
+          ? html`<div class="fp3d-ext-feature fp3d-ext-on">
+              <b>✓ ${this.t("fun_name_pets")}</b>
+              <span class="fp3d-sub">${this.t("fun_feature_pets")}</span>
+              ${this.isAdmin && this.building
+                ? html`<label class="fp3d-check"><input type="checkbox" .checked=${on} @change=${(e: Event) => set((p) => (p.on = (e.target as HTMLInputElement).checked))} /> ${this.t("pets_show")}</label>
+                    ${list.map(
+                      (pet) => html`<div class="fp3d-pet-row">
+                        <select
+                          aria-label=${this.t("pet_kind")}
+                          @change=${(e: Event) => {
+                            // another kind: a fur it comes in, a dog a breed
+                            const kind = (e.target as HTMLSelectElement).value as Pet["kind"];
+                            const furs = PET_FURS_OF[kind];
+                            change(pet.id, { kind, fur: furs.includes(pet.fur) ? pet.fur : furs[0], breed: kind === "dog" ? (pet.breed ?? "labrador") : null });
+                          }}
+                        >
+                          ${(["cat", "dog", "rabbit"] as const).map((k) => html`<option value=${k} ?selected=${pet.kind === k}>${this.t(`pet_kind_${k}`)}</option>`)}
+                        </select>
+                        ${pet.kind === "dog"
+                          ? html`<select aria-label=${this.t("pet_breed")} @change=${(e: Event) => change(pet.id, { breed: (e.target as HTMLSelectElement).value })}>
+                              ${DOG_BREEDS.map((r) => html`<option value=${r} ?selected=${(pet.breed ?? "labrador") === r}>${this.t(`pet_breed_${r}`)}</option>`)}
+                            </select>`
+                          : nothing}
+                        <input type="text" maxlength="30" .value=${pet.name} placeholder=${this.t("pet_name")} aria-label=${this.t("pet_name")} @change=${(e: Event) => change(pet.id, { name: (e.target as HTMLInputElement).value.trim() })} />
+                        <select aria-label=${this.t("pet_fur")} @change=${(e: Event) => change(pet.id, { fur: (e.target as HTMLSelectElement).value })}>
+                          ${PET_FURS_OF[pet.kind].map((c) => html`<option value=${c} ?selected=${pet.fur === c}>${this.t(`pet_fur_${c}` as I18nKey)}</option>`)}
+                        </select>
+                        ${floors.length > 1
+                          ? html`<select title=${this.t("pet_floor")} aria-label=${this.t("pet_floor")} @change=${(e: Event) => change(pet.id, { floor_id: (e.target as HTMLSelectElement).value || null })}>
+                              ${floors.map((fl, i) => html`<option value=${i === 0 ? "" : fl.id} ?selected=${(pet.floor_id ?? floors[0].id) === fl.id}>🏠 ${fl.name}</option>`)}
+                            </select>`
+                          : nothing}
+                        <button class="fp3d-btn" title=${this.t("delete")} @click=${() => set((p) => (p.list = p.list.filter((x) => x.id !== pet.id)))}>✕</button>
+                      </div>`,
+                    )}
+                    ${list.length < 8
+                      ? html`<button class="fp3d-btn" @click=${() =>
+                          set((p) => p.list.push({ id: `pet_${Date.now().toString(36)}`, kind: "cat", name: "", fur: PET_FURS_OF.cat[p.list.length % PET_FURS_OF.cat.length] }))}>+ ${this.t("pet_add")}</button>`
+                      : nothing}`
+                : nothing}
+            </div>`
+          : html`<div class="fp3d-ext-feature">
+              <b>🔒 ${this.t("fun_name_pets")}</b>
+              <span class="fp3d-sub">${this.t("fun_feature_pets")}</span>
+              <span class="fp3d-ext-links"><a class="fp3d-ext-link" href=${shopUrl(this.hass?.language)} target="_blank" rel="noopener">${this.t("fun_get")}</a></span>
+            </div>`,
+      )}
+    </section>`;
   }
 
   private async loadLicense(): Promise<void> {
@@ -228,7 +356,7 @@ export class Extensions extends LitElement {
             <div class="fp3d-offer-body">
               <b>${packName(o, this.hass?.language ?? "de")}</b>
               ${o.new ? html`<span class="fp3d-offer-new">${this.t("offers_new")}</span>` : nothing}
-              <span class="fp3d-offer-kind">${this.t(`offers_kind_${o.kind}` as I18nKey)}${o.price ? ` · ${o.price}` : ""}</span>
+              <span class="fp3d-offer-kind">${this.t(`offers_kind_${o.kind}` as I18nKey)}${o.price && o.kind !== "fun" ? ` · ${o.price}` : ""}</span>
               ${o.teaser ? html`<span class="fp3d-sub">${o.teaser}</span>` : nothing}
             </div>
           </a>`,
@@ -280,6 +408,24 @@ export class Extensions extends LitElement {
             </div>
             ${lic.error ? html`<p class="fp3d-sub fp3d-pack-error">${this.t(`license_error_${lic.error}` as I18nKey)}</p>` : nothing}
             ${lic.packs.length
+              ? (() => {
+                  const updates = lic.packs.filter((p) => p.installed !== null && p.installed < p.release);
+                  const missing = lic.packs.filter((p) => p.installed === null);
+                  return html`${this.summaryBar("shop", [
+                      { n: lic.packs.length - updates.length - missing.length, label: this.t("ext_sum_installed"), tone: "ok" },
+                      { n: updates.length, label: this.t("ext_sum_updates"), tone: "update" },
+                      { n: missing.length, label: this.t("ext_sum_missing"), tone: "missing" },
+                    ])}
+                    ${updates.length + missing.length
+                      ? html`<button class="fp3d-btn fp3d-primary fp3d-sum-all" ?disabled=${!!busy} @click=${async () => {
+                          for (const p of [...updates, ...missing]) await this.installFromShop(p);
+                        }}>${busy ? "…" : this.t("ext_sum_all", { n: updates.length + missing.length })}</button>`
+                      : nothing}`;
+                })()
+              : nothing}
+            ${lic.packs.length && !this._open.has("shop")
+              ? nothing
+              : lic.packs.length
               ? lic.packs.map((p) => {
                   const state = p.installed === null ? "install" : p.installed < p.release ? "update" : "installed";
                   return html`<div class="fp3d-pack">
@@ -319,9 +465,15 @@ export class Extensions extends LitElement {
 
   private renderPacks() {
     const packs = this.packs ?? [];
+    const items = packs.reduce((s, p) => s + p.items.length, 0);
+    const pro = packs.filter((p) => p.features?.length).length;
     return html`<section class="fp3d-ext-card">
       <h3>${this.t("packs")}</h3>
-      ${packs.map(
+      ${this.summaryBar("packs", [
+        { n: packs.length - pro, label: this.t("ext_sum_packs", { items }), tone: "ok" },
+        { n: pro, label: this.t("ext_sum_feature_packs"), tone: "missing" },
+      ])}
+      ${(this._open.has("packs") ? packs : []).map(
         (p) => html`<div class="fp3d-pack">
           <div>
             <b>${packName(p, this.hass?.language ?? "de")}</b>
@@ -377,6 +529,62 @@ export class Extensions extends LitElement {
     tokens,
     controls,
     css`
+      .fp3d-sum {
+        display: grid;
+        gap: 6px;
+        width: 100%;
+        margin: 4px 0 8px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--fp3d-line, rgba(120, 190, 255, 0.22));
+        background: rgba(4, 8, 18, 0.35);
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .fp3d-sum-bar {
+        display: flex;
+        gap: 2px;
+        height: 8px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(120, 190, 255, 0.12);
+      }
+      .fp3d-sum-bar i {
+        display: block;
+      }
+      .fp3d-sum-ok {
+        background: #34d399;
+      }
+      .fp3d-sum-update {
+        background: #fbbf24;
+      }
+      .fp3d-sum-missing {
+        background: #60a5fa;
+      }
+      .fp3d-sum-text {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 14px;
+        font-size: 0.92em;
+      }
+      .fp3d-sum-ok-text {
+        color: #34d399;
+      }
+      .fp3d-sum-update-text {
+        color: #fbbf24;
+      }
+      .fp3d-sum-missing-text {
+        color: #60a5fa;
+      }
+      .fp3d-sum-caret {
+        color: var(--fp3d-muted, #8ea3c4);
+        font-size: 0.85em;
+      }
+      .fp3d-sum-all {
+        margin-bottom: 8px;
+      }
       .fp3d-updates {
         border-color: color-mix(in srgb, var(--fp3d-accent) 60%, transparent);
         background: color-mix(in srgb, var(--fp3d-accent) 8%, transparent);
@@ -499,6 +707,26 @@ export class Extensions extends LitElement {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
         gap: 10px;
+      }
+      .fp3d-pet-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+        margin-top: 6px;
+      }
+      .fp3d-pet-row input[type="text"],
+      .fp3d-pet-row select {
+        padding: 6px 10px;
+        border-radius: 10px;
+        border: 1px solid var(--fp3d-line, rgba(120, 190, 255, 0.25));
+        background: rgba(4, 8, 18, 0.6);
+        color: inherit;
+        font: inherit;
+      }
+      .fp3d-pet-row input[type="text"] {
+        flex: 1;
+        min-width: 110px;
       }
       .fp3d-ext-feature {
         display: grid;

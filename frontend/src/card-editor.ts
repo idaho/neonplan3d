@@ -3,6 +3,7 @@
 
 import { css, html, LitElement, nothing } from "lit";
 import { fetchBuilding } from "./api.ts";
+import { labOn, UNRELEASED } from "./features.ts";
 import { CARD_CONTROLS, type CardConfig, type CardControl } from "./card-config.ts";
 import { languageReady, loadLanguage, translate, type I18nKey } from "./i18n.ts";
 import type { HomeAssistant } from "./types.ts";
@@ -37,6 +38,7 @@ const DEFAULTS: Partial<CardConfig> = {
   controls_hide_after: 0,
   marker_names: false,
   central: true,
+  pets: true,
   night: "off",
   idle_orbit: false,
 };
@@ -149,6 +151,12 @@ export class Floorplan3dCardEditor extends LitElement {
         <input type="checkbox" .checked=${v.central} @change=${(e: Event) => this.set("central", (e.target as HTMLInputElement).checked ? undefined : false)} />
         <span>${this.t("card_central")}<small>${this.t("card_central_hint")}</small></span>
       </label>
+      ${!UNRELEASED.includes("fun_pets") || labOn()
+        ? html`<label class="toggle">
+            <input type="checkbox" .checked=${v.pets} @change=${(e: Event) => this.set("pets", (e.target as HTMLInputElement).checked ? undefined : false)} />
+            <span>${this.t("card_pets")}<small>${this.t("card_pets_hint")}</small></span>
+          </label>`
+        : nothing}
       <label class="toggle">
         <input type="checkbox" .checked=${v.marker_names} @change=${(e: Event) => this.set("marker_names", (e.target as HTMLInputElement).checked ? true : undefined)} />
         <span>${this.t("card_marker_names")}<small>${this.t("card_marker_names_hint")}</small></span>

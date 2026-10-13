@@ -156,6 +156,11 @@ export function isPackType(type: string): boolean {
   return type.startsWith("pack:");
 }
 
+/** A robot vacuum: the built-in dock, or one from a pack (the smart home pack's robot with its dock, #470). */
+export function isRobotVacuum(type: string): boolean {
+  return type === "robot_vacuum" || (isPackType(type) && type.endsWith(":robot_vacuum"));
+}
+
 /** The pack item of a furniture type (undefined for built-in types and removed packs). */
 /** Packs that were merged into another one: furniture placed from them keeps working. */
 const PACK_ALIASES: Record<string, string> = {

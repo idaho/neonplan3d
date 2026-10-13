@@ -71,3 +71,14 @@ def test_furniture_block() -> None:
     item = {"id": "f1", "type": "kitchen", "x": 0, "z": 0, "rotation": 0, "w": 0.6, "d": 0.6, "h": 0.9, "variant": None}
     assert FURNITURE_SCHEMA(item)["group"] is None
     assert FURNITURE_SCHEMA({**item, "group": "block_1"})["group"] == "block_1"
+
+
+def test_pool_depth_rim_and_port_depth() -> None:
+    """A pool's basin depth and rim, and how deep an inlet sits below the water line."""
+    from custom_components.neonplan3d.schema import OUTDOOR_SCHEMA, POOL_PORT_SCHEMA
+
+    pool = {"id": "p", "type": "pool", "points": [[0, 0], [8, 0], [8, 4], [0, 4]]}
+    assert OUTDOOR_SCHEMA(pool)["depth"] is None
+    out = OUTDOOR_SCHEMA({**pool, "depth": 1.5, "rim": 0.2})
+    assert (out["depth"], out["rim"]) == (1.5, 0.2)
+    assert POOL_PORT_SCHEMA({"id": "i", "kind": "inlet", "x": 1, "z": 0, "depth": 0.3})["depth"] == 0.3

@@ -272,7 +272,8 @@ export function buildOpeningParts(infos: readonly OpeningInfo[], states: Readonl
         const sx0 = sash.x0;
         const sx1 = sash.x1;
         const sashW = sx1 - sx0;
-        const theta = sash.open * OPEN_ANGLE;
+        // a terrace door may open outwards (swing "out"); tilting stays inwards
+        const theta = sash.open * OPEN_ANGLE * (info.opening.swing === "out" ? -1 : 1);
         const phi = sash.tilt * TILT_ANGLE;
         // sash coordinates: u from the hinge across the sash, n, y
         const sashTf: Tf = (u, n, y) => {
@@ -285,7 +286,7 @@ export function buildOpeningParts(infos: readonly OpeningInfo[], states: Readonl
           return tf(x, nn, yy);
         };
         // a sash that has swung into the room belongs to no wall: keep it visible
-        const sashBucket = theta > 0.05 ? ALWAYS : bucket;
+        const sashBucket = Math.abs(theta) > 0.05 ? ALWAYS : bucket;
         splitBox(frames, sashTf, 0, sw, n0, n1, sy0, sy1, sashC, sashTop, cut, sashBucket);
         splitBox(frames, sashTf, sashW - sw, sashW, n0, n1, sy0, sy1, sashC, sashTop, cut, sashBucket);
         splitBox(frames, sashTf, sw, sashW - sw, n0, n1, sy0, sy0 + sw, sashC, sashTop, cut, sashBucket);

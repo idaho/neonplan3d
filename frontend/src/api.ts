@@ -90,7 +90,7 @@ export interface ShopOffer {
   teaser: string;
   image: string | null;
   url: string;
-  kind: "pack" | "pro" | "bundle";
+  kind: "pack" | "pro" | "bundle" | "fun";
   price: string;
   new: boolean;
 }

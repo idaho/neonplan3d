@@ -177,6 +177,13 @@ export interface Furniture {
   show_name?: boolean;
   /** Lamps: how strongly the lamp glows in 3D, 0.1–1.5 (1 = as bright as the light reports) – #181. */
   glow_scale?: number | null;
+  /**
+   * Lamps: glow only while the light shows this colour ("#rrggbb", similar shades count) – a colour light used as a
+   * signal (yellow: water) does not show its other colours here. Null: every colour.
+   */
+  only_color?: string | null;
+  /** With a power sensor: the item counts as running above this many watts (null = the default, 10 W). */
+  run_w?: number | null;
   /** An own symbol for the marker: a Material Design icon name without "mdi:" (null = by kind). */
   icon?: string | null;
   /** Linked entity, e.g. the TV's media player (null = automatic, "none" = none). */
@@ -499,6 +506,11 @@ export interface RoofWindow {
   name?: string | null;
   /** Fixed: cannot be moved by accident. */
   locked?: boolean;
+  /**
+   * Stays over its room when the roof fades out (zooming in on a floor or a room), open or shut, the blind down or
+   * up (#482). Off (the default): the window shows in the roof only and fades out with it.
+   */
+  float?: boolean;
 }
 
 /** A string of solar modules: one or more fields wired together to one inverter. */
@@ -542,8 +554,33 @@ export interface MediaPreset {
   content: string;
 }
 
+/** Fun pack "pets": an animal living in the 3D house. */
+export interface Pet {
+  id: string;
+  kind: "cat" | "dog" | "rabbit";
+  name: string;
+  /** Fur colour preset (see PET_FURS). */
+  fur: string;
+  /** A dog's breed (see DOG_BREEDS; null: labrador). */
+  breed?: string | null;
+  /** The floor it lives on (null: the ground floor). */
+  floor_id?: string | null;
+}
+
+export const PET_FURS = ["orange", "tabby", "black", "white", "grey", "brown", "calico", "golden", "cream"] as const;
+/** The furs each kind comes in (the first is the default). */
+export const PET_FURS_OF: Record<Pet["kind"], readonly string[]> = {
+  cat: ["orange", "tabby", "black", "white", "grey", "calico", "cream"],
+  dog: ["golden", "cream", "brown", "black", "white", "grey"],
+  rabbit: ["white", "grey", "brown", "black", "cream"],
+};
+/** Dog breeds, small to large. */
+export const DOG_BREEDS = ["dachshund", "pug", "terrier", "labrador", "shepherd"] as const;
+
 export interface BuildingSettings {
   pack_animations?: boolean;
+  /** Fun pack "pets": the animals and whether they are shown. */
+  pets?: { on: boolean; list: Pet[] } | null;
   /** Stations and playlists for the speakers' quick menu (Klang & Kino). */
   media_presets?: MediaPreset[];
   /** Favourites of the house: scenes, scripts, automations, buttons and switches in the central menu of the 3D view (#145). */
@@ -709,6 +746,10 @@ export interface OutdoorArea {
   pool_shape?: "round" | "oval" | null;
   /** Pool: an above-ground pool (a tub standing on the ground, `height` tall) instead of one let into the ground. */
   above?: boolean;
+  /** Pool: depth of the basin from the rim down to its floor (m); null = 1.5 m, an above-ground pool its wall height. */
+  depth?: number | null;
+  /** Pool in the ground: how far the rim stands above the lawn (m); null = 6 cm. */
+  rim?: number | null;
   /** Pool Pro: the pool's entities (water temperature, heat pump, filter pump, light, pH, chlorine, cover). */
   pool?: PoolLinks | null;
 }
@@ -743,6 +784,8 @@ export interface PoolPort {
   kind: "skimmer" | "drain" | "inlet" | "waste";
   x: number;
   z: number;
+  /** Skimmer and inlet: how far below the water line it sits (m); null = the skimmer at the water line, an inlet 30 cm deep. */
+  depth?: number | null;
 }
 
 /**
@@ -798,10 +841,37 @@ export interface PoolJoint {
 export type ValvePosition = "filter" | "backwash" | "rinse" | "waste" | "recirculate" | "closed";
 export const VALVE_POSITIONS: ValvePosition[] = ["filter", "backwash", "rinse", "waste", "recirculate", "closed"];
 
-/** Height of a pool's water surface in floor coordinates: below the ground, or near the rim of an above-ground pool. */
-export function poolWaterY(floor: Floor, a: OutdoorArea): number {
+/** Top of a pool's rim in floor coordinates: a little (or `rim` metres) above the lawn, or an above-ground pool's wall height. */
+export function poolRimY(floor: Floor, a: OutdoorArea): number {
   const g = groundLevel(floor) + (a.offset ?? 0);
-  return a.above ? g + poolHeight(a) - 0.15 : g + OUTDOOR_TOP.pool;
+  return g + (a.above ? poolHeight(a) : Math.min(2, Math.max(-0.3, a.rim ?? 0.06)));
+}
+
+/** A pool's depth from the rim down to its floor (m): its own, else 1.5 m in the ground or the wall height of an above-ground pool. */
+export function poolDepth(a: OutdoorArea): number {
+  return a.depth && a.depth >= 0.3 ? Math.min(5, a.depth) : a.above ? poolHeight(a) : 1.5;
+}
+
+/**
+ * Whether a pool lies in the ground: inside a lawn, terrace or other flat area that hides its basin. Without one
+ * nothing covers the basin below the ground (the ground grid is see-through), so it is drawn shallow as before.
+ */
+export function poolSunken(floor: Floor, a: OutdoorArea): boolean {
+  if (a.above) return false;
+  return (floor.outdoor ?? []).some(
+    (b) => b !== a && b.type !== "pool" && !outdoorStanding(b.type) && !b.cut && b.points.length >= 3 && a.points.every((p) => pointInPolygon(p, b.points)),
+  );
+}
+
+/** Height of a pool's floor in floor coordinates (a pool without ground around it: just under its water). */
+export function poolFloorY(floor: Floor, a: OutdoorArea): number {
+  if (!a.above && !poolSunken(floor, a)) return poolWaterY(floor, a) - 0.05;
+  return poolRimY(floor, a) - poolDepth(a);
+}
+
+/** Height of a pool's water surface in floor coordinates: 15 cm below the rim (the middle of the skimmer). */
+export function poolWaterY(floor: Floor, a: OutdoorArea): number {
+  return poolRimY(floor, a) - 0.15;
 }
 
 /** Wall height of an above-ground pool (m). */
@@ -986,6 +1056,7 @@ export const FURNITURE_TYPES = [
   "lamp_bollard",
   "lamp_garden",
   "radiator",
+  "ac_unit",
   "sofa",
   "sofa_l",
   "sofa_u",
@@ -1054,7 +1125,7 @@ export const FURNITURE_GROUPS: Record<string, FurnitureType[]> = {
   kitchen: ["kitchen", "kitchen_wall", "kitchen_tall", "island", "worktop", "sink", "stove", "dishwasher", "fridge"],
   sleeping: ["bed", "bunk_bed", "nightstand", "wardrobe", "dresser"],
   bath: ["bathtub", "shower", "wc", "washbasin", "washer", "dryer"],
-  work: ["desk", "worktop", "office_chair", "tall_cabinet", "coat_rack", "radiator", "stairs", "stairs_u", "robot_vacuum"],
+  work: ["desk", "worktop", "office_chair", "tall_cabinet", "coat_rack", "radiator", "ac_unit", "stairs", "stairs_u", "robot_vacuum"],
   vehicles: ["parking"],
 };
 
@@ -1190,6 +1261,9 @@ export function builtinBase(f: Pick<Furniture, "type" | "h"> & { variant?: strin
       return Math.max(0, 1.3 - f.h / 2);
     case "radiator":
       return 0.12;
+    case "ac_unit":
+      // an air conditioner's indoor unit hangs high on the wall
+      return 2.05;
     case "inverter":
       return 1.1;
     case "wallbox":
@@ -1213,6 +1287,7 @@ export function surfaceHeight(floor: Floor, x: number, z: number): number {
 export const ELECTRIC_FURNITURE = new Set<string>([
   ...LAMP_TYPES,
   "radiator",
+  "ac_unit",
   "robot_vacuum",
   "inverter",
   "home_battery",
@@ -1293,6 +1368,7 @@ export const FURNITURE_SIZE: Record<FurnitureType, [number, number, number]> = {
   lamp_bollard: [0.16, 0.16, 0.8],
   lamp_garden: [0.12, 0.12, 0.3],
   radiator: [1.0, 0.1, 0.6],
+  ac_unit: [0.85, 0.22, 0.3],
   robot_vacuum: [0.36, 0.5, 0.1],
   parking: [2.6, 5.2, 0.02],
   lamp_pendant: [0.4, 0.4, 0.8],

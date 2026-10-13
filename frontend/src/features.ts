@@ -4,10 +4,15 @@
  */
 import { getPacks } from "./packs.ts";
 
-export type Feature = "camera_cockpit" | "weather" | "screens" | "energy_pro" | "sound" | "auto_pro" | "time_travel" | "pool" | "fridge_smart";
+export type Feature = "camera_cockpit" | "weather" | "screens" | "energy_pro" | "sound" | "auto_pro" | "time_travel" | "pool" | "fridge_smart" | "fun_pets";
 
 /** The add-ons shown on the extensions page (sold in the shop). */
 export const FEATURES: readonly Feature[] = ["camera_cockpit", "weather", "screens", "energy_pro", "sound", "auto_pro", "time_travel", "pool"];
+/**
+ * Fun packs: free extras (0 €, anyone may give what they like) picked up in the shop by customers – not Pro add-ons,
+ * shown in their own section of the extensions page and switched on and off there.
+ */
+export const FUN: readonly Feature[] = ["fun_pets"];
 /** Free features built but not released yet (no pack unlocks them; only the lab switch shows them). */
 export type FreeFeature = "diagnostics";
 export type Gated = Feature | FreeFeature;
@@ -37,7 +42,7 @@ const HIDDEN: readonly Feature[] = ["fridge_smart"];
 
 /** Whether this frontend knows a feature key at all (an older bundle does not know newer Pro add-ons). */
 export function knownFeature(key: string): boolean {
-  return (FEATURES as readonly string[]).includes(key) || (HIDDEN as readonly string[]).includes(key);
+  return (FEATURES as readonly string[]).includes(key) || (HIDDEN as readonly string[]).includes(key) || (FUN as readonly string[]).includes(key);
 }
 
 /** The shop page where the Pro pack is sold (German; see shopUrl for the user's language). */
@@ -75,7 +80,7 @@ export function manualUrl(lang: string | undefined, topic?: Feature | "extension
 
 export function unlockedFeatures(packs: readonly { features?: string[] }[] = getPacks()): Set<Feature> {
   const out = new Set<Feature>();
-  for (const p of packs) for (const f of p.features ?? []) if ((FEATURES as readonly string[]).includes(f) || (HIDDEN as readonly string[]).includes(f)) out.add(f as Feature);
+  for (const p of packs) for (const f of p.features ?? []) if (knownFeature(f)) out.add(f as Feature);
   return out;
 }
 

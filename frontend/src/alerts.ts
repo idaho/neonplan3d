@@ -8,7 +8,7 @@ import type { Building } from "./model.ts";
 import type { HomeAssistant } from "./types.ts";
 import { stationRain, weatherEntity } from "./weather.ts";
 import { hasFeature } from "./features.ts";
-import { poolAreas, poolEntities, poolState } from "./pool.ts";
+import { poolAreas, poolEntities, poolLinksWithDevices, poolState } from "./pool.ts";
 import { isOutage } from "./outage.ts";
 
 export { isOutage };
@@ -95,7 +95,7 @@ export function findAlerts(hass: HomeAssistant, building: Building, sources: Ale
   for (const p of sources.pools ?? []) {
     const area = building.floors.find((f) => f.id === p.floorId)?.outdoor?.find((a) => a.id === p.areaId);
     if (!area) continue;
-    const s = poolState(hass, area.pool);
+    const s = poolState(hass, poolLinksWithDevices(area.pool, building.floors));
     if (s.ph?.range === "bad" && s.entities.ph) out.push({ kind: "pool_ph", entity: s.entities.ph, roomId: null, floorId: p.floorId });
     if (s.chlorine?.range === "bad" && s.entities.chlorine) out.push({ kind: "pool_chlorine", entity: s.entities.chlorine, roomId: null, floorId: p.floorId });
     const celsius = s.temp === null ? null : s.unit.includes("F") ? ((s.temp - 32) * 5) / 9 : s.temp;

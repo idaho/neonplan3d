@@ -1,13 +1,12 @@
 import { Color } from "three";
 import type { Building, Floor, Vec2 } from "../model.ts";
 import { pointInPolygon, roomLevel } from "../model.ts";
-import { roofFaces, topFloor, windowCorners } from "../solar.ts";
-import { sectionFloor } from "../roof-sections.ts";
+import { roofFaces, roofWindowRoom } from "../solar.ts";
 import { GeoBuffer } from "./geo.ts";
 import type { RoofWindowState } from "./roof.ts";
 
 /** Warm floor patches through skylights, using the same sun, cloud and blind rules as wall windows. */
-export function appendRoofSun(buf: GeoBuffer, building: Building, floor: Floor, sun: { elevation: number; azimuth: number }, cloud: number, states: ReadonlyMap<string, RoofWindowState>, holes: readonly Vec2[][] = []): void {
+export function appendRoofSun(buf: GeoBuffer, building: Building, floor: Floor, sun: { elevation: number; azimuth: number }, cloud: number, states: ReadonlyMap<string, RoofWindowState>, holes: readonly Vec2[][] = [], zones?:number[]): void {
   if (sun.elevation <= 2 || cloud >= 0.97) return;
   const el = sun.elevation * Math.PI / 180;
   const az = (sun.azimuth + (building.settings.north ?? 0)) * Math.PI / 180;
@@ -19,11 +18,9 @@ export function appendRoofSun(buf: GeoBuffer, building: Building, floor: Floor, 
   for (const w of building.settings.roof.windows ?? []) {
     const face = faces.get(w.face);
     if (!face) continue;
-    const section = building.settings.roof.sections?.find((s) => s.id === face.section);
-    const owner = section ? sectionFloor(building, section) : topFloor(building);
-    if (owner?.id !== floor.id) continue;
-    const corners = windowCorners(face, w);
-    if (!corners) continue;
+    const owner=roofWindowRoom(building,face,w);
+    if(owner?.floor.id!==floor.id)continue;
+    const corners=owner.corners;
     const facing = face.n.reduce((v, n, i) => v + n * ray[i], 0);
     if (facing < 0.05) continue;
     const cover = Math.min(1, Math.max(0, states.get(w.id)?.cover ?? 0));
@@ -32,6 +29,7 @@ export function appendRoofSun(buf: GeoBuffer, building: Building, floor: Floor, 
     const center: Vec2 = [corners.reduce((s, p) => s + p[0], 0) / 4, corners.reduce((s, p) => s + p[2], 0) / 4];
     const room = floor.rooms.find((r) => pointInPolygon(center, r.points));
     if (!room) continue;
+    const ri=floor.rooms.indexOf(room),lit=floor.rooms.filter((r,i)=>r.id===room.id||zones&&zones[i]===zones[ri]);
     const ground = roomLevel(floor, room);
     const mix = (a: number[], b: number[], t: number) => a.map((v, i) => v + (b[i] - v) * t);
     const at = (u: number, v: number) => {
@@ -47,7 +45,7 @@ export function appendRoofSun(buf: GeoBuffer, building: Building, floor: Floor, 
     for (let i = 0; i < rows; i++) for (let j = 0; j < cols; j++) {
       const u0 = j / cols, u1 = (j + 1) / cols, v0 = i / rows, v1 = (i + 1) / rows;
       const m = at((u0 + u1) / 2, (v0 + v1) / 2), point: Vec2 = [m[0], m[2]];
-      if (!pointInPolygon(point, room.points) || holes.some((h) => pointInPolygon(point, h))) continue;
+      if (!lit.some(r=>pointInPolygon(point,r.points)) || holes.some((h) => pointInPolygon(point, h))) continue;
       const a = at(u0, v0), b = at(u1, v0), c = at(u1, v1), d = at(u0, v1);
       const c0 = near.clone().lerp(far, v0), c1 = near.clone().lerp(far, v1);
       buf.tri(a, b, c, c0, c0, c1);

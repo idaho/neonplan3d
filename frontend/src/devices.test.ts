@@ -13,7 +13,7 @@ test("a lamp switched by a relay takes colour and brightness from its colour ent
   // the bulb unavailable: the relay's own (plain) glow
   assert.deepEqual(lightGlow(relay as never, { ...bulb, state: "unavailable" } as never)!.color, [1, 0.71, 0.28]);
 });
-import { appColor, carLocked, areaEntities, otherAreaEntities, roomClimateSensors, roomClimateValue, unassignedEntities, autoPlace, entityName, fridgeDoors, furnitureEntities, groupByDevice, isActive, kindOf, lightGlow, openingEntities, openingState, powerSensorsOf, primaryEntities, roomPanelEntities, windowPosition, confirmEntities, robotRoom, robotRoomSensor, roomKey, vacuumCleaning } from "./devices.ts";
+import { climateModeGlow, cooktopLevel, onlyColor, appColor, carLocked, areaEntities, otherAreaEntities, roomClimateSensors, roomClimateValue, unassignedEntities, autoPlace, entityName, fridgeDoors, furnitureEntities, groupByDevice, isActive, kindOf, lightGlow, openingEntities, openingState, powerSensorsOf, primaryEntities, roomPanelEntities, windowPosition, confirmEntities, robotRoom, robotRoomSensor, roomKey, vacuumCleaning } from "./devices.ts";
 import type { Floor, Opening, Room } from "./model.ts";
 import { centroid, newFloor, pointInPolygon } from "./model.ts";
 import type { HomeAssistant } from "./types.ts";
@@ -691,4 +691,34 @@ test("a room without a temperature sensor takes its thermostat's current tempera
   assert.deepEqual(roomClimateSensors(hass, floor, room, "co2"), []);
   // chosen by hand works the same
   assert.equal(roomClimateValue(hass, floor, { ...room, area_id: null, climate: { temperature: "climate.bad" } }, "temperature"), 21.5);
+});
+
+test("a cooktop glows while it runs, faintly when ready, not when inactive (customer mail)", () => {
+  const s = (state: string) => ({ entity_id: "sensor.kochfeld_betriebszustand", state, attributes: { device_class: "enum" } });
+  assert.equal(cooktopLevel(s("run"), false), 1);
+  assert.equal(cooktopLevel(s("ready"), false), 0.3);
+  assert.equal(cooktopLevel(s("inactive"), false), 0);
+  // a cooktop behind a power plug: power over the threshold counts as cooking
+  assert.equal(cooktopLevel(undefined, true), 1);
+  assert.ok(isActive(s("run")));
+});
+
+test("an air conditioner glows in the colour of its mode, dimmer while idle", () => {
+  const c = (state: string, hvac_action?: string) => ({ entity_id: "climate.klima", state, attributes: hvac_action ? { hvac_action } : {} });
+  assert.equal(climateModeGlow(c("off")), null);
+  const heat = climateModeGlow(c("heat", "heating"))!;
+  assert.ok(heat.color[0] > heat.color[2] && heat.level === 1);
+  const cool = climateModeGlow(c("cool", "idle"))!;
+  assert.ok(cool.color[2] > cool.color[0] && cool.level < 1);
+  const auto = climateModeGlow(c("heat_cool", "cooling"))!;
+  assert.ok(auto.color[1] > auto.color[0] && auto.color[1] > auto.color[2]);
+});
+
+test("a lamp with one colour only glows for that colour (customer mail: yellow = water)", () => {
+  const g = (color: [number, number, number]) => ({ color, level: 1 });
+  assert.ok(onlyColor(g([1, 0.85, 0]), "#ffd400"));
+  assert.equal(onlyColor(g([1, 0, 0]), "#ffd400"), null);
+  assert.equal(onlyColor(g([0, 0.3, 1]), "#ffd400"), null);
+  assert.equal(onlyColor(g([1, 0.95, 0.9]), "#ffd400"), null);
+  assert.ok(onlyColor(g([1, 0, 0]), null));
 });

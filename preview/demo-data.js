@@ -50,7 +50,8 @@ export const DEMO_AREAS = {
 
 export const DEMO_BUILDING = {
   version: 1,
-  settings: { wall_exterior: 0.24, wall_interior: 0.12, grid: 0.05 },
+  settings: {
+    pets: { on: true, list: [{ id: "pet_mia", kind: "cat", name: "Mia", fur: "orange" }, { id: "pet_bello", kind: "dog", breed: "labrador", name: "Bello", fur: "golden" }, { id: "pet_kruemel", kind: "dog", breed: "dachshund", name: "Krümel", fur: "brown" }] }, wall_exterior: 0.24, wall_interior: 0.12, grid: 0.05 },
   floors: [
     floor("eg", "Erdgeschoss", 0, [
       rect("wohnen", "Wohnzimmer", "wohnzimmer", 0, 0, 6, 4.6),

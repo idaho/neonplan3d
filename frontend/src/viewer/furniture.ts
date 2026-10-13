@@ -855,6 +855,17 @@ function radiator(b: Builder, w: number, d: number, h: number): void {
   }
 }
 
+/** An air conditioner's indoor unit (a wall split unit): a long body, the air outlet with its louvre at the bottom. */
+function acUnit(b: Builder, w: number, d: number, h: number): void {
+  const y0 = AC_Y;
+  b.box(-w / 2, w / 2, y0 + 0.07, y0 + h, -d / 2, d / 2, C.white, C.whiteTop, EDGE_FURN);
+  b.box(-w / 2, w / 2, y0, y0 + 0.07, -d / 2, d / 2 - 0.05, C.white, C.white, EDGE_FURN);
+  b.box(-w / 2 + 0.04, w / 2 - 0.04, y0 + 0.012, y0 + 0.06, d / 2 - 0.05, d / 2 - 0.02, C.dark);
+  // a line across the front and the little display
+  b.seg(-w / 2 + 0.03, y0 + h * 0.55, d / 2 + 0.002, w / 2 - 0.03, y0 + h * 0.55, d / 2 + 0.002, EDGE_FAINT);
+  b.seg(w / 2 - 0.14, y0 + h * 0.75, d / 2 + 0.002, w / 2 - 0.07, y0 + h * 0.75, d / 2 + 0.002, EDGE_GLOW);
+}
+
 /** A ring of glowing line on a front face (z = front), for dials and fans. */
 function ring(b: Builder, cx: number, cy: number, r: number, z: number, n = 20): void {
   for (let i = 0; i < n; i++) {
@@ -1040,6 +1051,8 @@ function homeBattery(b: Builder, w: number, d: number, h: number, variant: strin
 
 /** Height of the underside of a radiator. */
 export const RADIATOR_Y = 0.12;
+/** Height of the bottom of an air conditioner's indoor unit (as builtinBase). */
+export const AC_Y = 2.05;
 
 /**
  * Screen of a TV or monitor in local coordinates (x across, y up, z = its front face), for the glow
@@ -1098,6 +1111,8 @@ function builtInScreen(f: Furniture, w: number, d: number, h: number, floor?: Fl
   }
   // glowing fronts of appliances that run and of a radiator that heats
   if (f.type === "radiator") return { x0: -w / 2 + 0.02, x1: w / 2 - 0.02, y0: RADIATOR_Y + 0.02, y1: RADIATOR_Y + h - 0.02, z: d / 2 + 0.004 };
+  // an air conditioner glows at its air outlet in the colour of its mode
+  if (f.type === "ac_unit") return { x0: -w / 2 + 0.05, x1: w / 2 - 0.05, y0: AC_Y + 0.015, y1: AC_Y + 0.06, z: d / 2 - 0.015 };
   if (f.type === "washer" || f.type === "dryer") {
     const cy = (h - 0.14) / 2 + 0.04;
     const r = Math.min(w * 0.36, (h - 0.2) * 0.42) * 0.8;
@@ -1342,6 +1357,9 @@ function buildFurniture(buf: GeoBuffer, lines: LineBuffer, shadow: GeoBuffer, f:
     case "radiator":
       radiator(b, w, d, h);
       return; // on the wall, no shadow on the floor
+    case "ac_unit":
+      acUnit(b, w, d, h);
+      return;
     case "inverter":
       inverter(b, w, d, h, f.variant ?? null);
       return;

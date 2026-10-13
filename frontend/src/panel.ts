@@ -679,6 +679,8 @@ export class Floorplan3dPanel extends LitElement {
       class="fp3d-body"
       .hass=${this.hass}
       .packs=${this.data.packs}
+      .building=${this.data.building}
+      @building-edit=${(e: CustomEvent<Building>) => this.data.edit(e.detail)}
       @packs-changed=${() => void this.data.reloadPacks()}
       @offers-seen=${() => (this._newOffers = 0)}
     ></fp3d-extensions>`;
@@ -836,6 +838,7 @@ export class Floorplan3dPanel extends LitElement {
               ?readOnly=${tt}
               .room=${b.floors.flatMap((f) => f.rooms).find((r) => r.id === this._roomId) ?? null}
               .floor=${b.floors.find((f) => f.rooms.some((r) => r.id === this._roomId)) ?? null}
+              .building=${b}
               .confirmEntities=${confirmEntities(this.hass, b.floors)}
               @close=${() => (this._roomId = null)}
             ></fp3d-room-panel>`

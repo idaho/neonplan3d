@@ -60,6 +60,9 @@ import { pushPipeTube, type PipeTube } from "./pipes.ts";
 // the walk through the house at eye height (lives with the viewer it drives)
 export { FloorMap, WalkCamera, type WalkState } from "./walk.ts";
 
+/** three.js classes lent to the fun packs' bundle (so it carries no copy of three.js). */
+export const funLib = { Group, Mesh, MeshBasicMaterial, CanvasTexture, Color, PlaneGeometry, BufferGeometry: Geometry, Float32BufferAttribute, DoubleSide };
+
 export type { PipeTube };
 import { mountBase, packItem, renderPackItem, setPacks, setProductColors, type FurniturePack } from "../packs.ts";
 import { CustomPackLayer } from "./custom-pack-layer.ts";
@@ -260,7 +263,7 @@ export interface ScreenState {
   plain?: boolean;
   /** Furniture with a state: glowing faces on top of the item instead of a screen – the whole top, or a half of it. */
   // (see also SoundSource below)
-  faces?: { part: "all" | "left" | "right" | "top" | "bottom" | "band" | "cabin" | "lights"; color: [number, number, number]; level: number }[];
+  faces?: { part: "all" | "left" | "right" | "top" | "bottom" | "band" | "cabin" | "lights" | "burners"; color: [number, number, number]; level: number }[];
 }
 
 /** Position of the sun (from sun.sun): degrees above the horizon and clockwise from north. */
@@ -363,6 +366,8 @@ interface FloorMaterials {
   frames: MeshBasicMaterial;
   glass: MeshBasicMaterial;
   blinds: MeshBasicMaterial;
+  /** Pool water: see-through, so the basin shows below it. */
+  water: MeshBasicMaterial;
   flow: MeshBasicMaterial;
   /** Energie Pro: the living overlay of the solar fields on this floor (garden, walls). */
   solarLive: MeshBasicMaterial;
@@ -539,7 +544,21 @@ export class FloorplanViewer {
   private readonly haloTexture: CanvasTexture;
   /** Roof over the top floor (house view only), its opacity and the camera distance of the house view. */
   /** The roof: one group with a part per floor it sits on (each part follows its floor). */
-  private roof: { group: Group; parts: { group: Group; floorId: string; rideId: string; base: number; lift: boolean }[]; solid: MeshBasicMaterial; lines: LineBasicMaterial; solar: MeshBasicMaterial; solarLines: LineBasicMaterial; glass: MeshBasicMaterial; live: MeshBasicMaterial; lives: SolarLive[] } | null = null;
+  private roof: {
+    group: Group;
+    parts: { group: Group; floorId: string; rideId: string; base: number; lift: boolean; win: Group | null }[];
+    solar: MeshBasicMaterial;
+    solarLines: LineBasicMaterial;
+    solid: MeshBasicMaterial;
+    lines: LineBasicMaterial;
+    glass: MeshBasicMaterial;
+    live: MeshBasicMaterial;
+    lives: SolarLive[];
+    /** The roof windows, apart from the roof: they stay while the roof fades over a room. */
+    wins: Group;
+    winSolid: MeshBasicMaterial;
+    winLines: LineBasicMaterial;
+  } | null = null;
   /** The hologram's anchor: a point on the solar field (building coordinates) and the field's normal. */
   private anchors: { p: [number, number, number]; n: [number, number, number]; floorId: string; size: number; roof: boolean; views: "house" | "all" | "floor"; room?: string | null }[] = [];
   /** Told where the anchor lies on screen after every frame, how large the hologram should be and whether its front faces the camera. */
@@ -1818,6 +1837,7 @@ export class FloorplanViewer {
         mask,
       ),
       blinds: themed(makeFoldable(new MeshBasicMaterial({ map: this.blindTexture, vertexColors: true, side: DoubleSide }), mask), this.themeUniform),
+      water: themed(new MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.5, depthWrite: false, side: DoubleSide }), this.themeUniform),
       flow: flowMaterial(this.flowTime),
       solarLive: solarLiveMaterial(this.flowTime),
       lamps: themed(new MeshBasicMaterial({ vertexColors: true }), this.themeUniform),
@@ -1917,12 +1937,16 @@ export class FloorplanViewer {
       const glassWalls = new Mesh(geo.walls, materials.glassWall);
       const wallMesh = new Mesh(geo.walls, materials.wall);
       glassWalls.renderOrder = 6;
+      // pool water after the basin, see-through
+      const waterMesh = new Mesh(geo.water, materials.water);
+      waterMesh.renderOrder = 4;
       group.add(
         floorMesh,
         shadowMesh,
         pattern,
         glowMesh,
         wallMesh,
+        waterMesh,
         new LineSegments(geo.lines, materials.lines),
         framesMesh,
         blindsMesh,
@@ -2068,6 +2092,10 @@ export class FloorplanViewer {
       this.roof.solarLines.dispose();
       this.roof.glass.dispose();
       this.roof.live.dispose();
+      this.roof.wins.traverse((o) => ((o as Mesh).geometry as BufferGeometry | undefined)?.dispose());
+      this.roof.winSolid.dispose();
+      this.roof.winLines.dispose();
+      this.scene.remove(this.roof.wins);
       this.scene.remove(this.roof.group);
       this.roof = null;
     }
@@ -2085,6 +2113,9 @@ export class FloorplanViewer {
     const solarLines = themed(makeSolarFacing(new LineBasicMaterial({ vertexColors: true, transparent: true, blending: lineBlending(this.theme), depthWrite: false })), this.themeUniform, true);
     // canopies: faint see-through panels that do not hide what is below
     const glass = themed(new MeshBasicMaterial({ vertexColors: true, transparent: true, side: DoubleSide, depthWrite: false }), this.themeUniform);
+    const wins = new Group();
+    const winSolid = themed(new MeshBasicMaterial({ vertexColors: true, side: DoubleSide }), this.themeUniform);
+    const winLines = themed(new LineBasicMaterial({ vertexColors: true, transparent: true, blending: lineBlending(this.theme), depthWrite: false }), this.themeUniform, true);
     const parts = geos.map((geo) => {
       const part = new Group();
       const geometry = geo.solid.geometry();
@@ -2108,13 +2139,22 @@ export class FloorplanViewer {
         lives.push(overlay);
         writeSolarLevels(overlay, this.solarLevels);
       }
+      // roof windows that only show in the roof ride and fade with it
+      if (geo.winRoof?.solid.count) part.add(new Mesh(geo.winRoof.solid.geometry(), winSolid), new LineSegments(geo.winRoof.lines.geometry(), winLines));
       part.renderOrder = 8;
       group.add(part);
-      return { group: part, floorId: geo.floor.id, rideId: roofRider(this.building!, geo.floor, geo.sections ?? []), base: geo.base, lift: geo.lift !== false };
+      let win: Group | null = null;
+      if (geo.win?.solid.count) {
+        win = new Group();
+        win.add(new Mesh(geo.win.solid.geometry(), winSolid), new LineSegments(geo.win.lines.geometry(), winLines));
+        wins.add(win);
+      }
+      return { group: part, floorId: geo.floor.id, rideId: roofRider(this.building!, geo.floor, geo.sections ?? []), base: geo.base, lift: geo.lift !== false, win };
     });
     group.renderOrder = 8;
     this.scene.add(group);
-    this.roof = { group, parts, solid, lines, solar, solarLines, glass, live, lives };
+    this.scene.add(wins);
+    this.roof = { group, parts, solid, lines, solar, solarLines, glass, live, lives, wins, winSolid, winLines };
     this.placeRoof();
   }
 
@@ -2142,6 +2182,11 @@ export class FloorplanViewer {
       const ride = this.floorMap.get(part.rideId) ?? fv;
       const apart = ride.ty > 0 ? Math.min(1, ride.y / ride.ty) : this.explode && this.floorId === null ? 1 : 0;
       part.group.position.y = fv.floor.elevation + ride.y + part.base + roofPresentation(this.controls.view.radius, this.houseRadius, this.keepRoof, this.roofO).lift + (part.lift ? apart * ROOF_GAP : 0);
+      // the windows stay in the slope over their floor's rooms while the roof lifts away (not in the cut view)
+      if (part.win) {
+        part.win.position.y = fv.floor.elevation + ride.y + part.base + (part.lift ? apart * ROOF_GAP : 0);
+        part.win.visible = fv.group.visible && fv.o > 0.5 && this.wallMode !== "cut";
+      }
     }
     roof.solid.opacity = this.roofO;
     roof.solid.depthWrite = false;
@@ -2422,7 +2467,7 @@ export class FloorplanViewer {
     const cloud = this.weather?.cloud ?? 0;
     // rooms joined without a wall share the sunlight too: the zones belong to the patch's signature
     const zones = lightZonesOf(fv.floor, fv.geo.openRooms);
-    const sig = sun ? `${sun.elevation.toFixed(1)},${sun.azimuth.toFixed(1)},${north},${cloud.toFixed(2)},${[...fv.openings.values()].map((o) => (o.cover ?? 0).toFixed(2)).join(",")},${zones.join(".")},${this.roofWindowsKey}` : "";
+    const sig = sun ? `${sun.elevation.toFixed(1)},${sun.azimuth.toFixed(1)},${north},${cloud.toFixed(2)},${[...fv.openings.values()].map((o) => (o.cover ?? 0).toFixed(2)).join(",")},${zones.join(".")},${this.roofWindowsKey},${JSON.stringify(this.building?.settings.roof?.windows ?? [])}` : "";
     if (sig === fv.sunSig) return;
     fv.sunSig = sig;
     const buf = new GeoBuffer();
@@ -2485,11 +2530,19 @@ export class FloorplanViewer {
           }
         }
       }
+      this.pushRoofSun(fv, buf, zones);
     }
-    if (sun && this.building) appendRoofSun(buf, this.building, fv.floor, sun, cloud, this.roofWindows, fv.geo.holes);
     fv.sunMesh.geometry.dispose();
     fv.sunMesh.geometry = buf.geometry();
     fv.sunMesh.visible = buf.count > 0;
+  }
+
+  /**
+   * Sunlight through the roof windows over this floor's rooms (#482): the window's glass, less its blind, cast
+   * along the sun's rays onto the floor, kept inside the room under it (and rooms joined to it without a wall).
+   */
+  private pushRoofSun(fv: FloorView, buf: GeoBuffer, zones: number[]): void {
+    if(this.sun && this.building)appendRoofSun(buf,this.building,fv.floor,this.sun,this.weather?.cloud??0,this.roofWindows,fv.geo.holes,zones);
   }
 
   /** Glow points at lit shades (not at the tablet level) and light cones under spots (level "High"). */
@@ -2653,6 +2706,22 @@ export class FloorplanViewer {
               pushPackGlow(buf, model, f, base, col.getHex(), glassy);
               continue;
             }
+          }
+          if (face.part === "burners") {
+            // a cooktop's four zones glow on its top (where the built-in stove draws them)
+            const col = new Color(...face.color.map((v) => Math.min(1, v * (0.25 + 0.6 * face.level))) as [number, number, number]);
+            const y = base + h + 0.008;
+            for (const [bx, bz, br] of [[-0.14, -0.13, 0.09], [0.14, -0.13, 0.07], [-0.14, 0.13, 0.07], [0.14, 0.13, 0.09]]) {
+              const cx = (bx * Math.abs(w)) / 0.6;
+              const cz = (bz * d) / 0.62;
+              const n = 14;
+              for (let i = 0; i < n; i++) {
+                const a0 = (i / n) * Math.PI * 2;
+                const a1 = ((i + 1) / n) * Math.PI * 2;
+                buf.tri(P(cx, y, cz), P(cx + Math.cos(a0) * br, y, cz + Math.sin(a0) * br), P(cx + Math.cos(a1) * br, y, cz + Math.sin(a1) * br), col);
+              }
+            }
+            continue;
           }
           if (face.part === "band" || face.part === "cabin") {
             // a light band around the item at mid height (a car's charge): four thin vertical strips;
@@ -3438,7 +3507,7 @@ export class FloorplanViewer {
     const ctx = canvas.getContext("2d")!;
     const out: { floorId: string; url: string }[] = [];
     try {
-      if (this.roof) this.roof.group.visible = false;
+      if (this.roof) this.roof.group.visible = this.roof.wins.visible = false;
       if (this.ghost) this.ghost.visible = false;
       this.renderer.setClearAlpha(0);
       for (const fv of floors) {
@@ -3502,7 +3571,10 @@ export class FloorplanViewer {
         this.applyFloor(s.fv);
         s.fv.group.visible = s.visible;
       }
-      if (this.roof) this.roof.group.visible = roofVisible;
+      if (this.roof) {
+        this.roof.group.visible = roofVisible;
+        this.roof.wins.visible = true;
+      }
       if (this.ghost) this.ghost.visible = ghostVisible;
       target.dispose();
       this.invalidate();
@@ -3586,6 +3658,7 @@ export class FloorplanViewer {
       if (dt > 0) active = stepRobot(r.motion, r.info, dt) || active;
       else active ||= r.info.mode === "cleaning" || r.info.mode === "returning";
       r.group.position.set(r.motion.pos[0], roomLevelAt(fv.floor, r.motion.pos[0], r.motion.pos[1]), r.motion.pos[1]);
+      r.group.visible = !r.info.inModel || r.info.mode === "cleaning" || Math.hypot(r.motion.pos[0] - r.info.rest[0], r.motion.pos[1] - r.info.rest[1]) > 0.05;
       r.group.rotation.y = r.motion.heading;
     }
     if (!active) this.robotLast = 0;

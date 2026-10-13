@@ -130,6 +130,7 @@ async def test_activate_install_and_update(hass: HomeAssistant, hass_ws_client, 
             "kind": "pack",
             "new": True,
         },
+        {"id": "fun_pets", "name": "Haustiere", "url": "https://shop/fun", "kind": "fun", "price": "0,00 €"},
         {"id": "bad", "name": "No link", "url": "http://insecure"},
     ]
     catalog["loyalty"] = {"code": "NP-TREUE-AB12CD", "percent": 10}
@@ -145,7 +146,8 @@ async def test_activate_install_and_update(hass: HomeAssistant, hass_ws_client, 
     await client.send_json_auto_id({"type": "neonplan3d/license/get"})
     status = (await client.receive_json())["result"]
     assert status["packs"][0]["installed"] == 2 and status["error"] is None
-    assert [o["id"] for o in status["offers"]] == ["kino"] and status["offers"][0]["new"]
+    assert [o["id"] for o in status["offers"]] == ["kino", "fun_pets"] and status["offers"][0]["new"]
+    assert status["offers"][1]["kind"] == "fun"
     # the update is remembered for the extensions page
     assert [(u["id"], u["release"]) for u in status["updates"]] == [("shop.living", 2)]
     assert status["offers"][0]["image"] is None and status["offers"][0]["kind"] == "pack"
