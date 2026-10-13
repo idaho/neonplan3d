@@ -28,6 +28,14 @@ test('vertical polygon panels fit the declared bounds without tilting the whole 
     g.computeBoundingBox();assert.deepEqual(g.boundingBox!.min.toArray(),[-1,0,-2]);assert.deepEqual(g.boundingBox!.max.toArray(),[1,3,2]);g.dispose();
   }
 });
+test('polygon plates face outward on top and bottom, regardless of contour winding',()=>{
+  const points:[number,number][]=[[-0.5,-0.5],[0.5,-0.5],[0.5,0.5],[-0.5,0.5]];
+  for(const contour of [points,points.toReversed()]){
+    const g=packShape({...p,shape:'polygon',points:contour},1,1,1)!,pos=g.getAttribute('position'),normal=g.getAttribute('normal');
+    for(let i=0;i<12;i++){assert.equal(normal.getY(i),pos.getY(i)===1?1:-1);}
+    g.dispose();
+  }
+});
 test("a directed light cannot illuminate behind its aperture; a wider angle reaches a wider footprint",()=>{
   const source:LightSource={x:0,y:1,z:0,kind:"spot",room:0,color:[1,1,1],level:1,direction:[0,-1,0],angle:20};
   const surface:LightSurface={pos:Float32Array.from([0,0,0,0,2,0,0.5,0,0]),normal:Float32Array.from([0,1,0,0,-1,0,0,1,0]),room:Int16Array.from([0,0,0]),fold:new Float32Array(3),doors:[],blockers:[]};

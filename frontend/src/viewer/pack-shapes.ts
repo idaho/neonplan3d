@@ -16,10 +16,11 @@ export function packShape(p: PackPart, w: number, d: number, h: number, low = lo
     g.translate(0,H/2,0);
   } else if (p.shape === "polygon") {
     const axis=p.axis??'y',a=axis==='x'?D:W,b=axis==='y'?D:H,t=axis==='y'?H:axis==='x'?W:D;
-    const poly = p.points ?? [], positions: number[] = [];
+    const original=p.points??[],signed=original.reduce((sum,p,i)=>{const q=original[(i+1)%original.length];return sum+p[0]*q[1]-q[0]*p[1];},0);
+    const poly = signed<0?original.toReversed():original, positions: number[] = [];
     for (const [a,b,c] of triangulate(poly)) {
-      for (const i of [a,c,b]) positions.push(poly[i][0],0,poly[i][1]);
-      for (const i of [a,b,c]) positions.push(poly[i][0],1,poly[i][1]);
+      for (const i of [a,b,c]) positions.push(poly[i][0],0,poly[i][1]);
+      for (const i of [a,c,b]) positions.push(poly[i][0],1,poly[i][1]);
     }
     for (let i=0;i<poly.length;i++) {
       const a=poly[i], b=poly[(i+1)%poly.length];
