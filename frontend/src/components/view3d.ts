@@ -207,6 +207,7 @@ export class Fp3dView3d extends LitElement {
     _alerts: { state: true },
     _sceneFired: { state: true },
     replay: { attribute: false },
+    productColors: { attribute: false },
     _info: { state: true },
   };
 
@@ -214,6 +215,7 @@ export class Fp3dView3d extends LitElement {
   declare building: Building | null;
   /** Time travel: the replayed moment (hass is then the past, read-only); null = live. */
   declare replay: ReplayInfo | null;
+  productColors = false;
   /** Time travel: a tapped device's state at the replayed moment, next to the finger. */
   private declare _info: { entity: string; x: number; y: number } | null;
   private infoTimer: ReturnType<typeof setTimeout> | undefined;
@@ -626,6 +628,7 @@ export class Fp3dView3d extends LitElement {
       this.viewer.setKeepRoof(this.keepRoof);
       this._low = this.viewer.low;
       this.viewer.setPacks([...getPacks()]);
+      this.viewer.setProductColors(this.productColors);
       this.shownPacks = packsVersion();
       if (this.building) {
         this.shownStartView = JSON.stringify(this.startViewOf());
@@ -693,6 +696,7 @@ export class Fp3dView3d extends LitElement {
     if (changed.has("keepRoof")) v.setKeepRoof(this.keepRoof);
     if (changed.has("floorStack")) v.setFloorStack(this.floorStack);
     if (changed.has("theme")) v.setTheme(this.theme);
+    if (changed.has("productColors")) v.setProductColors(this.productColors);
     if (changed.has("accent")) v.setAccent(this.accent ?? null);
     if (changed.has("surfaceGrab")) v.setSurfaceGrab(this.surfaceGrab ?? null);
     if (changed.has("furnishTypes")) v.setFurnishTypes(this.furnishTypes ?? null);
@@ -749,6 +753,7 @@ export class Fp3dView3d extends LitElement {
     const jump = !!this.replay && this.replay.seek !== this.seenSeek;
     this.seenSeek = this.replay?.seek ?? 0;
     this.seenT = this.replay?.t ?? 0;
+    if(changed||this.replay)v.setCustomPackState(hass,{time:this.replay?.t ?? Date.now(),historical:!!this.replay,playing:this.replay?.playing ?? true,seek:this.replay?.seek ?? 0,history:this.replay?.rows});
     if (!changed) return;
     const began = this.showStats ? performance.now() : 0;
     this.shownStates = new Map(this.watched.map((id) => [id, hass.states[id]]));
@@ -2497,6 +2502,7 @@ export class Fp3dView3d extends LitElement {
       rotation: f.rotation,
       mirror: !!f.mirror,
       rotation_x: f.rotation_x ?? 0,
+      beam_angle: f.beam_angle,
       rotation_z: f.rotation_z ?? 0,
       pivot_y: item ? base + f.h / 2
         : ["ceiling", "downlight", "spot", "panel", "pendant"].includes(model) ? H - f.h / 2

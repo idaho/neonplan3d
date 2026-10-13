@@ -486,6 +486,29 @@ for (const below of [true, false]) shots.push({ ...kneeFixture, name: `view-roof
   editorScript: kneeFixture.editorScript + "e.change((b) => { b.settings.roof.solar = [{ id: 'pv-test', face: 'main:b', u: 3, v: 1, rows: 2, cols: 3, portrait: true, look: 'blue' }]; });" });
 shots.push({ ...kneeFixture, name: 'view-roof-knee-outlines', gableSide: 0.5,
   editorScript: kneeFixture.editorScript + "e.useRoofSections(); e.change((b) => { for (const s of b.settings.roof.sections) { s.eave_a += 1; s.eave_b += 1; } });" });
+const CUSTOM_PACK = {
+  id:"preview.custom",name:"Custom Preview",publisher:"Preview",licensee:null,items:[
+    {id:"unit",name:{de:"Custom Gerät"},size:[1,0.5,1],electric:true,bindings:[{id:"door",label:"Türsensor",domains:["binary_sensor"]},{id:"status",label:"Status",domains:["sensor"]},{id:"temperature",label:"Temperatur",domains:["sensor"]}],
+      parts:[{id:"body",shape:"box",x:0,z:0,y:0,w:1,d:0.9,h:1,color:"body"},{id:"door",shape:"box",x:0,z:0.47,y:0,w:1,d:0.04,h:1,color:"wood"},{id:"led",shape:"box",x:0.3,z:0.495,y:0.9,w:0.1,d:0.01,h:0.06,color:"dark",status:{binding:"status",colors:{running:"#ff0000"}}}],
+      motions:[{id:"door",kind:"door",parts:["door","led"],pivot:[-0.5,0.5,0.47],binding:"door",axis:"y"}],
+      displays:[{id:"temperature",kind:"sensor",binding:"temperature",position:[0,0.65,0.501],size:[0.6,0.15],parent:"door"},{id:"clock",kind:"digital",position:[0,0.3,0.501],size:[0.6,0.15],parent:"door"}]},
+    {id:"unit_red",name:{de:"Custom Gerät rot"},size:[1,0.5,1],product:{base:"pack:preview.custom:unit",variant:"red",label:"Rot",default:true},
+      parts:[{id:"body",shape:"box",x:0,z:0,y:0,w:1,d:0.9,h:1,color:"#aa3322"},{id:"door",shape:"box",x:0,z:0.47,y:0,w:1,d:0.04,h:1,color:"#bb4433"},{id:"led",shape:"box",x:0.3,z:0.495,y:0.9,w:0.1,d:0.01,h:0.06,color:"dark"}]}
+  ]
+};
+CUSTOM_PACK.items[1]={...structuredClone(CUSTOM_PACK.items[0]),id:"unit_red",name:{de:"Custom Gerät rot"},product:CUSTOM_PACK.items[1].product,
+  parts:CUSTOM_PACK.items[0].parts.map(p=>({...structuredClone(p),color:p.id==="led"?p.color:"#aa3322"}))};
+shots.push({name:"editor-custom-features",query:"",width:1400,height:1000,editor:true,mockPrivatePacks:true,customPackExercise:true,
+  editorScript:`
+    const panel=document.querySelector("neonplan3d-panel");
+    panel.hass={...panel.hass,config:{...panel.hass.config,time_zone:"Europe/Berlin"},states:{...panel.hass.states,
+      "binary_sensor.custom_door":{entity_id:"binary_sensor.custom_door",state:"on",attributes:{device_class:"door"}},
+      "sensor.custom_status":{entity_id:"sensor.custom_status",state:"running",attributes:{}},
+      "sensor.custom_temperature":{entity_id:"sensor.custom_temperature",state:"21.5",attributes:{unit_of_measurement:"°C"}}}};
+    e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[{id:"custom",name:"Custom",area_id:null,points:[[0,0],[5,0],[5,4],[0,4]],floor_material:"wood"}];f.openings=[];f.outdoor=[];f.placements=[];f.walls=[];
+      f.furniture=[{id:"unit",type:"pack:preview.custom:unit",x:2,z:2,w:1,d:0.5,h:1,rotation:0,variant:null,bindings:{door:"binary_sensor.custom_door",status:"sensor.custom_status",temperature:"sensor.custom_temperature"}}];b.settings.roof.type="none";});
+    e._split=true;e._tool="select";e.selectItem("furniture","unit");e.fit();
+  `});
 for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
   const page = await browser.newPage();
   if (shot.freeformExercise || shot.spotsExercise) page.on("dialog", async (dialog) => { errors.push(`${shot.name}: ${dialog.message()}`); await dialog.dismiss(); });
@@ -494,7 +517,7 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
     page.on("request", (request) => {
       const path = new URL(request.url()).pathname;
       if (path === "/private/packs/starter.json" || path === "/private/packs/src/index.json") {
-        request.respond({ status: 200, contentType: "application/json", body: JSON.stringify(path.endsWith("index.json") ? [] : { id: "preview.empty", name: "Preview", publisher: "Preview", items: [] }) });
+        request.respond({ status: 200, contentType: "application/json", body: JSON.stringify(path.endsWith("index.json") ? [] : shot.customPackExercise ? CUSTOM_PACK : { id: "preview.empty", name: "Preview", publisher: "Preview", items: [] }) });
       } else request.continue();
     });
   }
@@ -1034,6 +1057,39 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       e.shadowRoot.querySelector('.fp3d-spot-form')?.scrollIntoView({ block: 'center' });
     });
     await new Promise((r) => setTimeout(r, 300));
+  }
+  if(shot.customPackExercise){
+    await page.evaluate(async()=>{
+      const panel=document.querySelector("neonplan3d-panel"),e=panel.shadowRoot.querySelector("fp3d-editor"),v=e.shadowRoot.querySelector("fp3d-view3d").viewer;
+      const layer=v.customLayers.get(e._floorId),item=layer?.items.find(i=>i.f.id==="unit");
+      if(!item)throw new Error("Custom pack runtime layer missing");
+      const original=e.floor.furniture[0];
+      const moment={time:Date.parse("2026-01-01T02:05:00Z"),historical:false,playing:true,seek:0};
+      const h={...e.hass,config:{...e.hass.config,time_zone:"Europe/Berlin"},states:{...e.hass.states,
+        "binary_sensor.custom_door":{entity_id:"binary_sensor.custom_door",state:"on",attributes:{}},
+        "sensor.custom_status":{entity_id:"sensor.custom_status",state:"running",attributes:{}},
+        "sensor.custom_temperature":{entity_id:"sensor.custom_temperature",state:"21.5",attributes:{unit_of_measurement:"°C"}}}};
+      layer.update(h,moment,true);for(let i=0;i<20;i++)layer.step(50);
+      if(item.motions[0].shown<0.99)throw new Error("Door did not open");
+      if(item.displays.find(d=>d.field.id==="clock").key!=="03:05")throw new Error("Clock timezone mismatch");
+      if(item.displays.find(d=>d.field.id==="temperature").key!=="21.5 °C")throw new Error("Sensor display missing");
+      const led=item.parts.find(p=>p.part.id==="led").mesh.geometry.getAttribute("color");
+      if(led.getX(0)<0.9||led.getY(0)>0.05)throw new Error("Status colour did not reach only the LED");
+      const unknown={...h,states:{...h.states,"binary_sensor.custom_door":{state:"unavailable",attributes:{}},"sensor.custom_temperature":{state:"unavailable",attributes:{}}}};
+      layer.update(unknown,moment,true);
+      if(item.motions[0].state.open!==1||!item.unclear.visible)throw new Error("Unknown contact lost the last valid position");
+      if(item.displays.find(d=>d.field.id==="temperature").key!=="--:--")throw new Error("Missing display value has no fallback");
+      layer.update(unknown,{...moment,historical:true,playing:false,seek:1,time:moment.time-3600000},true);
+      if(item.motions[0].shown!==0)throw new Error("Replay inherited a live door state");
+      const before=JSON.stringify(original);
+      layer.update(h,moment,false);
+      if(item.motions[0].shown!==1)throw new Error("Animation disabled must show target immediately");
+      if(JSON.stringify(e.floor.furniture[0])!==before)throw new Error("Runtime changed stored furniture");
+      const dims=[original.x,original.z,original.w,original.d,original.h];
+      panel._productColors=true;await panel.updateComplete;await new Promise(r=>setTimeout(r,250));
+      if(JSON.stringify([e.floor.furniture[0].x,e.floor.furniture[0].z,e.floor.furniture[0].w,e.floor.furniture[0].d,e.floor.furniture[0].h])!==JSON.stringify(dims))throw new Error("Product switch changed furniture");
+    });
+    console.log("verified custom bindings, displays, status parts, animated doors, unknown/history fallbacks and product toggle");
   }
   if (shot.focusRotation) {
     const values = await page.evaluate(async () => {

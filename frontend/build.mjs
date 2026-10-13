@@ -89,8 +89,9 @@ function copyFonts() {
 // editor 730 KB, card editor 205 KB on 2026-10-10 for the parts' cards (connections, drawings, joining) and their texts
 // main 530 KB on 2026-10-11 for the walk through the house (its controls and texts; the walking itself lives in the 3D bundle)
 // Custom integration adds XYZ transforms, room levels, free roof contours and roof effects.
-// Measured after merging upstream 1cca55b: 3D 763 KB, editor 746 KB, card editor 207 KB.
-const BUDGET = { "neonplan3d.js": 530 * 1024, "neonplan3d-timetravel.js": 120 * 1024, "neonplan3d-3d.js": 775 * 1024, "neonplan3d-editor.js": 760 * 1024, "neonplan3d-card-editor.js": 212 * 1024 };
+// Complete custom pack runtime, directed lights, curved shapes and contact projections:
+// measured 3D 803 KB on 2026-10-12; other bundles retain their existing budgets.
+const BUDGET = { "neonplan3d.js": 530 * 1024, "neonplan3d-timetravel.js": 120 * 1024, "neonplan3d-3d.js": 820 * 1024, "neonplan3d-editor.js": 760 * 1024, "neonplan3d-card-editor.js": 212 * 1024 };
 
 copyFonts();
 if (watch) {

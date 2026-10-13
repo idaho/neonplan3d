@@ -61,7 +61,13 @@ import { pushPipeTube, type PipeTube } from "./pipes.ts";
 export { FloorMap, WalkCamera, type WalkState } from "./walk.ts";
 
 export type { PipeTube };
-import { mountBase, packItem, setPacks, type FurniturePack } from "../packs.ts";
+import { mountBase, packItem, renderPackItem, setPacks, setProductColors, type FurniturePack } from "../packs.ts";
+import { CustomPackLayer } from "./custom-pack-layer.ts";
+import { lightCone, packSpotLights } from "./directed-light.ts";
+import { setPackShapeQuality } from "./pack-shapes.ts";
+import { OPENING_TAU } from "./opening-motion.ts";
+import { MotionMemory, type PackMoment } from "../pack-runtime.ts";
+import type { HomeAssistant } from "../types.ts";
 import { withVehicles } from "../parking.ts";
 import { buildRoof, type RoofWindowState } from "./roof.ts";
 import { GROUND, groundFace, groundFloor, roofFaces, wallFaces } from "../solar.ts";
@@ -116,6 +122,7 @@ export interface ViewerOptions {
 
 /** A device shown in the 3D view (prepared by the main bundle from placements and states). */
 export interface DeviceMarker {
+  beam_angle?: number | null;
   /** entity_id */
   id: string;
   /** A small label under the pin (the device's own name, #156); empty = none. */
@@ -314,7 +321,6 @@ const GROUND_CELLS = 32;
 /** Press duration that counts as a long press (ms). */
 const HOLD_MS = 500;
 /** Time constant of window and blind movements (ms). */
-const OPENING_TAU = 160;
 /** Frame interval while only the energy flow moves (ms): about 30 frames per second. */
 const FLOW_FRAME_MS = 33;
 /** Cable core and the soft glow around it (m). */
@@ -599,6 +605,10 @@ export class FloorplanViewer {
   private ghost: LineSegments | null = null;
   private selectedSet: string[] = [];
   private theme: Theme = "neon";
+  private productColors = false;
+  private customLayers = new Map<string,CustomPackLayer>();
+  private customMemories = new Map<string,MotionMemory>();
+  private customContext: {hass:HomeAssistant;moment:PackMoment}|null=null;
   private readonly themeUniform: ThemeUniform = { value: 0 };
   private sun: SunState | null = null;
   private weather: WeatherView | null = null;
@@ -708,6 +718,7 @@ export class FloorplanViewer {
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.renderer = next;
+    if(this.building)this.rebuild();
     const view = this.controls.view;
     this.controls.dispose();
     this.controls = this.makeControls();
@@ -722,6 +733,20 @@ export class FloorplanViewer {
       this.rebuild();
       this.invalidate();
     }
+  }
+
+  setProductColors(value: boolean): void {
+    if (value === this.productColors) return;
+    this.productColors = value;
+    setProductColors(value);
+    if (this.building) this.rebuild();
+    this.invalidate();
+  }
+
+  setCustomPackState(hass:HomeAssistant,moment:PackMoment):void {
+    this.customContext={hass,moment};
+    for(const layer of this.customLayers.values())layer.update(hass,moment,this.building?.settings.pack_animations!==false);
+    for(const fv of this.floors){this.buildGlow(fv);this.buildHalos(fv);}
   }
 
   setBuilding(building: Building): void {
@@ -1463,6 +1488,7 @@ export class FloorplanViewer {
   private makeRenderer(quality: Quality): WebGLRenderer {
     const low = quality === "low" || (quality === "auto" && isLowEnd());
     this.lowQuality = low;
+    setPackShapeQuality(low);
     this.applyWeather();
     this.highQuality = quality === "high";
     const renderer = new WebGLRenderer({ antialias: !low, alpha: true, powerPreference: low ? "low-power" : "default" });
@@ -1497,7 +1523,10 @@ export class FloorplanViewer {
   }
 
   private readonly onVisibility = () => {
-    if (!document.hidden) this.invalidate();
+    if (!document.hidden) {
+      if(this.customContext)this.setCustomPackState(this.customContext.hass,{...this.customContext.moment,time:this.customContext.moment.historical?this.customContext.moment.time:Date.now()});
+      this.invalidate();
+    }
   };
 
   private resize(): void {
@@ -1512,6 +1541,8 @@ export class FloorplanViewer {
   }
 
   private clear(): void {
+    for(const layer of this.customLayers.values())layer.dispose();
+    this.customLayers.clear();
     // robots share one geometry: keep them out of the floor groups while those are disposed
     for (const r of this.robots.values()) r.group.removeFromParent();
     for (const fv of this.floors) {
@@ -1637,6 +1668,7 @@ export class FloorplanViewer {
     for (const d of this.devices) {
       const glow = this.glowOf(d);
       if (d.floorId !== fv.floor.id || !glow) continue;
+      if(d.pack && packItem(d.pack)?.spots?.length)continue;
       const H = d.top ?? fv.floor.height;
       const ri = roomIndexAt(fv.floor, d.x, d.z);
       const room = zoneOf(fv.lightZones, ri);
@@ -1672,17 +1704,23 @@ export class FloorplanViewer {
           if (d.upright) out.push({ x: d.x, y: base + w * (0.5 + t), z: d.z, color, level: glow.level * 0.55, kind: "omni", room });
           else out.push({ x: d.x + Math.cos(a) * w * t, y, z: d.z + Math.sin(a) * w * t, color, level: glow.level * 0.55, kind: sideways ? "omni" : kind, room });
         }
-      } else out.push({ x: d.x, y, z: d.z, color, level: glow.level, kind, room });
+      } else out.push({ x: d.x, y, z: d.z, color, level: glow.level, kind, room, ...(kind==="spot" ? {direction:[0,-1,0] as [number,number,number],angle:d.beam_angle??60} : {}) });
       if (d.rotation_x || d.rotation_z) {
         const P = furnitureTransform(d, lampPivot(d, H));
         for (let i = sourceStart; i < out.length; i++) {
           const light = out[i];
           [light.x, light.y, light.z] = P(light.x, light.y, light.z);
-          // The light surface uses vertical lamp presets; arbitrary orientations emit omnidirectionally.
-          light.kind = "omni";
+          if(light.kind==="spot"){
+            const origin=P(d.x,0,d.z),end=P(d.x,-1,d.z);
+            light.direction=[end[0]-origin[0],end[1]-origin[1],end[2]-origin[2]];
+            light.angle=d.beam_angle??60;
+          } else light.kind = "omni";
           light.room = zoneOf(fv.lightZones, roomIndexAt(fv.floor, light.x, light.z));
         }
       }
+    }
+    if(this.customContext)for(const f of fv.floor.furniture)for(const light of packSpotLights(f,fv.floor,this.customContext.hass)){
+      light.room=zoneOf(fv.lightZones,light.room);out.push(light);
     }
     return out;
   }
@@ -1699,7 +1737,7 @@ export class FloorplanViewer {
       return o ? Math.max(o.open, o.open2 ?? 0) : 0.5;
     });
     const sig =
-      sources.map((l) => `${l.x.toFixed(2)},${l.y.toFixed(2)},${l.z.toFixed(2)},${l.kind},${l.level.toFixed(3)},${l.color.map((c) => c.toFixed(3)).join("/")}`).join(";") +
+      sources.map((l) => `${l.x.toFixed(2)},${l.y.toFixed(2)},${l.z.toFixed(2)},${l.kind},${l.level.toFixed(3)},${l.color.map((c) => c.toFixed(3)).join("/")},${l.direction?.join("/")},${l.angle}`).join(";") +
       "|" +
       doorOpen.map((o) => o.toFixed(1)).join(",");
     if (sig === fv.glowSig) return;
@@ -1990,6 +2028,10 @@ export class FloorplanViewer {
         appliedO: -1,
         label,
       });
+      const memory=this.customMemories.get(floor.id)??new MotionMemory();this.customMemories.set(floor.id,memory);
+      const custom = new CustomPackLayer(floor,materials.wall,()=>this.invalidate(),memory);
+      group.add(custom.group);this.customLayers.set(floor.id,custom);
+      if(this.customContext)custom.update(this.customContext.hass,this.customContext.moment,this.building?.settings.pack_animations!==false);
     }
     this.floorMap = new Map(this.floors.map((f) => [f.floor.id, f]));
     for (const fv of this.floors) {
@@ -2327,7 +2369,8 @@ export class FloorplanViewer {
         const hanging = d.lamp === "strip" ? (d.base ?? H) > Math.min(fv.floor.cut_height, H) : d.lamp ? HANGING.has(d.lamp) && (d.top ?? H) > Math.min(fv.floor.cut_height, H) : d.model === "camera_ceiling";
         if ((!d.lamp && !d.model) || (hanging && this.wallMode === "cut")) continue;
         const start = buf.count;
-        const packed = d.pack ? packItem(d.pack) : undefined;
+        const placed = fv.floor.furniture.find(f => f.id === d.furnitureId);
+        const packed = d.pack ? renderPackItem(placed ?? { type: d.pack }) : undefined;
         const [pw, pd, ph] = d.size ?? [0.3, 0.3, 0.3];
         // shades get the sentinel colour and are recoloured below
         if (d.model) pushCameraModel(buf, d.model, d.x, d.model === "camera_ceiling" ? (d.top ?? H) : d.y, d.z, d.rotation ?? 0);
@@ -2551,27 +2594,10 @@ export class FloorplanViewer {
         }
       else if (d.lamp === "wall") push(d.x - Math.sin(ang) * (dd / 2 + 0.05), d.z + Math.cos(ang) * (dd / 2 + 0.05));
       else push(d.x, d.z);
-      if (this.highQuality && (d.lamp === "downlight" || d.lamp === "spot") && !d.rotation_x && !d.rotation_z) {
-        // soft cone from the lamp to the floor, fading towards the floor
-        const top = new Color(...glow.color.map((c) => c * 0.09 * glow.level) as [number, number, number]);
-        const bottom = new Color(0, 0, 0);
-        const r0 = Math.max(0.03, w / 2);
-        const r1 = 0.45 + 0.35 * glow.level;
-        const n = 16;
-        for (let i = 0; i < n; i++) {
-          const a0 = (i / n) * Math.PI * 2;
-          const a1 = ((i + 1) / n) * Math.PI * 2;
-          const t0 = [d.x + Math.cos(a0) * r0, y, d.z + Math.sin(a0) * r0];
-          const t1 = [d.x + Math.cos(a1) * r0, y, d.z + Math.sin(a1) * r0];
-          const b0 = [d.x + Math.cos(a0) * r1, 0.02, d.z + Math.sin(a0) * r1];
-          const b1 = [d.x + Math.cos(a1) * r1, 0.02, d.z + Math.sin(a1) * r1];
-          cones.tri(t0, b0, b1, top, bottom, bottom);
-          cones.tri(t0, b1, t1, top, bottom, top);
-        }
-      }
       rotateFurniturePositions(hp, haloStart, d, lampPivot(d, H));
       rotateFurniturePositions(cones.p, coneStart, d, lampPivot(d, H));
     }
+    if(this.highQuality)for(const source of this.lightSources(fv))lightCone(cones,source,fv.floor,fv.lightSurface?.blockers??[]);
     const g = new Geometry();
     g.setAttribute("position", new Float32BufferAttribute(hp, 3));
     g.setAttribute("color", new Float32BufferAttribute(hc, 3));
@@ -3682,7 +3708,9 @@ export class FloorplanViewer {
     } else this.orbitLast = 0;
     const cameraMoving = this.controls.update(now);
     const floorsMoving = this.stepFloors(dt);
-    const openingsMoving = this.stepOpenings(dt) || this.stepFridges(dt);
+    let customMoving=false;
+    for(const [id,layer] of this.customLayers)if((this.floorMap.get(id)?.o??0)>0.02)customMoving=layer.step(dt)||customMoving;
+    const openingsMoving = this.stepOpenings(dt) || this.stepFridges(dt) || customMoving;
     let flashing = false;
     if (this.flashes.size) {
       // only the floors with a flashing lamp are recoloured (an expired flash needs one last pass)

@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 from typing import Any
 
 from cryptography.exceptions import InvalidSignature
@@ -26,6 +27,8 @@ MAX_PACK_SIZE = 1_000_000
 
 # Publisher keys whose packs are accepted: key id -> raw Ed25519 public key (base64).
 PACK_PUBLIC_KEYS: dict[str, str] = {
+    # Local custom inventory publisher; public key only. Required across upstream updates.
+    "a9d3da9f02f6": "N2I+Xj7JNAm7WYvmRnG3E0hG0NnkboMe74WxM02AW1o=",
     # Mastershort (master key, kept offline)
     "62863e45df5a": "D3sbiEQibaCVm1OWcYUrQc424c2t+pmSQqWg6l6fNSE=",
     # Mastershort shop (signs purchased packs with the buyer's name; revocable by removing it here)
@@ -49,11 +52,150 @@ _SPAN = vol.All(vol.Coerce(float), vol.Range(min=0.001, max=1))
 _LEVEL = vol.All(vol.Coerce(float), vol.Range(min=0, max=1))
 _METRES = vol.All(vol.Coerce(float), vol.Range(min=0.01, max=10))
 
+
+def _finite(value: float) -> float:
+    if not math.isfinite(value):
+        raise vol.Invalid("must be finite")
+    return value
+
+
+_NUM = vol.All(vol.Coerce(float), _finite, vol.Range(min=-360, max=360))
+_FRACTION = vol.All(_FRACTION, _finite)
+_SPAN = vol.All(_SPAN, _finite)
+_LEVEL = vol.All(_LEVEL, _finite)
+_METRES = vol.All(_METRES, _finite)
+_VEC = vol.All([vol.All(vol.Coerce(float), _finite, vol.Range(min=-1, max=1))], vol.Length(min=3, max=3))
+_PART_IDS = vol.All([_ID], vol.Length(min=1, max=60))
+
+
+def _polygon(points: list[list[float]]) -> bool:
+    if len(points) < 3 or not all(math.isfinite(v) for p in points for v in p):
+        return False
+    area = sum(
+        p[0] * points[(i + 1) % len(points)][1] - p[1] * points[(i + 1) % len(points)][0] for i, p in enumerate(points)
+    )
+    if abs(area) < 1e-8:
+        return False
+
+    def cross(a, b, c):
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+    def on(p, a, b):
+        return (
+            abs(cross(a, b, p)) < 1e-8
+            and min(a[0], b[0]) - 1e-8 <= p[0] <= max(a[0], b[0]) + 1e-8
+            and min(a[1], b[1]) - 1e-8 <= p[1] <= max(a[1], b[1]) + 1e-8
+        )
+
+    for i, a in enumerate(points):
+        b = points[(i + 1) % len(points)]
+        if a == b:
+            return False
+        for j in range(i + 2, len(points)):
+            if (j + 1) % len(points) == i:
+                continue
+            c, d = points[j], points[(j + 1) % len(points)]
+            if (cross(a, b, c) * cross(a, b, d) < 0 and cross(c, d, a) * cross(c, d, b) < 0) or any(
+                (on(a, c, d), on(b, c, d), on(c, a, b), on(d, a, b))
+            ):
+                return False
+    return True
+
+
+_STATUS = vol.Schema(
+    {
+        vol.Required("binding"): _ID,
+        vol.Optional("colors"): vol.All({vol.All(str, vol.Length(min=1, max=80)): _COLOR}, vol.Length(max=40)),
+        vol.Optional("visibility"): vol.All({vol.All(str, vol.Length(min=1, max=80)): bool}, vol.Length(max=40)),
+    }
+)
+_BINDING = vol.Schema(
+    {
+        vol.Required("id"): _ID,
+        vol.Required("label"): _TEXT,
+        vol.Optional("domains"): vol.All(
+            [
+                vol.In(
+                    [
+                        "light",
+                        "switch",
+                        "input_boolean",
+                        "sensor",
+                        "binary_sensor",
+                        "cover",
+                        "media_player",
+                        "climate",
+                        "fan",
+                        "number",
+                        "input_number",
+                        "input_text",
+                        "select",
+                    ]
+                )
+            ],
+            vol.Length(max=15),
+        ),
+        vol.Optional("device_classes"): vol.All([vol.All(str, vol.Length(max=40))], vol.Length(max=15)),
+    }
+)
+_DISPLAY = vol.Schema(
+    {
+        vol.Required("id"): _ID,
+        vol.Required("kind"): vol.In(["digital", "analog", "sensor", "duration"]),
+        vol.Required("position"): _VEC,
+        vol.Required("size"): vol.All([_SPAN], vol.Length(min=2, max=2)),
+        vol.Optional("rotation"): vol.All([_NUM], vol.Length(min=3, max=3)),
+        vol.Optional("binding"): _ID,
+        vol.Optional("parent"): _ID,
+        vol.Optional("unit"): vol.In(["s", "min", "h"]),
+        vol.Optional("color"): _COLOR,
+        vol.Optional("background"): _COLOR,
+    }
+)
+_MOTION = vol.Schema(
+    {
+        vol.Required("id"): _ID,
+        vol.Required("parts"): _PART_IDS,
+        vol.Required("kind"): vol.In(["door", "window", "slide", "fan", "washer", "dryer"]),
+        vol.Required("pivot"): _VEC,
+        vol.Optional("axis"): vol.In(["x", "y", "z"]),
+        vol.Optional("binding"): _ID,
+        vol.Optional("tilt_binding"): _ID,
+        vol.Optional("tilt_angle_binding"): _ID,
+        vol.Optional("motor_binding"): _ID,
+        vol.Optional("angle"): vol.All(vol.Coerce(float), _finite, vol.Range(min=0, max=180)),
+        vol.Optional("tilt_angle"): vol.All(vol.Coerce(float), _finite, vol.Range(min=0, max=90)),
+        vol.Optional("travel"): vol.All(vol.Coerce(float), _finite, vol.Range(min=0, max=2)),
+        vol.Optional("direction"): vol.In([-1, 1]),
+    }
+)
+_SPOT = vol.Schema(
+    {
+        vol.Required("id"): _ID,
+        vol.Required("parts"): _PART_IDS,
+        vol.Required("position"): _VEC,
+        vol.Required("direction"): _VEC,
+        vol.Optional("pivot"): _VEC,
+        vol.Optional("binding"): _ID,
+        vol.Optional("angle"): vol.All(vol.Coerce(float), _finite, vol.Range(min=5, max=160)),
+    }
+)
+
 # Parts in fractions of the item's size: x/z centre (-0.5..0.5, front at +z), w/d extent, y/h bottom
 # and height of the item height. A cylinder's diameter is the smaller of w and d.
 PART_SCHEMA = vol.Schema(
     {
-        vol.Required("shape"): vol.In(["box", "cyl", "loft"]),
+        vol.Required("shape"): vol.In(
+            ["box", "cyl", "loft", "polygon", "rounded_box", "sphere", "ellipsoid", "pipe", "torus", "bowl"]
+        ),
+        vol.Optional("id"): _ID,
+        vol.Optional("visible"): bool,
+        vol.Optional("status"): _STATUS,
+        vol.Optional("points"): vol.All([vol.All([_FRACTION], vol.Length(min=2, max=2))], vol.Length(min=3, max=64)),
+        vol.Optional("path"): vol.All([_VEC], vol.Length(min=2, max=64)),
+        vol.Optional("radius"): vol.All(vol.Coerce(float), _finite, vol.Range(min=0.001, max=0.5)),
+        vol.Optional("thickness"): vol.All(vol.Coerce(float), _finite, vol.Range(min=0.001, max=0.5)),
+        vol.Optional("detail"): vol.In(["low", "medium", "high"]),
         vol.Required("x"): _FRACTION,
         vol.Required("z"): _FRACTION,
         vol.Required("w"): _SPAN,
@@ -98,6 +240,16 @@ SYMBOL_SCHEMA = vol.Any(
 
 ITEM_SCHEMA = vol.Schema(
     {
+        vol.Optional("bindings"): vol.All([_BINDING], vol.Length(max=40)),
+        vol.Optional("displays"): vol.All([_DISPLAY], vol.Length(max=12)),
+        vol.Optional("motions"): vol.All([_MOTION], vol.Length(max=20)),
+        vol.Optional("spots"): vol.All([_SPOT], vol.Length(max=20)),
+        vol.Optional("product"): {
+            vol.Required("base"): vol.All(str, vol.Match(r"^pack:[a-z0-9_.-]+:[a-z0-9_.-]+$"), vol.Length(max=96)),
+            vol.Required("variant"): _ID,
+            vol.Required("label"): _TEXT,
+            vol.Optional("default"): bool,
+        },
         vol.Required("id"): _ID,
         # names by language ("de", "en", …); "en" or the first one is the fallback
         vol.Required("name"): vol.All({vol.All(str, vol.Length(min=2, max=5)): _TEXT}, vol.Length(min=1, max=10)),
@@ -151,7 +303,7 @@ KNOWN_FEATURES = [
 PAYLOAD_SCHEMA = vol.Schema(
     {
         vol.Required("format"): PACK_FORMAT,
-        vol.Required("version"): PACK_VERSION,
+        vol.Required("version"): vol.In([1, 2]),
         vol.Required("id"): _ID,
         vol.Required("name"): _TEXT,
         vol.Required("publisher"): _TEXT,
@@ -209,6 +361,8 @@ def parts_of(text: str) -> tuple[dict[str, Any], dict[str, str]]:
 def validate_payload(payload: Any) -> dict[str, Any]:
     """Check the content of a pack (without its signature); raises PackError."""
     features = payload.get("features") if isinstance(payload, dict) else None
+    if isinstance(payload, dict) and payload.get("version") not in (1, 2):
+        raise PackError("needs_update", "unsupported pack version")
     if isinstance(features, list):
         unknown = [f for f in features if isinstance(f, str) and f not in KNOWN_FEATURES]
         if unknown:
@@ -226,6 +380,41 @@ def validate_payload(payload: Any) -> dict[str, Any]:
         raise PackError("invalid_content", "item ids must be unique")
     if not ids and not clean["features"]:
         raise PackError("invalid_content", "a pack needs items or features")
+    for item in clean["items"]:
+        parts = [p["id"] for p in item["parts"] if "id" in p]
+        bindings = [b["id"] for b in item.get("bindings", [])]
+        if len(parts) != len(set(parts)) or len(bindings) != len(set(bindings)):
+            raise PackError("invalid_content", "part and binding ids must be unique")
+        assigned: set[str] = set()
+        motion_ids = {m["id"] for m in item.get("motions", [])}
+        for kind in ("motions", "spots", "displays"):
+            entries = item.get(kind, [])
+            entry_ids = [x["id"] for x in entries]
+            if len(entry_ids) != len(set(entry_ids)):
+                raise PackError("invalid_content", f"duplicate {kind} id")
+            for entry in entries:
+                if "parent" in entry and entry["parent"] not in motion_ids:
+                    raise PackError("invalid_content", "missing display parent")
+                for key in ("binding", "tilt_binding", "tilt_angle_binding", "motor_binding"):
+                    if key in entry and entry[key] not in bindings:
+                        raise PackError("invalid_content", "missing binding reference")
+                for part in entry.get("parts", []):
+                    if part not in parts or part in assigned:
+                        raise PackError("invalid_content", "missing or overlapping moving part")
+                    assigned.add(part)
+                if kind == "spots" and sum(v * v for v in entry["direction"]) < 0.001:
+                    raise PackError("invalid_content", "light direction must not be zero")
+        for part in item["parts"]:
+            if "status" in part and (not part.get("id") or part["status"]["binding"] not in bindings):
+                raise PackError("invalid_content", "status needs stable part id and binding")
+            if part["shape"] == "polygon" and not _polygon(part.get("points", [])):
+                raise PackError("invalid_content", "invalid polygon part")
+            if part["shape"] == "pipe" and "path" not in part:
+                raise PackError("invalid_content", "pipe needs a path")
+            if part["shape"] == "pipe" and any(a == b for a, b in zip(part["path"], part["path"][1:], strict=False)):
+                raise PackError("invalid_content", "pipe path has repeated points")
+            if part["shape"] == "bowl" and part.get("thickness", 0.04) >= 0.5:
+                raise PackError("invalid_content", "hollow body needs an interior")
     return clean
 
 

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "features": [
+    {"id":"xyz","implemented":true,"tests":["frontend/src/furniture-transform.test.ts","frontend/src/viewer/furniture-rotation.test.ts","frontend/src/geometry/wall-frame.test.ts","tests/test_furniture_rotation.py"]},
+    {"id":"room_heights","implemented":true,"tests":["frontend/src/room-levels.test.ts","tests/test_room_levels.py"]},
+    {"id":"stair_offsets","implemented":true,"tests":["frontend/src/room-levels.test.ts","tests/test_room_levels.py"]},
+    {"id":"roof_contours","implemented":true,"tests":["frontend/src/freeform.test.ts","frontend/src/geometry/polygon.test.ts","tests/test_freeform_schema.py"]},
+    {"id":"surface_bindings","implemented":true,"tests":["frontend/src/surface-binding.test.ts","frontend/src/ceiling-spots.test.ts","tests/test_custom_packs.py"]},
+    {"id":"outdoor_areas","implemented":true,"tests":["tests/test_custom_packs.py","frontend/src/surface-binding.test.ts"]},
+    {"id":"roof_effects","implemented":true,"tests":["frontend/src/viewer/roof-visibility.test.ts","frontend/src/viewer/roof-sun.test.ts","frontend/src/viewer/roof-window.test.ts","frontend/src/viewer/solar-facing.test.ts"]},
+    {"id":"pack_bindings","implemented":true,"tests":["tests/test_custom_packs.py","frontend/src/watched.test.ts","frontend/src/pack-runtime.test.ts"]},
+    {"id":"pack_displays","implemented":true,"tests":["frontend/src/pack-runtime.test.ts","tests/test_custom_packs.py"]},
+    {"id":"product_colors","implemented":true,"tests":["frontend/src/viewer/custom-features.test.ts","scripts/upgrade-custom-packs.test.mjs"]},
+    {"id":"status_parts","implemented":true,"tests":["frontend/src/pack-runtime.test.ts","tests/test_custom_packs.py"]},
+    {"id":"directed_lights","implemented":true,"tests":["frontend/src/viewer/custom-features.test.ts","frontend/src/viewer/lighting.test.ts"]},
+    {"id":"pack_motions","implemented":true,"tests":["frontend/src/pack-runtime.test.ts","tests/test_custom_packs.py"]},
+    {"id":"pack_shapes","implemented":true,"tests":["frontend/src/viewer/custom-features.test.ts","tests/test_custom_packs.py"]},
+    {"id":"contact_shadows","implemented":true,"tests":["frontend/src/viewer/contact-shadows.test.ts"]}
+  ]
+}

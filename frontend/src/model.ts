@@ -141,6 +141,16 @@ export interface ScreenPicture {
 }
 
 export interface Furniture {
+  device_id?: string | null;
+  bindings?: Record<string, string | null>;
+  product_variant?: string | null;
+  beam_angle?: number | null;
+  animations?: boolean;
+  motion_config?: Record<string,{contact_invert?:boolean;tilt_max?:number;tilt_invert?:boolean;angle?:number;tilt_angle?:number;travel_m?:number;direction?:number}>;
+  spot_config?: Record<string, { rotation_x?: number; rotation_y?: number; rotation_z?: number; entity?: string | null; beam_angle?: number | null }>;
+  status_colors?: Record<string, Record<string, string>>;
+  surface_binding?: { kind: "roof" | "pergola"; id: string; floor_id: string } | null;
+  binding_warning?: "surface_missing" | "surface_outside" | "surface_height" | null;
   /** Fixed against moving by accident. */
   locked?: boolean | null;
   /** Furniture block: items with the same group id are selected, moved and turned together (a kitchen, a wall unit). */
@@ -533,6 +543,7 @@ export interface MediaPreset {
 }
 
 export interface BuildingSettings {
+  pack_animations?: boolean;
   /** Stations and playlists for the speakers' quick menu (Klang & Kino). */
   media_presets?: MediaPreset[];
   /** Favourites of the house: scenes, scripts, automations, buttons and switches in the central menu of the 3D view (#145). */
@@ -673,6 +684,7 @@ export interface CarLinks {
 
 /** Area outside the house (lawn, terrace, pool, hedge …), drawn like a room. */
 export interface OutdoorArea {
+  area_id?: string | null;
   /** Retained for compatibility; corner editing is now free by default for every outdoor area. */
   freeform?: boolean;
   id: string;
@@ -1118,7 +1130,7 @@ export function isLamp(type: string): boolean {
 }
 
 /** Furniture a table lamp can stand on. */
-const SURFACES = new Set<string>([
+export const SURFACES = new Set<string>([
   "table",
   "table_round",
   "coffee_table",

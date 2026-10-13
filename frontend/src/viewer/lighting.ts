@@ -17,6 +17,8 @@ import { LOWER_OFFSET } from "./geo.ts";
 export type LightKind = "omni" | "ceiling" | "spot" | "pendant" | "up" | "wall";
 
 export interface LightSource {
+  direction?: [number,number,number];
+  angle?: number;
   x: number;
   y: number;
   z: number;
@@ -46,6 +48,7 @@ export interface LightSurface {
 
 /** A wall that stops light within the rooms it borders (openings let it through). */
 export interface Blocker {
+  bottom?: number;
   a: Vec2;
   b: Vec2;
   /** Height of the wall. */
@@ -324,6 +327,12 @@ function contribution(s: LightSource, px: number, py: number, pz: number, nx: nu
   const atten = q * Math.sqrt(q);
   // surfaces facing the lamp get more light; a floor directly below a lamp faces it fully
   const facing = Math.max(0, -(dx * nx + dy * ny + dz * nz) / d);
+  if(s.direction){
+    const cos=(dx*s.direction[0]+dy*s.direction[1]+dz*s.direction[2])/d;
+    const outer=Math.cos((s.angle??60)*Math.PI/360),inner=Math.cos((s.angle??60)*0.8*Math.PI/360);
+    const t=Math.max(0,Math.min(1,(cos-outer)/(inner-outer)));
+    return s.level*atten*(0.2+0.8*facing)*t*t*(3-2*t);
+  }
   return s.level * atten * (0.2 + 0.8 * facing) * characteristic(s.kind, dy / d);
 }
 
@@ -412,7 +421,7 @@ export function shadowed(s: { x: number; y: number; z: number }, walls: readonly
     const k = (ax * dz - az * dx) / den;
     if (k < 0 || k > 1) continue;
     const y = s.y + (py - s.y) * t;
-    if (y >= w.h) continue;
+    if (y >= w.h || y < (w.bottom??0)) continue;
     const along = k * Math.hypot(ex, ez);
     if (w.gaps.some((g) => along > g.s0 && along < g.s1 && y > g.y0 && y < g.y1)) continue;
     return true;

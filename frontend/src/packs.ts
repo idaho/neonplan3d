@@ -6,8 +6,16 @@ import { roomLevelAt, roomCeilingAt, builtinBase, ELECTRIC_FURNITURE, FURNITURE_
 import type { LampModel } from "./viewer/viewer3d.ts";
 
 export interface PackPart {
+  id?: string;
+  visible?: boolean;
+  status?: { binding: string; colors?: Record<string, string>; visibility?: Record<string, boolean> };
   /** A box, a cylinder, or a loft: a box whose top face is another rectangle (sloped sides). */
-  shape: "box" | "cyl" | "loft";
+  shape: "box" | "cyl" | "loft" | "polygon" | "rounded_box" | "sphere" | "ellipsoid" | "pipe" | "torus" | "bowl";
+  points?: [number, number][];
+  path?: [number, number, number][];
+  radius?: number;
+  thickness?: number;
+  detail?: "low" | "medium" | "high";
   /** Centre across and in depth (fractions -0.5..0.5 of the item's width and depth, front at +z). */
   x: number;
   z: number;
@@ -43,6 +51,11 @@ export type PackSymbol =
   | { shape: "line"; x1: number; z1: number; x2: number; z2: number };
 
 export interface PackItem {
+  bindings?: PackBinding[];
+  displays?: PackDisplayField[];
+  motions?: PackMotion[];
+  spots?: PackSpot[];
+  product?: { base: string; variant: string; label: string; default?: boolean };
   id: string;
   /** Names by language code. */
   name: Record<string, string>;
@@ -64,6 +77,23 @@ export interface PackItem {
   symbol?: PackSymbol[];
 }
 
+export interface PackBinding { id: string; label: string; domains?: string[]; device_classes?: string[] }
+export interface PackDisplayField {
+  id: string; kind: "digital" | "analog" | "sensor" | "duration";
+  position: [number, number, number]; size: [number, number]; rotation?: [number, number, number];
+  binding?: string; unit?: "s" | "min" | "h"; color?: string; background?: string;
+  parent?: string;
+}
+export interface PackMotion {
+  id: string; parts: string[]; kind: "door" | "window" | "slide" | "fan" | "washer" | "dryer";
+  pivot: [number, number, number]; axis?: "x" | "y" | "z"; binding?: string; tilt_binding?: string; tilt_angle_binding?: string; motor_binding?: string;
+  angle?: number; tilt_angle?: number; travel?: number; direction?: number;
+}
+export interface PackSpot {
+  id: string; parts: string[]; position: [number, number, number]; direction: [number, number, number];
+  pivot?: [number, number, number]; binding?: string; angle?: number;
+}
+
 export interface FurniturePack {
   id: string;
   name: string;
@@ -83,6 +113,25 @@ export interface FurniturePack {
 let registry: FurniturePack[] = [];
 let items = new Map<string, PackItem>();
 let version = 0;
+let productColors = false;
+
+export function setProductColors(value: boolean): void { productColors = value; }
+
+export function productVariants(type: string): { type: string; item: PackItem }[] {
+  const base = packItem(type)?.product?.base ?? type;
+  return [...items.entries()].filter(([,item]) => item.product?.base === base).map(([type,item])=>({type,item}));
+}
+
+/** Appearance selection never changes the stored type, size or HA bindings. */
+export function renderPackItem(f: Pick<Furniture,"type"|"product_variant">): PackItem | undefined {
+  const item = packItem(f.type);
+  if (!item) return undefined;
+  const base = item.product?.base ?? f.type;
+  if (!productColors) return packItem(base) ?? item;
+  const choices = productVariants(f.type);
+  return choices.find(v => v.type === f.product_variant)?.item
+    ?? (item.product ? item : choices.find(v=>v.item.product?.default)?.item ?? item);
+}
 
 export function setPacks(packs: FurniturePack[]): void {
   registry = packs;

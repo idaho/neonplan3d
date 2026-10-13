@@ -28,6 +28,8 @@ import { sectionFloor, dormerParent, effectiveDormer, proposeDormer, sectionGeom
 import { bestFace, clampField, faceAt, faceCompass, fieldFace, fieldModules, GROUND, moveField, pointOnFace, proposeField, proposeGroundField, proposeWindow, proposeWallField, roofFaces, rowCounts, turnGroundField, fieldCenter, wallFaces, windowAsField, windowCorners, onFace, onField, rayOnFace, type RoofFace } from "../solar.ts";
 import { validPolygon } from "../geometry/polygon.ts";
 import { ceilingSpots, spotSurfaceKey, type SpotSurface } from "../ceiling-spots.ts";
+import { syncSurfaceSpots } from "../surface-binding.ts";
+import { OPEN_ANGLE, DOOR_ANGLE, TILT_ANGLE } from "../viewer/opening-motion.ts";
 import { roomTransition } from "../room-levels.ts";
 import { roomAt, roomLevelAt, roomLevel, roomWallLevel, roomHeight } from "../model.ts";
 import type { SurfaceGrab, SurfaceRay } from "../viewer/viewer3d.ts";
@@ -127,7 +129,7 @@ import { deleteDiagnostics, getDiagnostics, setDiagnostics, type DiagnosticsStat
 import { load3d } from "../load3d.ts";
 import type { WallMode } from "../viewer/viewer3d.ts";
 import { furnitureName } from "../furniture-names.ts";
-import { furnitureSize, isElectric, isPackType, mountBase, packDisplay, packItem, packItemName, packName, packType, setPacks, type FurniturePack } from "../packs.ts";
+import { furnitureSize, isElectric, isPackType, mountBase, packDisplay, packItem, packItemName, packName, packType, productVariants, setPacks, type FurniturePack } from "../packs.ts";
 
 /** Items that can be fixed against moving. */
 type FixKind = "room" | "opening" | "furniture" | "device" | "wall" | "outdoor";
@@ -282,6 +284,7 @@ export class Fp3dEditor extends LitElement {
     _multiMode: { state: true },
     _deviceId: { state: true },
     _deviceQuery: { state: true },
+    _outdoorDevice: { state: true },
     _devSource: { state: true },
     _roofId: { state: true },
     _solarId: { state: true },
@@ -390,6 +393,7 @@ export class Fp3dEditor extends LitElement {
   private kitPicsAsked = new Set<string>();
   private declare _deviceId: string | null;
   private declare _deviceQuery: string;
+  private _outdoorDevice: string | null = null;
   /** Which devices the room form lists: its own area, other areas, or entities without an area. */
   private declare _devSource: "area" | "other" | "none";
   /** Selected roof section (tool "roof"). */
@@ -1107,6 +1111,7 @@ export class Fp3dEditor extends LitElement {
     const floor = next.floors.find((f) => f.id === this._floorId);
     if (!floor && this._floorId) return;
     mutate(next, floor as Floor);
+    syncSurfaceSpots(base, next);
     this.setDoc(next, history ? base : null);
   }
 
@@ -5624,6 +5629,12 @@ export class Fp3dEditor extends LitElement {
     return html`<section>
       <div class="fp3d-h3row"><h3>${this.t("outdoor")}</h3>${this.fixButton("outdoor", a.id)}</div>
       <div class="fp3d-form">
+        <label class="fp3d-field fp3d-wide">${this.t("area")}
+          <select ?disabled=${!admin} @change=${(e: Event) => this.updateOutdoor({ area_id: (e.target as HTMLSelectElement).value || null })}>
+            <option value="" ?selected=${!a.area_id}>${this.t("no_area")}</option>
+            ${Object.values(this.hass?.areas ?? {}).map(area => html`<option value=${area.area_id} ?selected=${a.area_id === area.area_id}>${area.name}</option>`)}
+          </select>
+        </label>
         <label class="fp3d-field fp3d-wide"
           >${this.t("outdoor_type")}
           <select ?disabled=${!admin} @change=${(e: Event) => this.updateOutdoor({ type: (e.target as HTMLSelectElement).value as OutdoorType })}>
@@ -5674,6 +5685,17 @@ export class Fp3dEditor extends LitElement {
       ${this.renderContour("outdoor", a.id, a.points, (points) => this.updateOutdoor({ points, freeform: true }))}
       ${this.renderContourActions("outdoor")}
       ${a.type === "pergola" ? this.renderSpotForm(this.pergolaSpotSurface(a)) : nothing}
+      ${a.area_id && this.hass ? html`<h4>Geräte aus ${this.hass.areas?.[a.area_id]?.name ?? a.area_id}</h4>
+        ${this.entitySelect("Gerät oder Licht platzieren",this._outdoorDevice,undefined,this.entityOptions(id=>areaEntities(this.hass!,a.area_id!).includes(id)&&isPlaceable(kindOf(id))),id=>{this._outdoorDevice=id==="none"?null:id;})}
+        <button class="fp3d-btn" ?disabled=${!admin||!this._outdoorDevice} @click=${()=>{
+          const id=this._outdoorDevice;if(!id)return;
+          const taken=this.floor?.placements.map(p=>[p.x,p.z] as Vec2)??[];
+          const placement=autoPlace({id:a.id,name:"",area_id:a.area_id??null,points:a.points,floor_material:"wood"},[id],taken)[0];if(!placement)return;
+          this.change((_,floor)=>{
+            if(id.startsWith("light.")){const [w,d,h]=FURNITURE_SIZE.lamp_bollard;floor.furniture.push({id:uid("furniture"),type:"lamp_bollard",x:placement.x,z:placement.z,w,d,h,rotation:0,variant:null,entity:id});}
+            else if(!this._doc.floors.some(f=>f.placements.some(p=>p.entity_id===id)))floor.placements.push(placement);
+          });this._outdoorDevice=null;
+        }}>Auf dieser Fläche platzieren</button>` : nothing}
       ${a.slope ? html`<p class="fp3d-sub">${this.t("outdoor_slope_hint")}</p>` : nothing}
       <p class="fp3d-sub">${this.t("outdoor_hint")}</p>
       ${a.type === "pool" ? this.renderPoolPro(a) : nothing}
@@ -9205,7 +9227,7 @@ export class Fp3dEditor extends LitElement {
   }
 
   private pergolaSpotSurface(a: OutdoorArea): SpotSurface {
-    return { id: a.id, points: a.points, pergola: a, floorId: this._floorId ?? undefined };
+    return { id: a.id, points: a.points, area_id: a.area_id, pergola: a, floorId: this._floorId ?? undefined };
   }
 
   private openSpotForm(room: SpotSurface): void {
@@ -9237,7 +9259,8 @@ export class Fp3dEditor extends LitElement {
     const f = this._spots;
     if (!f || f.target !== spotSurfaceKey(room)) return nothing;
     const count = spotGrid(room, f.rows, f.cols).length;
-    const lights = this.entityOptions((id) => /^(light|switch|input_boolean)\./.test(id));
+    const preferred = new Set(this.hass ? areaEntities(this.hass, room.area_id ?? null) : []);
+    const lights = this.entityOptions((id) => /^(light|switch|input_boolean)\./.test(id)).sort((a, b) => Number(preferred.has(b.id)) - Number(preferred.has(a.id)));
     const set = (patch: Partial<NonNullable<Fp3dEditor["_spots"]>>) => (this._spots = { ...f, ...patch });
     return html`<div class="fp3d-form fp3d-spot-form">
       <label class="fp3d-field fp3d-wide"
@@ -9283,6 +9306,10 @@ export class Fp3dEditor extends LitElement {
   }
 
   private entityOptions(filter: (id: string) => boolean) {
+    const item = this.furnitureItem;
+    const area = this.outdoorArea?.area_id ?? this.floor?.outdoor?.find(a => a.area_id && item && pointInPolygon([item.x,item.z],a.points))?.area_id;
+    const preferred = new Set(this.hass && area ? areaEntities(this.hass, area) : []);
+    const rank = (id: string) => item?.device_id && this.hass?.entities?.[id]?.device_id === item.device_id ? 0 : preferred.has(id) ? 1 : 2;
     const areaName = (id: string) => {
       const entry = this.hass?.entities?.[id];
       const area = entry?.area_id ?? (entry?.device_id ? this.hass?.devices?.[entry.device_id]?.area_id : null);
@@ -9291,7 +9318,7 @@ export class Fp3dEditor extends LitElement {
     return Object.keys(this.hass?.states ?? {})
       .filter(filter)
       .map((id) => ({ id, label: `${entityName(this.hass, id)}${areaName(id) ? ` · ${areaName(id)}` : ""}` }))
-      .sort((a, b) => a.label.localeCompare(b.label));
+      .sort((a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label));
   }
 
   private entitySelect(label: string, value: string | null, auto: string | null | undefined, options: { id: string; label: string }[], onChange: (v: string | null) => void) {
@@ -9630,6 +9657,7 @@ export class Fp3dEditor extends LitElement {
         ${this.num(this.t("furn_rotation_y"), f.rotation, (v) => this.updateFurniture({ rotation: ((v % 360) + 360) % 360 }), 1)}
         ${this.num(this.t("furn_rotation_x"), f.rotation_x ?? 0, (v) => this.updateFurniture({ rotation_x: ((v + 180) % 360 + 360) % 360 - 180 }), 1)}
         ${this.num(this.t("furn_rotation_z"), f.rotation_z ?? 0, (v) => this.updateFurniture({ rotation_z: ((v + 180) % 360 + 360) % 360 - 180 }), 1)}
+        ${isLamp(f.type) ? this.num("Lichtkegel-Öffnungswinkel (°)",f.beam_angle ?? 60,v=>{if(Number.isFinite(v)&&v>=5&&v<=160)this.updateFurniture({beam_angle:v});},1,5) : nothing}
         <button class="fp3d-btn fp3d-field-btn" ?disabled=${!admin} @click=${() => this.updateFurniture({ rotation: 0, rotation_x: 0, rotation_z: 0, ...(f.type === "led_strip" ? { tilt: 0, upright: false } : {}) })}>${this.t("furn_rotation_reset")}</button>
         ${isLamp(f.type)
           ? nothing
@@ -9650,6 +9678,9 @@ export class Fp3dEditor extends LitElement {
           : nothing}
       </div>
       <p class="fp3d-sub">${this.t("furn_rotation_hint")}</p>
+      ${f.surface_binding ? html`<p class="fp3d-sub">Gebunden an ${f.surface_binding.kind === "roof" ? "Dach" : "Pergola"} · ${f.surface_binding.id}</p>
+        <button class="fp3d-btn" ?disabled=${!admin} @click=${() => this.updateFurniture({ surface_binding: null, binding_warning: null })}>Bindung lösen</button>` : nothing}
+      ${f.binding_warning ? html`<p class="fp3d-warn">Flächenbindung gelöst: ${f.binding_warning === "surface_missing" ? "Zielfläche fehlt" : f.binding_warning === "surface_outside" ? "Leuchte liegt außerhalb der Fläche" : "Montagehöhe ungültig"}. Letzte gültige Position bleibt erhalten.</p>` : nothing}
       ${f.type === "stairs" ? html`<p class="fp3d-sub">${this.t("stairs_hint")}</p>` : nothing}
       ${f.type === "stairs_u" ? html`<p class="fp3d-sub">${this.t("stairs_u_hint")}</p>` : nothing}
       ${f.type === "stairwell"
@@ -9683,6 +9714,7 @@ export class Fp3dEditor extends LitElement {
           </div>`
         : nothing}
       ${isElectric(f.type) ? this.renderFurnitureLinks(f) : !NO_STATE_TYPES.has(f.type) ? html`<div class="fp3d-form fp3d-links">${this.renderStateLinks(f)}</div>` : nothing} ${f.type === "parking" ? this.renderParkingForm(f) : nothing}
+      ${this.renderCustomPackForm(f)}
       ${f.type.startsWith("pack:mastershort.vehicles:") && this.isAdmin
         ? html`<section>
             <p class="fp3d-sub">${this.t("vehicle_to_spot_hint")}</p>
@@ -9701,6 +9733,53 @@ export class Fp3dEditor extends LitElement {
           ${this.renderMultiToggle()}`
         : nothing}
     </section>`;
+  }
+
+  private renderCustomPackForm(f: Furniture) {
+    const item = packItem(f.type), variants = productVariants(f.type);
+    if (!item) return nothing;
+    const bind = (id: string, value: string | null) => {
+      const role=id==="main"?"entity":id;
+      const legacy=["entity","status","power","door_left","door_right"].includes(role) ? {[role]:value==="none"||value==null?"none":value} : {};
+      this.updateFurniture({bindings:{...f.bindings,[id]:value==="none"?null:value},...legacy});
+    };
+    const spotSet = (id: string, patch: NonNullable<Furniture["spot_config"]>[string]) => this.updateFurniture({ spot_config: { ...f.spot_config, [id]: { ...f.spot_config?.[id], ...patch } } });
+    const motionSet=(id:string,patch:NonNullable<Furniture["motion_config"]>[string])=>this.updateFurniture({motion_config:{...f.motion_config,[id]:{...f.motion_config?.[id],...patch}}});
+    return html`<div class="fp3d-form">
+      <label class="fp3d-field fp3d-wide">Home-Assistant-Gerät (Auswahlhilfe)
+        <select ?disabled=${!this.isAdmin} @change=${(e: Event) => this.updateFurniture({ device_id: (e.target as HTMLSelectElement).value || null })}>
+          <option value="" ?selected=${!f.device_id}>Alle Geräte und externe Helfer</option>
+          ${Object.values(this.hass?.devices ?? {}).sort((a,b)=>(a.name_by_user ?? a.name ?? a.id).localeCompare(b.name_by_user ?? b.name ?? b.id)).map(d=>html`<option value=${d.id} ?selected=${f.device_id===d.id}>${d.name_by_user ?? d.name ?? d.id}</option>`)}
+        </select>
+      </label>
+      ${variants.length ? html`<label class="fp3d-field fp3d-wide">Produktfarbe
+        <select ?disabled=${!this.isAdmin} @change=${(e: Event) => this.updateFurniture({ product_variant: (e.target as HTMLSelectElement).value || null })}>
+          <option value="" ?selected=${!f.product_variant}>${item.product?.label ?? "Pack-Standardfarbe"}</option>
+          ${variants.map(v=>html`<option value=${v.type} ?selected=${f.product_variant===v.type}>${v.item.product?.label}</option>`)}
+        </select></label>` : nothing}
+      ${(item.bindings ?? []).map(b=>this.entitySelect(b.label, f.bindings?.[b.id] ?? null, undefined, this.entityOptions(id=>{
+        const st=this.hass?.states[id], domain=id.split(".")[0];
+        return (!b.domains?.length || b.domains.includes(domain)) && (!b.device_classes?.length || b.device_classes.includes(String(st?.attributes.device_class ?? "")));
+      }),value=>bind(b.id,value)))}
+      ${(item.motions??[]).filter(m=>["door","window","slide"].includes(m.kind)).map(m=>html`<h4 class="fp3d-wide">Öffnung · ${m.id}</h4>
+        <label class="fp3d-check fp3d-wide"><input type="checkbox" .checked=${!!f.motion_config?.[m.id]?.contact_invert} ?disabled=${!this.isAdmin} @change=${(e:Event)=>motionSet(m.id,{contact_invert:(e.target as HTMLInputElement).checked})}>Kontakt umkehren</label>
+        ${m.kind==="slide" ? this.len("Schiebeweg (m)",f.motion_config?.[m.id]?.travel_m??(m.travel??1)*f.w,v=>{if(Number.isFinite(v)&&v>=0&&v<=10)motionSet(m.id,{travel_m:v});},0.01,0)
+          : this.num("Öffnungswinkel (°)",f.motion_config?.[m.id]?.angle??m.angle??Math.round((m.kind==="window"?OPEN_ANGLE:DOOR_ANGLE)*180/Math.PI*100)/100,v=>{if(Number.isFinite(v)&&v>=0&&v<=180)motionSet(m.id,{angle:v});},1,0)}
+        ${m.kind==="window"?this.num("Kippwinkel (°)",f.motion_config?.[m.id]?.tilt_angle??m.tilt_angle??Math.round(TILT_ANGLE*180/Math.PI*100)/100,v=>{if(Number.isFinite(v)&&v>=0&&v<=90)motionSet(m.id,{tilt_angle:v});},1,0):nothing}
+        <button class="fp3d-btn" ?disabled=${!this.isAdmin} @click=${()=>{const config={...f.motion_config};delete config[m.id];this.updateFurniture({motion_config:config});}}>Standardwerte übernehmen</button>`)}
+      ${(item.spots ?? []).map(s=>html`<h4 class="fp3d-wide">Strahler · ${s.id}</h4>
+        ${(["rotation_x","rotation_y","rotation_z"] as const).map((key,i)=>this.num(`Drehung ${["X","Y","Z"][i]} (°)`,f.spot_config?.[s.id]?.[key] ?? 0,v=>{if(Number.isFinite(v))spotSet(s.id,{[key]:Math.max(-360,Math.min(360,v))});},1))}
+        ${this.entitySelect("Eigene Lichtentität (sonst gemeinsame)",f.spot_config?.[s.id]?.entity ?? null,undefined,this.entityOptions(id=>id.startsWith("light.")),v=>spotSet(s.id,{entity:v==="none"?null:v}))}
+        ${this.num("Eigener Öffnungswinkel (°)",f.spot_config?.[s.id]?.beam_angle ?? f.beam_angle ?? s.angle ?? 60,v=>{if(Number.isFinite(v)&&v>=5&&v<=160)spotSet(s.id,{beam_angle:v});},1,5)}
+        <button class="fp3d-btn" ?disabled=${!this.isAdmin} @click=${()=>spotSet(s.id,{beam_angle:null})}>Öffnungswinkel erben</button>`)}
+      ${(item.motions?.length || item.displays?.length || item.parts.some(p=>p.status)) ? html`
+        <label class="fp3d-check fp3d-wide"><input type="checkbox" .checked=${this._doc.settings.pack_animations!==false} ?disabled=${!this.isAdmin} @change=${(e:Event)=>this.change(doc=>{doc.settings.pack_animations=(e.target as HTMLInputElement).checked;})}>Pack-Animationen global</label>
+        <label class="fp3d-check fp3d-wide"><input type="checkbox" .checked=${f.animations!==false} ?disabled=${!this.isAdmin} @change=${(e:Event)=>this.updateFurniture({animations:(e.target as HTMLInputElement).checked})}>Animationen für dieses Möbelstück</label>` : nothing}
+      ${item.parts.filter(p=>p.id && p.status?.colors).map(p=>html`<h4 class="fp3d-wide">Statusfarben · ${p.id}</h4>${Object.entries(p.status!.colors!).map(([state,color])=>html`
+        <label class="fp3d-field">${state}<input type="color" .value=${f.status_colors?.[p.id!]?.[state] ?? (color.startsWith("#")?color:"#37e0ff")} ?disabled=${!this.isAdmin}
+          @change=${(e:Event)=>this.updateFurniture({status_colors:{...f.status_colors,[p.id!]:{...f.status_colors?.[p.id!],[state]:(e.target as HTMLInputElement).value}}})}></label>`) }
+        <button class="fp3d-btn" ?disabled=${!this.isAdmin} @click=${()=>{const colors={...f.status_colors};delete colors[p.id!];this.updateFurniture({status_colors:colors});}}>Pack-Farben übernehmen</button>`)}
+    </div>`;
   }
 
   private setEnergy(patch: Partial<Building["energy"]>): void {

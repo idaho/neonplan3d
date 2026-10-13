@@ -1,0 +1,62 @@
+{
+  "upstream": "https://github.com/Mastershort/neonplan3d.git",
+  "upstreamBranch": "main",
+  "releaseApi": "https://api.github.com/repos/Mastershort/neonplan3d/releases/latest",
+  "customBranch": "custom",
+  "initialBase": "main",
+  "featureBranches": [
+    "feature/freeform-outdoor-roofs",
+    "feature/inventory-xyz-rotation",
+    "feature/split-level-rooms",
+    "feature/transparent-roofs",
+    "feature/room-height-offsets",
+    "feature/inventory-xyz-projection",
+    "feature/custom-features-complete"
+  ],
+  "stateDirectory": "private/update-automation",
+  "featureDefinitionsStatus": "approved_requirements_under_full_verification",
+  "customFeatureManifest": "docs/custom-features.json",
+  "customPackDirectory": "private/product-packs-v2",
+  "requiredCustomFeatures": ["xyz", "room_heights", "stair_offsets", "roof_contours", "surface_bindings", "outdoor_areas", "roof_effects", "pack_bindings", "pack_displays", "product_colors", "status_parts", "directed_lights", "pack_motions", "pack_shapes", "contact_shadows"],
+  "contracts": [
+    {
+      "feature": "Freie Dachkonturen und Spot-Raster",
+      "intent": "Konkave freie Dachkonturen fuer alle Dachformen, Solar-Flaechen begrenzen, Spot-Raster unter Dach/Per-gola. Freie Aussenflaechen und manuelle Spot-Hoehen sind teilweise bereits upstream vorhanden und duerfen nicht doppelt eingebaut oder zurueckgesetzt werden.",
+      "files": ["frontend/src/freeform.test.ts", "frontend/src/geometry/polygon.test.ts", "frontend/src/ceiling-spots.test.ts", "tests/test_freeform_schema.py"]
+    },
+    {
+      "feature": "XYZ-Inventarrotation",
+      "intent": "Rotation um alle drei Achsen speichern und rendern. Projizierte 2D-Huelle, proportionale Groessen-Griffe und Wandansicht beruecksichtigen XYZ; Kippen korrigiert Position oder Modellmasse nicht automatisch. Bestehende Y-Rotation und Pack-IDs bleiben kompatibel.",
+      "files": ["frontend/src/furniture-transform.test.ts", "frontend/src/geometry/wall-frame.test.ts", "frontend/src/viewer/furniture-rotation.test.ts", "tests/test_furniture_rotation.py"]
+    },
+    {
+      "feature": "Split-Level",
+      "intent": "Wandbeginn E, Bodenaufbau B und lichte Raumhoehe H getrennt: Wandunterkante F+E, Boden F+E+B, Decke F+E+B+H. Alte absolute elevation erhalten. Stufenversatz 0/positiv/negativ auf beiden Seiten, Anschlussflaechen und passende Bodenausschnitte; Anzahl und Lauftiefe bleiben unabhaengig.",
+      "files": ["frontend/src/room-levels.test.ts", "tests/test_room_levels.py"]
+    },
+    {
+      "feature": "Dachtransparenz, Dachfenster und Solar-Ausrichtung",
+      "intent": "Kameraseitige Dachflaechen ausblenden, Licht durch Dachfenster, konfigurierbare Fenster-Drehpunkte und gedrehte Solar-Ausrichtung erhalten.",
+      "files": ["frontend/src/viewer/roof-visibility.test.ts", "frontend/src/viewer/roof-sun.test.ts", "frontend/src/viewer/roof-window.test.ts", "frontend/src/viewer/solar-facing.test.ts", "tests/test_roof_windows.py"]
+    },
+    {
+      "feature": "Vollstaendiger Custom-Ausbau inklusive Moebelpacks",
+      "intent": "Alle bestaetigten Funktionen und Datenvertraege bei jedem Update von Original-main erhalten. Fehlende Funktionsvertraege und fehlgeschlagene Verhaltenstests verhindern ready.",
+      "files": ["docs/custom-features.json", "frontend/src/surface-binding.test.ts", "frontend/src/pack-runtime.test.ts", "frontend/src/viewer/custom-features.test.ts", "frontend/src/viewer/contact-shadows.test.ts", "tests/test_custom_packs.py", "scripts/upgrade-custom-packs.test.mjs"]
+    }
+  ],
+  "steps": [
+    { "name": "Frontend dependencies", "cwd": "frontend", "command": ["npm", "ci"] },
+    { "name": "Frontend typecheck", "cwd": "frontend", "command": ["npm", "run", "typecheck"] },
+    { "name": "Frontend tests", "cwd": "frontend", "command": ["npm", "test"] },
+    { "name": "Pack migration tests", "command": ["node", "--test", "scripts/upgrade-custom-packs.test.mjs"] },
+    { "name": "Frontend build and budgets", "cwd": "frontend", "command": ["npm", "run", "build"] },
+    { "name": "Python environment", "command": ["python3.13", "-m", "venv", ".venv"] },
+    { "name": "Python dependencies", "command": [".venv/bin/python", "-m", "pip", "install", "-r", "requirements_test.txt", "ruff", "mypy"] },
+    { "name": "Python lint", "command": [".venv/bin/python", "-m", "ruff", "check", "custom_components", "tests"] },
+    { "name": "Python formatting", "command": [".venv/bin/python", "-m", "ruff", "format", "--check", "custom_components", "tests"] },
+    { "name": "Python types", "command": [".venv/bin/python", "-m", "mypy", "custom_components/neonplan3d"] },
+    { "name": "Python tests", "command": [".venv/bin/python", "-m", "pytest", "-q"] },
+    { "name": "Signed custom packs and product geometries", "command": [".venv/bin/python", "scripts/check-custom-pack-exports.py", "{custom_packs}"] }
+  ]
+}

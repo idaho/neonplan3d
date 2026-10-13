@@ -7,9 +7,10 @@ import { Color } from "three";
 import type { Furniture, Vec2 } from "../model.ts";
 import { builtinBase, stairsULayout, POOL_VALVE_Y } from "../model.ts";
 import { rotateFurniturePositions } from "../furniture-transform.ts";
-import { mountBase, packItem, packScreen, type PackItem } from "../packs.ts";
+import { mountBase, packItem, packScreen, renderPackItem, type PackItem } from "../packs.ts";
 import type { Floor } from "../model.ts";
 import { ALWAYS, DEG, EDGE_TOP, GeoBuffer, LineBuffer, pushLoft, pushLyingCyl, pushPrism, shade } from "./geo.ts";
+import { packShape } from "./pack-shapes.ts";
 
 const C = {
   body: 0x172238,
@@ -48,6 +49,16 @@ class Builder {
     this.lines = lines;
     this.tf = tf;
     this.mirrored = tfMirrors(tf);
+  }
+
+  shape(p: PackItem["parts"][number], w: number, d: number, h: number, base: number, color: number): boolean {
+    const g = packShape(p,w,d,h);
+    if (!g) return false;
+    const flat=g.index ? g.toNonIndexed() : g, pos=flat.getAttribute("position"), col=new Color(color);
+    const at=(i: number) => { const [x,z]=this.tf(pos.getX(i),pos.getZ(i));return [x,base+pos.getY(i),z]; };
+    for(let i=0;i<pos.count;i+=3) this.buf.tri(at(i),at(i+(this.mirrored?2:1)),at(i+(this.mirrored?1:2)),col);
+    if(flat!==g)flat.dispose();g.dispose();
+    return true;
   }
 
   /** The same buffers with the local coordinates turned by `deg` around (cx, cz): turned parts of pack items. */
@@ -1363,7 +1374,7 @@ function buildFurniture(buf: GeoBuffer, lines: LineBuffer, shadow: GeoBuffer, f:
       if (f.variant === "wall") return;
       break;
     default: {
-      const item = packItem(f.type);
+      const item = renderPackItem(f);
       if (item) {
         packModel(b, item, w, d, h, base, null);
         // items on furniture, walls or ceilings cast no shadow on the floor
@@ -1383,9 +1394,11 @@ function packColor(value: string | undefined, top: boolean): number | null {
 }
 
 /** Model of a pack item: its parts scaled to the item's size; glowing parts take `glow` (a lit lamp). */
-function packModel(b: Builder, item: PackItem, w: number, d: number, h: number, base: number, glow: number | null, only: ((p: PackItem["parts"][number]) => boolean) | null = null): void {
+function packModel(b: Builder, item: PackItem, w: number, d: number, h: number, base: number, glow: number | null, only: ((p: PackItem["parts"][number]) => boolean) | null = null, dynamic = false): void {
   const onlyGlow = !!only;
+  const moving = new Set([...(item.motions ?? []),...(item.spots ?? [])].flatMap(m=>m.parts));
   for (const q of item.parts) {
+    if (!dynamic && !only && (q.visible===false || q.status || q.id && moving.has(q.id))) continue;
     // only some parts (the glowing ones of a speaker, a car's windows), a hair larger so they cover the item's own
     if (only && !only(q)) continue;
     const p = onlyGlow ? { ...q, glow: true, w: q.w + 0.006 / w, d: q.d + 0.006 / d, y: Math.max(0, q.y - 0.002 / h), h: q.h + 0.004 / h } : q;
@@ -1399,6 +1412,7 @@ function packModel(b: Builder, item: PackItem, w: number, d: number, h: number, 
     const edges = p.edges === "glow" ? EDGE_TOP : p.edges === "faint" ? EDGE_FAINT : p.edges ? EDGE_FURN : null;
     // a turned part draws through a builder whose coordinates turn around the part's centre
     const bb = p.rot ? b.rotated(p.x * w, p.z * d, p.rot) : b;
+    if (bb.shape(p,w,d,h,base,side)) continue;
     if (p.shape === "cyl" && (p.axis === "x" || p.axis === "z")) {
       bb.lyingCyl(p.axis, p.x * w, p.z * d, y0, y1, p.axis === "x" ? p.w * w : p.d * d, p.axis === "x" ? p.d * d : p.w * w, side, top, 14, edges);
     } else if (p.shape === "cyl") bb.cyl(p.x * w, p.z * d, (Math.min(p.w * w, p.d * d)) / 2, y0, y1, side, top, 14, edges);
@@ -1410,6 +1424,13 @@ function packModel(b: Builder, item: PackItem, w: number, d: number, h: number, 
       bb.loft([(p.x - p.w / 2) * w, (p.x + p.w / 2) * w, (p.z - p.d / 2) * d, (p.z + p.d / 2) * d], [(tx - tw / 2) * w, (tx + tw / 2) * w, (tz - td / 2) * d, (tz + td / 2) * d], y0, y1, side, top, edges);
     } else bb.box((p.x - p.w / 2) * w, (p.x + p.w / 2) * w, y0, y1, (p.z - p.d / 2) * d, (p.z + p.d / 2) * d, side, top, edges);
   }
+}
+
+/** Exact local geometry for declared moving/status parts; the outer object supplies XYZ and mirroring. */
+export function packPartGeometry(item: PackItem, f: Pick<Furniture,"w"|"d"|"h">): import("three").BufferGeometry {
+  const buf=new GeoBuffer();
+  packModel(new Builder(buf,new LineBuffer(),(x,z)=>[x,z]),item,f.w,f.d,f.h,0,null,null,true);
+  return buf.geometry();
 }
 
 /**

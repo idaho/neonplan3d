@@ -65,6 +65,7 @@ export class Floorplan3dPanel extends LitElement {
     _markers: { state: true },
     _heat: { state: true },
     _theme: { state: true },
+    _productColors: { state: true },
     _furnish: { state: true },
     _selFurniture: { state: true },
     _selDevice: { state: true },
@@ -102,6 +103,7 @@ export class Floorplan3dPanel extends LitElement {
   private declare _markers: MarkerMode;
   private declare _heat: HeatMode;
   private declare _theme: Theme;
+  private _productColors = false;
   private declare _furnish: boolean;
   private declare _selFurniture: string | null;
   private declare _selDevice: string | null;
@@ -176,6 +178,8 @@ export class Floorplan3dPanel extends LitElement {
 
   protected willUpdate(changed: PropertyValues): void {
     if (changed.has("hass") && this.hass) {
+      const previous = changed.get("hass") as HomeAssistant | undefined;
+      if (!previous || previous.user?.id !== this.hass.user?.id) this._productColors = prefs.get(`productColors.${this.hass.user?.id ?? "anonymous"}`) === "true";
       this.data.setHass(this.hass);
       this.tt.session?.setLive(this.hass);
     }
@@ -529,6 +533,10 @@ export class Floorplan3dPanel extends LitElement {
                       ${this.t(`theme_${t}`)}
                     </button>`,
                 )}
+                <button aria-pressed=${this._productColors} @click=${() => {
+                  this._productColors = !this._productColors;
+                  prefs.set(`productColors.${this.hass?.user?.id ?? "anonymous"}`, String(this._productColors));
+                }}>Produktfarben</button>
                 <label class="fp3d-accent-pick" title=${this.t("accent_hint")}>
                   <input
                     type="color"
@@ -802,6 +810,7 @@ export class Floorplan3dPanel extends LitElement {
           .markerMode=${this._markers}
           .heatMode=${this._heat}
           .theme=${this._theme}
+          .productColors=${this._productColors}
           .accent=${this._accent}
           ?furnish=${this._furnish && !tt}
           .selectedFurniture=${this._selFurniture}

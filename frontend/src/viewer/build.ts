@@ -14,6 +14,7 @@ import { Color, type BufferGeometry } from "three";
 import type { Floor, Opening, SolarField, Vec2 } from "../model.ts";
 import { roomLevel, roomLevelAt, floorTop, furnitureFootprint, isLamp, pointInPolygon, polygonArea, STAIR_TYPES } from "../model.ts";
 import { outsideBays, roomTransition, stairBays, stairOpeningBottom, subtractBay, wallLevels } from "../room-levels.ts";
+import { tiltedContactShadows } from "./contact-shadows.ts";
 import { generateWalls, locateOpening, openingHost, type Wall } from "../geometry/walls.ts";
 import { clipConvex, isConvex } from "../geometry/area.ts";
 import { holeInRoom, insetHole, mergeHoles } from "../geometry/holes.ts";
@@ -402,6 +403,7 @@ export function buildFloorGeometry(
 
   // ---------------------------------------------------------------- furniture and shadows
   const shadow = buildShadow(outline.edges, floor, spans);
+  tiltedContactShadows(shadow,floor,walls,openings,[...holes,...cutHoles],walls.map(w=>wallBucket.get(w)??0));
   pushOutdoor(wallBuf, lines, floor);
   for (const s of solar) pushModules(wallBuf, lines, s.face, s.field, floor.elevation);
 

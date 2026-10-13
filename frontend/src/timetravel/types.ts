@@ -21,6 +21,7 @@ export interface HistorySpec {
 
 /** The moment the view replays; handed to the 3D view (the same object for the whole session). */
 export interface ReplayInfo {
+  readonly playing?: boolean;
   /** The replayed moment (ms). */
   t: number;
   /** Counts jumps (scrubbing, events): doors and blinds stand at once instead of moving there. */

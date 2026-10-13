@@ -32,8 +32,7 @@ const SILL = 0x1c2a47;
 const BLIND_BOX = 0x16223a;
 const OPEN_WARM = 0xffb547;
 
-const OPEN_ANGLE = 1.2;
-const DOOR_ANGLE = 1.5;
+import { OPEN_ANGLE, DOOR_ANGLE, TILT_ANGLE } from "./opening-motion.ts";
 const LEAF = 0x1c2c4d;
 const LEAF_TOP = 0x27406b;
 const LEAF_FRONT = 0x111a30;
@@ -41,7 +40,6 @@ const LEAF_FRONT_TOP = 0x1c2a47;
 const HANDLE = 0x5b7cff;
 const HANDLE_TOP = 0x8aa2ff;
 const GLASS = shade(0x37e0ff, 0.08);
-const TILT_ANGLE = 0.2;
 
 type Tf = (x: number, n: number, y: number) => number[];
 

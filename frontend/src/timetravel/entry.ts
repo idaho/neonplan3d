@@ -134,6 +134,7 @@ export class Session implements TimeTravelSession {
     this.lastClosed = Number.isFinite(closed) && closed > 0 && closed < this.end ? closed : null;
     const session = this;
     this.replay = {
+      get playing() { return session.playing; },
       t: this.end,
       seek: 0,
       pulses: [],

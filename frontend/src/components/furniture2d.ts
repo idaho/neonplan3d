@@ -248,8 +248,10 @@ function packSymbol(item: PackItem, w: number, d: number): Part[] {
     );
   }
   return item.parts
-    .filter((p) => p.w < 0.98 || p.d < 0.98)
+    .filter((p) => p.visible!==false && (p.w < 0.98 || p.d < 0.98 || p.shape==="polygon"))
     .map((p) =>
+      p.shape==="polygon" ? svg`<polygon points=${(p.points??[]).map(([x,z])=>`${p.x*w+x*p.w*w},${p.z*d+z*p.d*d}`).join(" ")} />` :
+      ["sphere","ellipsoid","torus","bowl"].includes(p.shape) ? svg`<ellipse cx=${p.x*w} cy=${p.z*d} rx=${p.w*w/2} ry=${p.d*d/2} />` :
       p.shape === "cyl" && (p.axis ?? "y") === "y"
         ? circle(p.x * w, p.z * d, Math.min(p.w * w, p.d * d) / 2)
         : rect((p.x - p.w / 2) * w, (p.z - p.d / 2) * d, (p.x + p.w / 2) * w, (p.z + p.d / 2) * d),

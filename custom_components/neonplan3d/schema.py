@@ -273,6 +273,56 @@ _VEHICLE_TYPE_SCHEMA = vol.Schema(
 
 FURNITURE_SCHEMA = vol.Schema(
     {
+        vol.Optional("motion_config"): vol.All(
+            {
+                _ID: {
+                    vol.Optional("contact_invert"): bool,
+                    vol.Optional("tilt_invert"): bool,
+                    vol.Optional("tilt_max"): vol.All(vol.Coerce(float), _finite_number, vol.Range(min=1, max=90)),
+                    vol.Optional("angle"): vol.All(vol.Coerce(float), _finite_number, vol.Range(min=0, max=180)),
+                    vol.Optional("tilt_angle"): vol.All(vol.Coerce(float), _finite_number, vol.Range(min=0, max=90)),
+                    vol.Optional("travel_m"): vol.All(vol.Coerce(float), _finite_number, vol.Range(min=0, max=10)),
+                    vol.Optional("direction"): vol.In([-1, 1]),
+                }
+            },
+            vol.Length(max=20),
+        ),
+        vol.Optional("device_id"): vol.Any(None, vol.All(str, vol.Length(max=255))),
+        vol.Optional("bindings"): vol.All({_ID: vol.Any(None, vol.All(str, vol.Length(max=255)))}, vol.Length(max=40)),
+        vol.Optional("product_variant"): vol.Any(None, vol.All(str, vol.Length(max=96))),
+        vol.Optional("beam_angle"): vol.Any(
+            None, vol.All(vol.Coerce(float), _finite_number, vol.Range(min=5, max=160))
+        ),
+        vol.Optional("animations"): bool,
+        vol.Optional("status_colors"): vol.All(
+            {_ID: vol.All({vol.All(str, vol.Length(max=80)): vol.Match(r"^#[0-9a-fA-F]{6}$")}, vol.Length(max=40))},
+            vol.Length(max=60),
+        ),
+        vol.Optional("spot_config"): vol.All(
+            {
+                _ID: {
+                    vol.Optional("rotation_x"): _ANGLE,
+                    vol.Optional("rotation_y"): _ANGLE,
+                    vol.Optional("rotation_z"): _ANGLE,
+                    vol.Optional("entity"): vol.Any(None, vol.All(str, vol.Length(max=255))),
+                    vol.Optional("beam_angle"): vol.Any(
+                        None, vol.All(vol.Coerce(float), _finite_number, vol.Range(min=5, max=160))
+                    ),
+                }
+            },
+            vol.Length(max=30),
+        ),
+        vol.Optional("surface_binding"): vol.Any(
+            None,
+            {
+                vol.Required("kind"): vol.In(["roof", "pergola"]),
+                vol.Required("id"): _ID,
+                vol.Required("floor_id"): _ID,
+            },
+        ),
+        vol.Optional("binding_warning"): vol.Any(
+            None, vol.In(["surface_missing", "surface_outside", "surface_height"])
+        ),
         vol.Required("id"): _ID,
         # built-in type, or "pack:<pack id>:<item id>" for furniture from a pack
         vol.Required("type"): vol.All(str, vol.Length(max=96)),
@@ -485,6 +535,7 @@ OUTDOOR_TYPES = ["lawn", "terrace", "path", "driveway", "pool", "bed", "wild", "
 
 _OUTDOOR_FIELDS = vol.Schema(
     {
+        vol.Optional("area_id"): vol.Any(None, vol.All(str, vol.Length(max=255))),
         vol.Optional("freeform", default=False): bool,
         vol.Required("id"): _ID,
         vol.Required("type"): vol.In(OUTDOOR_TYPES),
@@ -716,6 +767,7 @@ FLOOR_SCHEMA = vol.Schema(
 
 SETTINGS_SCHEMA = vol.Schema(
     {
+        vol.Optional("pack_animations"): bool,
         vol.Required("wall_exterior"): vol.All(vol.Coerce(float), vol.Range(min=0.02, max=1)),
         vol.Required("wall_interior"): vol.All(vol.Coerce(float), vol.Range(min=0.02, max=1)),
         vol.Required("grid"): vol.All(vol.Coerce(float), vol.Range(min=0.01, max=1)),
