@@ -2958,7 +2958,7 @@ export class FloorplanViewer {
   }
 
   private buildOpenings(fv: FloorView): void {
-    const parts = buildOpeningParts(fv.geo.openings, fv.openings, Math.min(fv.floor.cut_height, floorTop(fv.floor) - fv.floor.elevation));
+    const parts = buildOpeningParts(fv.geo.openings, fv.openings, Math.min(fv.floor.cut_height, floorTop(fv.floor) - fv.floor.elevation),this.productColors);
     fv.frameTris = parts.frameTris;
     fv.glassTris = parts.glassTris;
     fv.blindTris = parts.blindTris;

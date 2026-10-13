@@ -5,6 +5,7 @@
 
 import { Color, type BufferGeometry } from "three";
 import { sidelightLayout, isFrontDoor, openingStyle } from "../model.ts";
+import { packItem } from '../packs.ts';
 import type { OpeningInfo } from "./build.ts";
 import { ALWAYS, GeoBuffer, shade } from "./geo.ts";
 
@@ -40,6 +41,15 @@ const LEAF_FRONT_TOP = 0x1c2a47;
 const HANDLE = 0x5b7cff;
 const HANDLE_TOP = 0x8aa2ff;
 const GLASS = shade(0x37e0ff, 0.08);
+export function visionSlot(width:number,height:number){
+  const w=Math.min(0.4,Math.max(0.02,width-0.12)),margin=Math.min(0.3,Math.max(0,(height-0.1)/2));
+  return {x0:(width-w)/2,x1:(width+w)/2,y0:margin,y1:height-margin};
+}
+function kitchenWoodColor():number{
+  const item=packItem('pack:local.v2.kuechenmoebel_farben:kitchen_dishwasher_panel_60');
+  const c=item?.parts.find(p=>p.id==='p003')?.color;
+  return c?.startsWith('#')?parseInt(c.slice(1),16):0xa47948;
+}
 
 type Tf = (x: number, n: number, y: number) => number[];
 
@@ -109,7 +119,7 @@ export interface OpeningParts {
   blindTris: { id: string; start: number; end: number }[];
 }
 
-export function buildOpeningParts(infos: readonly OpeningInfo[], states: ReadonlyMap<string, OpeningState>, cut: number): OpeningParts {
+export function buildOpeningParts(infos: readonly OpeningInfo[], states: ReadonlyMap<string, OpeningState>, cut: number,productColors=false): OpeningParts {
   const frames = new GeoBuffer();
   const glass = new GeoBuffer();
   const blinds = new GeoBuffer(true);
@@ -170,12 +180,12 @@ export function buildOpeningParts(infos: readonly OpeningInfo[], states: Readonl
       if (front) {
         // threshold across the wall, and a small light over the door outside
         splitBox(frames, tf, 0.02, W - 0.02, -info.faceOut - 0.02, info.faceRoom, 0, 0.02, new Color(SILL), frameTop, cut, bucket);
-        if (info.exterior) splitBox(frames, tf, W / 2 - 0.08, W / 2 + 0.08, -info.faceOut - 0.1, -info.faceOut, T + 0.1, T + 0.17, shade(OPEN_WARM, 0.55), shade(OPEN_WARM, 0.85), cut, ALWAYS);
+        if (info.exterior&&style!=='front_slot') splitBox(frames, tf, W / 2 - 0.08, W / 2 + 0.08, -info.faceOut - 0.1, -info.faceOut, T + 0.1, T + 0.17, shade(OPEN_WARM, 0.55), shade(OPEN_WARM, 0.85), cut, ALWAYS);
       }
       const leaves: [boolean, number][] = passage ? [] : [[info.hingeAtStart, st.open]];
       if (two && !passage) leaves.push([!info.hingeAtStart, st.open2 ?? 0]);
-      const glassSliding=style==="sliding_glass",sliding=style==="sliding"||glassSliding;
-      if(glassSliding){
+      const glassSliding=style==="sliding_glass",woodSliding=style==='sliding_wood',tracked=glassSliding||woodSliding,sliding=style==="sliding"||tracked;
+      if(tracked){
         const track=face+s*0.055;
         splitBox(frames,tf,x0-(info.hingeAtStart||two?lw:0),x1+(!info.hingeAtStart||two?lw:0),track-0.025,track+0.025,T+0.025,T+0.075,new Color(HANDLE),new Color(HANDLE_TOP),cut,bucket);
       }
@@ -186,15 +196,23 @@ export function buildOpeningParts(infos: readonly OpeningInfo[], states: Readonl
         const slide = sliding ? open * lw : 0;
         const leafTf: Tf = (u, n, y) => {
           const along = u * Math.cos(theta) - n * Math.sin(theta) - slide;
-          const nn = face + s * (n * Math.cos(theta) + u * Math.sin(theta) + (glassSliding ? 0.055 : slide ? 0.05 : 0));
+          const nn = face + s * (n * Math.cos(theta) + u * Math.sin(theta) + (tracked ? 0.055 : slide ? 0.05 : 0));
           return tf(atStart ? x0 + along : x1 - along, nn, y);
         };
         // an open leaf leaves its wall: keep it visible when the wall folds away
         const leafBucket = open > 0.05 ? ALWAYS : bucket;
         const warm = markClosed ? !!st.sensed && open < 0.05 : open > 0.9;
-        const leafC = warm ? shade(OPEN_WARM, 0.7) : new Color(front ? LEAF_FRONT : LEAF);
-        const leafTop = warm ? shade(OPEN_WARM, 0.9) : new Color(front ? LEAF_FRONT_TOP : LEAF_TOP);
-        if (style === "glass" || glassSliding) {
+        const wood=woodSliding&&productColors?kitchenWoodColor():null;
+        const leafC = wood!==null?new Color(wood):warm ? shade(OPEN_WARM, 0.7) : new Color(front ? LEAF_FRONT : LEAF);
+        const leafTop = wood!==null?shade(wood,1.1):warm ? shade(OPEN_WARM, 0.9) : new Color(front ? LEAF_FRONT_TOP : LEAF_TOP);
+        if(style==='front_slot'){
+          const slit=visionSlot(lw,T-S),y0=S+slit.y0,y1=S+slit.y1;
+          splitBox(frames,leafTf,0,slit.x0,-thick,0,0.01,T-0.01,leafC,leafTop,cut,leafBucket);
+          splitBox(frames,leafTf,slit.x1,lw,-thick,0,0.01,T-0.01,leafC,leafTop,cut,leafBucket);
+          splitBox(frames,leafTf,slit.x0,slit.x1,-thick,0,0.01,y0,leafC,leafTop,cut,leafBucket);
+          splitBox(frames,leafTf,slit.x0,slit.x1,-thick,0,y1,T-0.01,leafC,leafTop,cut,leafBucket);
+          panel(glass,leafTf,slit.x0,slit.x1,-thick/2,y0,y1,GLASS,cut,leafBucket);
+        }else if (style === "glass" || glassSliding) {
           // a glass door: slim stiles and rails around a pane
           splitBox(frames, leafTf, 0, 0.05, -thick, 0, 0.01, T - 0.01, leafC, leafTop, cut, leafBucket);
           splitBox(frames, leafTf, lw - 0.05, lw, -thick, 0, 0.01, T - 0.01, leafC, leafTop, cut, leafBucket);
@@ -205,12 +223,12 @@ export function buildOpeningParts(infos: readonly OpeningInfo[], states: Readonl
           splitBox(frames, leafTf, 0, lw, -thick, 0, 0.01, T - 0.01, leafC, leafTop, cut, leafBucket);
         }
         if (style === "front_glass") panel(glass, leafTf, 0.12, lw - 0.12, 0.001, T * 0.55, T - 0.18, GLASS, cut, leafBucket);
-        else if (front) panel(glass, leafTf, 0.1, 0.18, 0.001, 0.3, T - 0.3, GLASS, cut, leafBucket);
+        else if (front&&style!=='front_slot') panel(glass, leafTf, 0.1, 0.18, 0.001, 0.3, T - 0.3, GLASS, cut, leafBucket);
         // handle on both sides: a knob on a room door, a bar on a front door
         const hy = Math.min(1.05, T * 0.5);
-        const hh = front ? 0.3 : glassSliding ? 0.18 : 0.012;
-        const hx0 = front || glassSliding ? lw - 0.11 : lw - 0.16;
-        const hx1 = front || glassSliding ? lw - 0.08 : lw - 0.05;
+        const hh = front ? 0.3 : tracked ? 0.18 : 0.012;
+        const hx0 = front || tracked ? lw - 0.11 : lw - 0.16;
+        const hx1 = front || tracked ? lw - 0.08 : lw - 0.05;
         splitBox(frames, leafTf, hx0, hx1, 0.004, 0.05, hy - hh, hy + hh, new Color(HANDLE), new Color(HANDLE_TOP), cut, leafBucket);
         splitBox(frames, leafTf, hx0, hx1, -thick - 0.05, -thick - 0.004, hy - hh, hy + hh, new Color(HANDLE), new Color(HANDLE_TOP), cut, leafBucket);
       }

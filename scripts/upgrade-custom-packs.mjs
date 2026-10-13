@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { modernize } from './pack-round-shapes.mjs';
 import { addPhotoInventory } from './photo-kitchen-inventory.mjs';
+import { addHouseNumbers } from './house-numbers.mjs';
 
 const partId=i=>`p${String(i).padStart(3,"0")}`;
 const geometry=p=>Object.fromEntries(Object.entries(p).filter(([k])=>!["color","top","edges","glow","screen","id","status","visible"].includes(k)));
@@ -37,6 +38,20 @@ export function enrich(item,baseId=item.id){
       bind("remaining","Restlaufzeit",["sensor","input_number","number"]);
       item.displays=[{id:"remaining",kind:"duration",binding:"remaining",position:[screen.x,screen.y+screen.h/2,screen.z+screen.d/2+0.005],size:[screen.w,screen.h]}];
     }
+  }
+  if(baseId==='kitchen_dishwasher_panel_60'){
+    door('door',Array.from({length:10},(_,i)=>i+3),[0,0.0993377,0.4580645],'door','x',-1);
+    item.bindings.find(b=>b.id==='door').label='Spülmaschinentür';item.motions.find(m=>m.id==='door').angle=90;
+    const colored=item.parts[0].color.startsWith('#'),metal=colored?'#30383a':'dark';
+    Object.assign(item.parts[0],{z:-0.48,d:0.03,color:metal});
+    const shell=[{id:'dishwasher_side_left',x:-0.475,y:0.0883002,z:-0.0322581,w:0.05,h:0.8609272,d:0.88},
+      {id:'dishwasher_side_right',x:0.475,y:0.0883002,z:-0.0322581,w:0.05,h:0.8609272,d:0.88},
+      {id:'dishwasher_inner_bottom',x:0,y:0.0883002,z:-0.0322581,w:0.9,h:0.025,d:0.88}];
+    for(const p of shell){const part={shape:'box',...p,color:p.id.startsWith('dishwasher_side')?item.parts[3].color:metal,edges:false},i=item.parts.findIndex(old=>old.id===p.id);if(i<0)item.parts.push(part);else item.parts[i]=part;}
+    const lining=[{id:'dishwasher_door_lining',shape:'box',x:0,y:0.103,z:0.437,w:0.93,h:0.82,d:0.005,color:colored?'#a9b2b7':'metal'},
+      {id:'dishwasher_dispenser',shape:'rounded_box',x:0.22,y:0.42,z:0.427,w:0.22,h:0.12,d:0.018,radius:0.06,color:colored?'#6d7477':'dark'}];
+    for(const part of lining){const i=item.parts.findIndex(old=>old.id===part.id);if(i<0)item.parts.push(part);else item.parts[i]=part;item.motions.find(m=>m.id==='door').parts.push(part.id);}
+    for(const d of item.displays??[])d.parent='door';
   }
   // Model fronts face +z; pose() applies -angle*direction around the hinge.
   if(baseId==="samsung_rs80f65kdfef"){door("door_left",[1,4,5,6,7],[-0.496,0.5,0.457],"door","y",1);door("door_right",[2,8],[0.496,0.5,0.457],"door","y",-1);}
@@ -75,6 +90,7 @@ export function enrich(item,baseId=item.id){
 
 export function upgrade(source,map){
   const packs=structuredClone(source);map=addPhotoInventory(packs,structuredClone(map));
+  addHouseNumbers(packs,map);
   const byType=new Map(packs.flatMap(p=>p.items.map(i=>[`pack:${p.id}:${i.id}`,i])));
   let geometryChanges=0;
   for(const [base,colors] of Object.entries(map.neon_to_colors)){
@@ -107,7 +123,7 @@ export function run(args){
   const manifestPath=join(dir,"CUSTOM-FEATURES.json");
   if(existsSync(manifestPath)){
     const previous=JSON.parse(readFileSync(manifestPath,"utf8"));
-    if(previous.contract===8 && source.every((p,i)=>previous.payloadHashes?.[files[i]]===hash(p))){console.log(JSON.stringify({upToDate:true,packs:source.length}));return;}
+    if(previous.contract===11 && source.every((p,i)=>previous.payloadHashes?.[files[i]]===hash(p))){console.log(JSON.stringify({upToDate:true,packs:source.length}));return;}
   }
   const {packs,geometryChanges,mapping:updatedMapping}=upgrade(source,mapping);
   const modulePath=resolve(moduleArg);
@@ -117,7 +133,8 @@ export function run(args){
   try{
     execFileSync(python,["-c","import importlib.util,json,sys; s=importlib.util.spec_from_file_location('pack_schema',sys.argv[1]); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); ps=json.load(open(sys.argv[2])); [m.validate_payload(p) for p in ps]; json.dump([m.canonical(p).decode() for p in ps],open(sys.argv[3],'w'),ensure_ascii=False)",modulePath,checkFile,canonicalFile],{stdio:["ignore","pipe","pipe"],timeout:30000});
     signedBytes=JSON.parse(readFileSync(canonicalFile,"utf8"));
-  } finally{unlinkSync(checkFile);if(existsSync(canonicalFile))unlinkSync(canonicalFile);rmdirSync(checkDir);}
+  } catch(error){throw new Error(String(error.stderr??error.message));}
+  finally{unlinkSync(checkFile);if(existsSync(canonicalFile))unlinkSync(canonicalFile);rmdirSync(checkDir);}
   const privateKey=createPrivateKey(readFileSync(resolve(keyArg)));
   const pub=createPublicKey(privateKey).export({format:"der",type:"spki"}).subarray(-32),key=createHash("sha256").update(pub).digest("hex").slice(0,12);
   const backupParent=join(dir,"backups");mkdirSync(backupParent,{recursive:true});
@@ -135,7 +152,7 @@ export function run(args){
     writeFileSync(join(dir,exportDir,packName),JSON.stringify(signed)+"\n");
   }
   writeFileSync(join(dir,'VARIANTS.json'),JSON.stringify({...updatedMapping,updated:'2026-10-13'},null,2)+'\n');
-  writeFileSync(manifestPath,JSON.stringify({contract:8,version:2,packs:packs.length,geometryChanges,backup:basename(backup),publicKey:key,payloadHashes:Object.fromEntries(packs.map((p,i)=>[files[i],hash(p)]))},null,2)+"\n");
+  writeFileSync(manifestPath,JSON.stringify({contract:11,version:2,packs:packs.length,geometryChanges,backup:basename(backup),publicKey:key,payloadHashes:Object.fromEntries(packs.map((p,i)=>[files[i],hash(p)]))},null,2)+"\n");
   console.log(JSON.stringify({packs:packs.length,geometryChanges,backup}));
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))run(process.argv.slice(2));

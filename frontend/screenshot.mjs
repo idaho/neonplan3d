@@ -524,9 +524,21 @@ shots.push({name:'view-upward-spot-roof',query:'',width:1400,height:1000,editor:
   panel.hass={...panel.hass,states:{...panel.hass.states,'light.led_band':{entity_id:'light.led_band',state:'on',attributes:{brightness:255,rgb_color:[255,200,90]}}}};
   e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[{id:'up',name:'Spot unter Dach',area_id:null,points:[[0,0],[5,0],[5,5],[0,5]],floor_material:'wood'}];f.height=3;f.openings=[];f.outdoor=[];f.walls=[];f.placements=[];f.furniture=[{id:'up',type:'lamp_spot',x:2,z:2.5,w:0.15,d:0.15,h:0.2,mount_y:1.2,rotation:0,rotation_x:150,beam_angle:40,entity:'light.led_band',variant:null}];b.settings.roof.type='custom';b.settings.roof.sections=[{id:'roof',shape:'gable',axis:'x',x0:0,z0:0,x1:5,z1:5,eave_a:1.5,eave_b:1.5,pitch_a:35,pitch_b:35,base:1.5,overhang:0}];});e.fit();
 `});
+for(const style of ['front_slot','sliding_wood']){
+  const base=shots.find(s=>s.name==='editor-glass-sliding-door');
+  shots.push({...base,name:'editor-'+style,glassSlider:false,editorScript:base.editorScript+`const panel2=document.querySelector('neonplan3d-panel');panel2._productColors=true;e.change(b=>{const f=b.floors[0];f.rooms=[f.rooms[0]];Object.assign(f.openings[0],{style:'${style}',width:0.9,contact:'none',shut:true});b.settings.pets={on:false,list:[]};});`});
+}
 if(process.env.ROUND_PACK_DIR){
   const directory=resolve(process.env.ROUND_PACK_DIR);
   const load=category=>JSON.parse(readFileSync(join(directory,`v2.${category}_farben.json`),'utf8')).items;
+  const dishwasher=structuredClone(load('kuechenmoebel').find(i=>i.id==='kitchen_dishwasher_panel_60'));delete dishwasher.product;
+  shots.push({name:'pack-dishwasher-open',query:'',width:1200,height:900,editor:true,mockPrivatePacks:true,dishwasherOpen:true,shapePack:{id:'preview.dishwasher',name:'Spülmaschine',publisher:'Preview',items:[dishwasher]},then3d:'Erdgeschoss',camera:{theta:0.3,phi:0.9,radius:3.5,target:{x:1,y:0.4,z:1.2}},editorScript:`
+    const panel=document.querySelector('neonplan3d-panel');panel.hass={...panel.hass,states:{...panel.hass.states,'binary_sensor.preview_dishwasher':{entity_id:'binary_sensor.preview_dishwasher',state:'on',attributes:{device_class:'door'}}}};
+    e.change(b=>{b.floors=[b.floors[0]];b.settings.pets={on:false,list:[]};b.settings.roof.type='none';const f=b.floors[0];f.rooms=[{id:'dish',name:'Spülmaschine',area_id:null,points:[[0,0],[2,0],[2,3],[0,3]],floor_material:'wood'}];f.furniture=[{id:'dish',type:'pack:preview.dishwasher:kitchen_dishwasher_panel_60',x:1,z:1,w:0.6,d:0.62,h:0.906,rotation:0,variant:null,animations:false,bindings:{door:'binary_sensor.preview_dishwasher'}}];f.outdoor=[];f.openings=[];f.walls=[];f.placements=[];});e.fit();
+  `});
+  const numbers=load('tueren_fenster').filter(i=>i.id.startsWith('house_number_')).map(i=>{const item=structuredClone(i);delete item.product;return item;});
+  const numberFurniture=numbers.map((i,n)=>({id:i.id,type:'pack:preview.numbers:'+i.id,x:0.5+(n%5)*0.6,z:0.5+Math.floor(n/5)*0.8,w:i.size[0]*4,d:i.size[1]*4,h:i.size[2]*4,rotation:0,variant:null,mount_y:0}));
+  shots.push({name:'pack-house-numbers',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,shapePack:{id:'preview.numbers',name:'Hausnummern',publisher:'Preview',items:numbers},then3d:'Erdgeschoss',camera:{theta:0.05,phi:1.0,radius:4.8,target:{x:1.7,y:0.3,z:1.4}},editorScript:`e.change(b=>{b.floors=[b.floors[0]];b.settings.pets={on:false,list:[]};b.settings.roof.type='none';const f=b.floors[0];f.rooms=[{id:'numbers',name:'Hausnummern · Vorschau vergrößert',area_id:null,points:[[0,0],[3.5,0],[3.5,3],[0,3]],floor_material:'concrete'}];f.furniture=${JSON.stringify(numberFurniture)};f.outdoor=[];f.openings=[];f.walls=[];f.placements=[];});e.fit();`});
   for(const [category,id,scale] of [['kuechenzubehoer','ikea_snudda_39',2],['haustechnik','wall_thermostat_white_grey',10]])for(const colored of [false,true]){
     const pack=JSON.parse(readFileSync(join(directory,`v2.${category}${colored?'_farben':''}.json`),'utf8'));
     const item=structuredClone(pack.items.find(i=>i.id===id||i.id.startsWith(id+'__')));delete item.product;
@@ -1136,17 +1148,32 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       const e=document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');
       const settle=async()=>{await e.updateComplete;await new Promise(r=>setTimeout(r,80));};
       for(const type of ['stairs','stairs_u']){
-        e.selectItem('furniture',type);await settle();const before=structuredClone(e.floor.furniture.find(f=>f.id===type));
+        e.selectItem('furniture',type);await settle();
+        for(const value of [0.6,-0.4]){
+        const before=structuredClone(e.floor.furniture.find(f=>f.id===type));
         const input=[...e.shadowRoot.querySelectorAll('label.fp3d-field')].find(l=>l.textContent.trim().startsWith(e.t('mount_height')))?.querySelector('input');
         if(!input)throw new Error(type+' has no vertical position field');
-        input.value='0.6';input.dispatchEvent(new Event('change',{bubbles:true}));await settle();
+        input.value=String(value);input.dispatchEvent(new Event('change',{bubbles:true}));await settle();
         const f=e.floor.furniture.find(f=>f.id===type);
-        if(f.mount_y!==0.6||f.x!==before.x||f.z!==before.z||f.h!==before.h)throw new Error('Stair height control changed the wrong coordinates');
-        e.undo();await settle();if(e.floor.furniture.find(f=>f.id===type).mount_y!=null)throw new Error('Vertical stair undo failed');
-        e.redo();await settle();if(e.floor.furniture.find(f=>f.id===type).mount_y!==0.6)throw new Error('Vertical stair redo failed');
+        if(f.mount_y!==value||f.x!==before.x||f.z!==before.z||f.h!==before.h)throw new Error('Stair height control changed the wrong coordinates');
+        e.undo();await settle();if((e.floor.furniture.find(f=>f.id===type).mount_y??null)!==(before.mount_y??null))throw new Error('Vertical stair undo failed');
+        e.redo();await settle();if(e.floor.furniture.find(f=>f.id===type).mount_y!==value)throw new Error('Vertical stair redo failed');
+        }
       }
     });
     console.log('verified standard straight/U stair height fields and undo/redo without changing X/Z or model height');
+  }
+  if(shot.dishwasherOpen){
+    await page.evaluate(()=>{
+      const view=document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-view3d');
+      const item=[...view.viewer.customLayers.values()].flatMap(l=>l.items).find(i=>i.f.id==='dish'),motion=item?.motions.find(m=>m.definition.id==='door');
+      if(!motion||motion.shown!==1)throw new Error('Dishwasher did not open');
+      motion.group.updateWorldMatrix(true,false);
+      const hinge=motion.group.localToWorld(motion.group.position.clone().set(0,0,0));
+      const top=motion.group.localToWorld(motion.group.position.clone().set(0,0.7,0));
+      if(top.z<hinge.z+0.69||Math.abs(top.y-hinge.y)>0.001)throw new Error('Dishwasher did not fold forward and down');
+      if(!item.parts.some(p=>p.part.id==='p006'&&p.mesh.parent===motion.group))throw new Error('Control panel lost its door attachment');
+    });console.log('verified dishwasher folds forward/down with its control panel');
   }
   if(shot.fridgesForward){
     await page.evaluate(()=>{

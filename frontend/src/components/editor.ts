@@ -69,6 +69,7 @@ import {
   FURNITURE_SIZE,
   FURNITURE_TYPES,
   canLift,
+  minMountHeight,
   isFixed,
   isLamp,
   LAMP_MODEL,
@@ -888,11 +889,11 @@ export class Fp3dEditor extends LitElement {
                 type=${this.unit === "imperial" ? "text" : "number"}
                 inputmode="decimal"
                 step="0.05"
-                min="0"
+                min=${minMountHeight(f)}
                 .value=${this.unit === "imperial" ? formatImperial(f.mount_y ?? (mountBase(this.floor!, f) - roomLevelAt(this.floor!, f.x, f.z))) : String(Math.round((f.mount_y ?? (mountBase(this.floor!, f) - roomLevelAt(this.floor!, f.x, f.z))) * 100) / 100)}
                 @change=${(e: Event) => {
                   const v = this.readLen((e.target as HTMLInputElement).value);
-                  if (v !== null && v >= 0) this.updateFurniture({ mount_y: Math.round(Math.min(MAX_MOUNT_Y, v) * 1000) / 1000 });
+                  if (v !== null && v >= minMountHeight(f)) this.updateFurniture({ mount_y: Math.round(Math.min(MAX_MOUNT_Y, v) * 1000) / 1000 });
                 }}
               />
             </label>`
@@ -5832,7 +5833,7 @@ export class Fp3dEditor extends LitElement {
         for (const m of floor.furniture) {
           if (!set.has(m.id)) continue;
           Object.assign(m, slideAlong(frame, m, ds));
-          if (dy !== null && canLift(m)) m.mount_y = Math.round(Math.min(MAX_MOUNT_Y, Math.max(0, mountBase(floor, m) - roomLevelAt(floor, m.x, m.z) + dy)) * 1000) / 1000;
+          if (dy !== null && canLift(m)) m.mount_y = Math.round(Math.min(MAX_MOUNT_Y, Math.max(minMountHeight(m), mountBase(floor, m) - roomLevelAt(floor, m.x, m.z) + dy)) * 1000) / 1000;
         }
       },
       base,
@@ -6130,7 +6131,7 @@ export class Fp3dEditor extends LitElement {
         const m = floor.furniture.find((x) => x.id === id);
         if (!m) return;
         Object.assign(m, slideAlong(frame, m, ds));
-        if (y0 !== null) m.mount_y = Math.round(Math.min(MAX_MOUNT_Y, Math.max(0, y0 - furnitureHeightBounds(m)[0])) * 1000) / 1000;
+        if (y0 !== null) m.mount_y = Math.round(Math.min(MAX_MOUNT_Y, Math.max(minMountHeight(m), y0 - furnitureHeightBounds(m)[0])) * 1000) / 1000;
       },
       base,
       history,
@@ -6162,7 +6163,7 @@ export class Fp3dEditor extends LitElement {
           if (upper - lower < 0.03 || top - bottom < 1e-6) return;
           const scale = (upper - lower) / (top - bottom);
           m.w *= scale; m.d *= scale; m.h *= scale;
-          m.mount_y = Math.max(0, lower - furnitureHeightBounds(m)[0]);
+          m.mount_y = Math.max(minMountHeight(m), lower - furnitureHeightBounds(m)[0]);
           return;
         }
         const axis = this.alongAxis(frame, m);
@@ -6178,7 +6179,7 @@ export class Fp3dEditor extends LitElement {
           const nt = y1 ?? bottom + m.h;
           if (nt - nb < 0.03) return;
           m.h = round(nt - nb);
-          if (y0 !== null && canLift(m)) m.mount_y = round(Math.max(0, nb));
+          if (y0 !== null && canLift(m)) m.mount_y = round(Math.max(minMountHeight(m), nb));
         }
       },
       base,
@@ -9186,7 +9187,7 @@ export class Fp3dEditor extends LitElement {
         symbol = svg`${paneLines}${
           style === "passage"
             ? svg`<line class="fp3d-open-passage" x1=${q(p0, mid)[0]} y1=${q(p0, mid)[1]} x2=${q(p1, mid)[0]} y2=${q(p1, mid)[1]} />`
-            : style === "sliding" || style === "sliding_glass"
+            : style === "sliding" || style === "sliding_glass" || style === "sliding_wood"
             ? svg`<line x1=${q(l0, face)[0]} y1=${q(l0, face)[1]} x2=${q(l1, face)[0]} y2=${q(l1, face)[1]} />`
             : two
               ? svg`${arc(l0, midP)}${arc(l1, midP)}`
@@ -10221,7 +10222,7 @@ export class Fp3dEditor extends LitElement {
               >`
           : nothing}
         ${canLift(f) && this.floor
-          ? html`${this.len(this.t("mount_height"), f.mount_y ?? (mountBase(this.floor, f) - roomLevelAt(this.floor, f.x, f.z)), (v) => this.updateFurniture({ mount_y: Math.min(MAX_MOUNT_Y, Math.max(0, v)) }), 0.01, 0)}
+          ? html`${this.len(this.t("mount_height"), f.mount_y ?? (mountBase(this.floor, f) - roomLevelAt(this.floor, f.x, f.z)), (v) => this.updateFurniture({ mount_y: Math.min(MAX_MOUNT_Y, Math.max(minMountHeight(f), v)) }), 0.01, minMountHeight(f))}
               ${f.mount_y != null ? html`<button class="fp3d-btn fp3d-field-btn" ?disabled=${!admin} @click=${() => this.updateFurniture({ mount_y: null })}>${this.t("height_auto")}</button>` : nothing}`
           : nothing}
       </div>

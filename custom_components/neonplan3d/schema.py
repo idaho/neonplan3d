@@ -168,11 +168,13 @@ _OPENING_STYLES = [
     "interior",
     "front",
     "front_glass",
+    "front_slot",
     "sidelight",
     "sidelights",
     "glass",
     "sliding",
     "sliding_glass",
+    "sliding_wood",
     "passage",
 ]
 _OPENING_STYLES += ["standard", "bars", "glass_wall"]
@@ -384,7 +386,9 @@ FURNITURE_SCHEMA = vol.Schema(
         # parking spots: the vehicle shown (a pack item type) while the entity reports a car, its size
         # factor, and a sensor naming the kind of vehicle with a state -> vehicle mapping
         # height of the bottom edge above the floor (None = default: the floor, a pack item's mount)
-        vol.Optional("mount_y", default=None): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0, max=10))),
+        vol.Optional("mount_y", default=None): vol.Any(
+            None, vol.All(vol.Coerce(float), _finite_number, vol.Range(min=-10, max=10))
+        ),
         # any furniture: an entity whose state the item shows (glows while on / occupied / home), optionally
         # two of them for the halves of a bed (left/right) or a bunk bed (bottom/top)
         vol.Optional("state_entity", default=None): vol.Any(None, vol.All(str, vol.Length(max=255))),

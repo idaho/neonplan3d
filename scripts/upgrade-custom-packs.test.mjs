@@ -3,7 +3,20 @@ import { test } from "node:test";
 import { upgrade, enrich } from "./upgrade-custom-packs.mjs";
 import { modernize, winderPoints } from './pack-round-shapes.mjs';
 import { snudda, photoThermostat, addPhotoInventory } from './photo-kitchen-inventory.mjs';
+import { houseNumber } from './house-numbers.mjs';
 const part={shape:"box",x:0,z:0,y:0,w:1,d:1,h:1,color:"body"};
+test('house numbers 0-9 and lowercase a-c use bounded geometry in both appearances',()=>{
+  for(const character of '0123456789abc'){
+    const n=houseNumber(character),c=houseNumber(character,true);assert.ok(n.parts.length<=60);assert.equal(n.mount,'wall');
+    assert.deepEqual(n.parts.map(({color,...p})=>p),c.parts.map(({color,...p})=>p));assert.deepEqual(n.size,c.size);
+  }
+});
+test('dishwasher bottom-hinged door opens forward and down, without moving its countertop',()=>{
+  const item=enrich({id:'kitchen_dishwasher_panel_60',parts:Array.from({length:33},()=>({...part})),displays:[{id:'value'}]});
+  const motion=item.motions.find(m=>m.id==='door'),angle=-motion.angle*Math.PI/180*motion.direction;
+  assert.equal(motion.axis,'x');assert.ok(Math.sin(angle)*0.7>0.69);assert.ok(Math.abs(Math.cos(angle)*0.7)<1e-8);
+  assert.ok(!motion.parts.includes('p002'));assert.ok(motion.parts.includes('p006'));assert.equal(item.displays[0].parent,'door');
+});
 test('SNUDDA and photo thermostat have matching neon/product geometry and sensor-ready displays',()=>{
   for(const factory of [snudda,photoThermostat]){
     const a=factory(false),b=factory(true);

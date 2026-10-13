@@ -12,6 +12,25 @@ from custom_components.neonplan3d.schema import (
 ROOM = {"id": "r1", "name": "Bad", "area_id": None, "points": [[0, 0], [2, 0], [2, 2]], "floor_material": "tiles"}
 
 
+def test_stair_negative_height_and_new_standard_door_styles() -> None:
+    f = {
+        "id": "s",
+        "type": "stairs",
+        "x": 1,
+        "z": 2,
+        "w": 1,
+        "d": 3,
+        "h": 2.4,
+        "rotation": 0,
+        "variant": None,
+        "mount_y": -0.6,
+    }
+    assert FURNITURE_SCHEMA(f)["mount_y"] == -0.6
+    door = {"id": "d", "room_id": "r1", "edge": 0, "offset": 1, "width": 0.9, "type": "door", "sill": 0, "height": 2.1}
+    for style in ("front_slot", "sliding_wood"):
+        assert OPENING_SCHEMA({**door, "style": style})["style"] == style
+
+
 def test_glass_sliding_door_is_an_opening_not_furniture() -> None:
     door = {
         "id": "glass-slide",

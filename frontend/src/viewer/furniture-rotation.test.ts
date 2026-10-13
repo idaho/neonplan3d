@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { canLift, FURNITURE_TYPES, LAMP_MODEL, newFloor, type Furniture } from "../model.ts";
+import { canLift, minMountHeight, FURNITURE_TYPES, LAMP_MODEL, newFloor, type Furniture } from "../model.ts";
 import { mountBase, setPacks, type PackItem } from "../packs.ts";
 import { stairHoles } from './build.ts';
 import { furnitureTransform } from "../furniture-transform.ts";
@@ -11,6 +11,20 @@ import { pushLampModel } from "./viewer3d.ts";
 const base = 1.2;
 const plain: Furniture = { id: "f", type: "shelf", x: 3, z: 4, rotation: 37, w: 1.2, d: 0.5, h: 0.8, variant: null };
 const tilted = { rotation_x: 65, rotation_z: -40 };
+test('standard stairs accept a negative vertical start without moving X/Z or changing height',()=>{
+  const floor=newFloor('f','f',0);
+  for(const type of ['stairs','stairs_u']){
+    const f={...plain,type,mount_y:-0.6};assert.equal(minMountHeight(f),-10);assert.equal(mountBase(floor,f),-0.6);
+    const before=new GeoBuffer(),after=new GeoBuffer();pushFurniture(before,new LineBuffer(),new GeoBuffer(),f,0);pushFurniture(after,new LineBuffer(),new GeoBuffer(),f,mountBase(floor,f));
+    before.p.forEach((p,i)=>assert.ok(Math.abs(after.p[i]-p-(i%3===1?-0.6:0))<1e-8));
+  }
+  assert.equal(minMountHeight({type:'chair'}),0);
+});
+test('a glowing moving appliance panel is not duplicated at its closed position',()=>{
+  const moving:PackItem={...item,parts:[{...item.parts[0],id:'door_panel',glow:true}],motions:[{id:'door',kind:'door',axis:'x',pivot:[0,0,0],parts:['door_panel']}]};
+  const ghost=new GeoBuffer();pushPackGlow(ghost,moving,plain,0,0x37e0ff);assert.equal(ghost.count,0);
+  const staticGlow=new GeoBuffer();pushPackGlow(staticGlow,{...moving,motions:[]},plain,0,0x37e0ff);assert.ok(staticGlow.count>0);
+});
 test('standard straight and U stairs move vertically without changing their footprint or height',()=>{
   const floor=newFloor('f','f',0),above=newFloor('above','above',3);
   for(const type of ['stairs','stairs_u']){

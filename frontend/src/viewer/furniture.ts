@@ -1417,7 +1417,9 @@ function packModel(b: Builder, item: PackItem, w: number, d: number, h: number, 
   const onlyGlow = !!only;
   const moving = new Set([...(item.motions ?? []),...(item.spots ?? [])].flatMap(m=>m.parts));
   for (const q of item.parts) {
-    if (!dynamic && !only && (q.visible===false || q.status || q.id && moving.has(q.id))) continue;
+    // Dynamic parts (including glowing control panels) belong exclusively to
+    // CustomPackLayer; otherwise an opened appliance leaves a closed-position ghost.
+    if (!dynamic && (q.visible===false || q.status || q.id && moving.has(q.id))) continue;
     // only some parts (the glowing ones of a speaker, a car's windows), a hair larger so they cover the item's own
     if (only && !only(q)) continue;
     const p = onlyGlow ? { ...q, glow: true, w: q.w + 0.006 / w, d: q.d + 0.006 / d, y: Math.max(0, q.y - 0.002 / h), h: q.h + 0.004 / h } : q;

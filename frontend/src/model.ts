@@ -1182,6 +1182,8 @@ export function spotDepth(type: string, h: number): number {
 
 /** Built-in stairs: they reach up to the next floor and cut its opening (the straight one and the U-stair). */
 export const STAIR_TYPES = new Set<string>(["stairs", "stairs_u"]);
+/** Stair starts may lie below the finished room floor; other furniture keeps its usual lower limit. */
+export function minMountHeight(f: Pick<Furniture,"type">):number { return STAIR_TYPES.has(f.type)?-10:0; }
 
 /**
  * Layout of the built-in U-stair (w × d, height h): n risers of equal height, the landing at the back is
@@ -1407,7 +1409,7 @@ export const OPENING_DEFAULTS = {
 
 /** Kinds of openings offered when placing one; a terrace door is a window down to the floor. */
 /** Door looks: room doors, front doors (with glass, one or two sidelights), a glass door, a sliding door. */
-export const DOOR_STYLES = ["interior", "front", "front_glass", "sidelight", "sidelights", "glass", "sliding", "sliding_glass", "passage"] as const;
+export const DOOR_STYLES = ["interior", "front", "front_glass", "front_slot", "sidelight", "sidelights", "glass", "sliding", "sliding_glass", "sliding_wood", "passage"] as const;
 /** "glass_wall": fixed floor-to-ceiling glazing without sashes, slim mullions (an indoor glass wall, #163). */
 export const WINDOW_STYLES = ["standard", "bars", "glass_wall"] as const;
 export type OpeningStyle = (typeof DOOR_STYLES)[number] | (typeof WINDOW_STYLES)[number];
@@ -1452,7 +1454,7 @@ export function sidelightLayout(
 
 /** A front door look (thick leaf, threshold, light above it). */
 export function isFrontDoor(style: OpeningStyle): boolean {
-  return style === "front" || style === "front_glass" || style === "sidelight" || style === "sidelights";
+  return style === "front" || style === "front_glass" || style === "front_slot" || style === "sidelight" || style === "sidelights";
 }
 
 export const OPENING_PRESETS = {
