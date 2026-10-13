@@ -5,6 +5,7 @@ import { createPrivateKey, createPublicKey, createHash, sign } from "node:crypto
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { modernize } from './pack-round-shapes.mjs';
+import { addPhotoInventory } from './photo-kitchen-inventory.mjs';
 
 const partId=i=>`p${String(i).padStart(3,"0")}`;
 const geometry=p=>Object.fromEntries(Object.entries(p).filter(([k])=>!["color","top","edges","glow","screen","id","status","visible"].includes(k)));
@@ -73,7 +74,8 @@ export function enrich(item,baseId=item.id){
 }
 
 export function upgrade(source,map){
-  const packs=structuredClone(source),byType=new Map(packs.flatMap(p=>p.items.map(i=>[`pack:${p.id}:${i.id}`,i])));
+  const packs=structuredClone(source);map=addPhotoInventory(packs,structuredClone(map));
+  const byType=new Map(packs.flatMap(p=>p.items.map(i=>[`pack:${p.id}:${i.id}`,i])));
   let geometryChanges=0;
   for(const [base,colors] of Object.entries(map.neon_to_colors)){
     const neo=byType.get(base),variants=colors.map(type=>byType.get(type));
@@ -92,7 +94,7 @@ export function upgrade(source,map){
     for(const item of p.items){const type=`pack:${p.id}:${item.id}`,base=map.color_to_neon[type]??type;enrich(item,base.split(":").at(-1));modernize(item,base.split(':').at(-1));}
     if(canonical(p)!==before)p.release=(p.release??1)+1;
   }
-  return {packs,geometryChanges};
+  return {packs,geometryChanges,mapping:map};
 }
 
 export function run(args){
@@ -105,9 +107,9 @@ export function run(args){
   const manifestPath=join(dir,"CUSTOM-FEATURES.json");
   if(existsSync(manifestPath)){
     const previous=JSON.parse(readFileSync(manifestPath,"utf8"));
-    if(previous.contract===6 && source.every((p,i)=>previous.payloadHashes?.[files[i]]===hash(p))){console.log(JSON.stringify({upToDate:true,packs:source.length}));return;}
+    if(previous.contract===8 && source.every((p,i)=>previous.payloadHashes?.[files[i]]===hash(p))){console.log(JSON.stringify({upToDate:true,packs:source.length}));return;}
   }
-  const {packs,geometryChanges}=upgrade(source,mapping);
+  const {packs,geometryChanges,mapping:updatedMapping}=upgrade(source,mapping);
   const modulePath=resolve(moduleArg);
   const checkDir=mkdtempSync(join(tmpdir(),"neon-pack-validate-")),checkFile=join(checkDir,"payloads.json"),canonicalFile=join(checkDir,"canonical.json");
   writeFileSync(checkFile,JSON.stringify(packs));
@@ -120,6 +122,7 @@ export function run(args){
   const pub=createPublicKey(privateKey).export({format:"der",type:"spki"}).subarray(-32),key=createHash("sha256").update(pub).digest("hex").slice(0,12);
   const backupParent=join(dir,"backups");mkdirSync(backupParent,{recursive:true});
   const backup=mkdtempSync(join(backupParent,"custom-features-"));
+  copyFileSync(join(dir,'VARIANTS.json'),join(backup,'VARIANTS.json'));
   for(let i=0;i<packs.length;i++){
     const p=packs[i],name=files[i],exportDir=p.id.endsWith("_farben")?"color":"neon",packName=name.replace(/\.json$/,".fp3dpack");
     for(const relative of [name,name.replace(/\.json$/,".canonical.json"),join(exportDir,packName)]){
@@ -131,7 +134,8 @@ export function run(args){
     writeFileSync(join(dir,name.replace(/\.json$/,".canonical.json")),bytes+"\n");
     writeFileSync(join(dir,exportDir,packName),JSON.stringify(signed)+"\n");
   }
-  writeFileSync(manifestPath,JSON.stringify({contract:6,version:2,packs:packs.length,geometryChanges,backup:basename(backup),publicKey:key,payloadHashes:Object.fromEntries(packs.map((p,i)=>[files[i],hash(p)]))},null,2)+"\n");
+  writeFileSync(join(dir,'VARIANTS.json'),JSON.stringify({...updatedMapping,updated:'2026-10-13'},null,2)+'\n');
+  writeFileSync(manifestPath,JSON.stringify({contract:8,version:2,packs:packs.length,geometryChanges,backup:basename(backup),publicKey:key,payloadHashes:Object.fromEntries(packs.map((p,i)=>[files[i],hash(p)]))},null,2)+"\n");
   console.log(JSON.stringify({packs:packs.length,geometryChanges,backup}));
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))run(process.argv.slice(2));

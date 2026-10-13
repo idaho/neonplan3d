@@ -2,7 +2,25 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { upgrade, enrich } from "./upgrade-custom-packs.mjs";
 import { modernize, winderPoints } from './pack-round-shapes.mjs';
+import { snudda, photoThermostat, addPhotoInventory } from './photo-kitchen-inventory.mjs';
 const part={shape:"box",x:0,z:0,y:0,w:1,d:1,h:1,color:"body"};
+test('SNUDDA and photo thermostat have matching neon/product geometry and sensor-ready displays',()=>{
+  for(const factory of [snudda,photoThermostat]){
+    const a=factory(false),b=factory(true);
+    const geometry=item=>item.parts.map(({color,...shape})=>shape);
+    assert.deepEqual(a.size,b.size);assert.deepEqual(geometry(a),geometry(b));
+    assert.equal(new Set(a.parts.map(p=>p.id)).size,a.parts.length);
+  }
+  assert.equal(snudda().size[0],0.39);assert.equal(snudda().surface,true);
+  assert.equal(photoThermostat().mount,'wall');assert.equal(photoThermostat().displays[0].binding,'temperature');
+});
+test('adding photo inventory preserves existing models and produces idempotent variant mappings',()=>{
+  const packs=['kuechenzubehoer','haustechnik'].flatMap(c=>['','_farben'].map(s=>({id:'local.v2.'+c+s,items:[{id:'existing',parts:[{...part}]}]})));
+  const map={color_to_neon:{},neon_to_colors:{},counts:{pack_pairs:29}};
+  addPhotoInventory(packs,map);const saved=structuredClone({packs,map});addPhotoInventory(packs,map);
+  assert.deepEqual({packs,map},saved);assert.equal(map.counts.color_items,2);assert.equal(map.counts.neon_items,2);
+  for(const p of packs){assert.equal(p.items.length,2);assert.deepEqual(p.items[0],{id:'existing',parts:[part]});assert.ok(p.items[1].id.length<=40);}
+});
 test('all refrigerator doors swing forward from their actual left/right hinges',()=>{
   for(const id of ['samsung_rs80f65kdfef','siemens_kg36ealca','mini_fridge_60','liebherr_fna6635_20']){
     const item=enrich({id,parts:Array.from({length:12},()=>({...part}))});

@@ -527,6 +527,16 @@ shots.push({name:'view-upward-spot-roof',query:'',width:1400,height:1000,editor:
 if(process.env.ROUND_PACK_DIR){
   const directory=resolve(process.env.ROUND_PACK_DIR);
   const load=category=>JSON.parse(readFileSync(join(directory,`v2.${category}_farben.json`),'utf8')).items;
+  for(const [category,id,scale] of [['kuechenzubehoer','ikea_snudda_39',2],['haustechnik','wall_thermostat_white_grey',10]])for(const colored of [false,true]){
+    const pack=JSON.parse(readFileSync(join(directory,`v2.${category}${colored?'_farben':''}.json`),'utf8'));
+    const item=structuredClone(pack.items.find(i=>i.id===id||i.id.startsWith(id+'__')));delete item.product;
+    const f={id:'new',type:`pack:preview.new:${item.id}`,x:1,z:1,w:item.size[0]*scale,d:item.size[1]*scale,h:item.size[2]*scale,rotation:0,variant:null,mount_y:0,bindings:{temperature:'sensor.preview_temperature'}};
+    shots.push({name:`pack-${id}-${colored?'color':'neon'}`,query:'',width:1200,height:900,editor:true,mockPrivatePacks:true,shapePack:{id:'preview.new',name:'Neue Modelle',publisher:'Preview',items:[item]},then3d:'Erdgeschoss',camera:{theta:0.35,phi:category==='haustechnik'?1.2:0.7,radius:2.3,target:{x:1,y:category==='haustechnik'?0.5:0.05,z:1}},editorScript:`
+      const panel=document.querySelector('neonplan3d-panel');panel.hass={...panel.hass,states:{...panel.hass.states,'sensor.preview_temperature':{entity_id:'sensor.preview_temperature',state:'20.0',attributes:{unit_of_measurement:'°C'}}}};
+      panel._quality='high';
+      e.change(b=>{b.floors=[b.floors[0]];b.settings.roof.type='none';b.settings.pets={on:false,list:[]};const floor=b.floors[0];floor.rooms=[{id:'new',name:'Neue Modelle · Vorschau vergrößert',area_id:null,points:[[0,0],[2,0],[2,2],[0,2]],floor_material:'wood'}];floor.furniture=[${JSON.stringify(f)}];floor.walls=[];floor.openings=[];floor.outdoor=[];floor.placements=[];});e.fit();
+    `});
+  }
   const refrigerators=load('kuechengeraete').filter(i=>['samsung_rs80f65kdfef','siemens_kg36ealca','mini_fridge_60','liebherr_fna6635_20'].includes(i.id));
   const fridgeFurniture=refrigerators.map((i,n)=>({id:i.id,type:`pack:preview.fridges:${i.id}`,x:1+n*2,z:2.5,w:i.size[0],d:i.size[1],h:i.size[2],rotation:0,variant:null,animations:false,bindings:Object.fromEntries((i.motions??[]).map(m=>[m.binding,'binary_sensor.preview_fridge']))}));
   shots.push({name:'pack-fridges-forward',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,fridgesForward:true,shapePack:{id:'preview.fridges',name:'Fridges',publisher:'Preview',items:refrigerators},then3d:'Erdgeschoss',camera:{theta:0.3,phi:0.9,radius:10,target:{x:4,y:0.8,z:2.5}},editorScript:`
