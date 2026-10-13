@@ -1128,10 +1128,11 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       await page.mouse.move(at[0]+1,at[1]+1,{steps:2});await new Promise(r=>setTimeout(r,100));await page.mouse.up();
       await page.evaluate(async kind=>{
         const e=document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');await e.updateComplete;
+        const settle=async()=>{await e.updateComplete;await new Promise(r=>setTimeout(r,150));};
         const points=()=>kind==='roof'?e.roofSection.points:e.outdoorArea.points;
         if(points()?.length!==5)throw new Error('Click/press movement lost the inserted '+kind+' vertex: '+points()?.length);
-        e.undo();await e.updateComplete;if((kind==='roof'?e.roofPoints(e.roofSection):e.outdoorArea.points).length!==4)throw new Error('Insertion undo failed');
-        e.redo();await e.updateComplete;if(points().length!==5)throw new Error('Insertion redo failed');
+        e.undo();await settle();if((kind==='roof'?e.roofPoints(e.roofSection):e.outdoorArea.points).length!==4)throw new Error('Insertion undo failed');
+        e.redo();await settle();if(points().length!==5)throw new Error('Insertion redo failed');
       },kind);
     }
     console.log('verified + press with mouse jitter preserves inserted outdoor/roof corners and undo/redo');
