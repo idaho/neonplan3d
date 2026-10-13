@@ -9,6 +9,16 @@ Aktueller Stand vom 13.10.2026: Alle 15 bestätigten Funktionsgruppen sind im Br
 
 ## Vorgehen pro Feature
 
+### Ergänzungen vom 13.10.2026
+
+- Standardtreppen gerade/U: senkrechte Position als mount_y relativ zum fertigen Raumboden auch negativ, von −10 bis +10 m. Hauptformular, kompakte 3D-Leiste und Verschieben in der Wandansicht berücksichtigen denselben unteren Grenzwert. X/Z, Treppenhöhe und alte automatische Positionen bleiben erhalten.
+- Normale Türvariante front_slot: mittiger 40-cm-Sichtschlitz mit 30-cm-Abständen oben/unten, ohne die übliche Außenleuchte über der Haustür. Bei sehr kleinen Türen passt sich der Ausschnitt an die verfügbaren Maße an.
+- Normale Türvariante sliding_wood: seitliches Schieben mit Schiene und Griff; bei eingeschalteten Produktfarben Holzton der Küchenfront, sonst Neon-Look. Kein zusätzliches Inventarstück.
+- Packs Türen/Fenster: einzelne wandmontierte Hausnummern 0–9 und Kleinbuchstaben a–c, Neon und Schwarz. Standardmaß 9 × 1 × 15 cm, über Möbelmaße anpassbar; Farb-IDs aus der Neon-ID abgeleitet.
+- Vorhandene integrierte Spülmaschine: eigene Bindung „Spülmaschinentür“, unteres Scharnier, Öffnung um 90° nach vorne unten. Front, Griff, Bedienfeld, metallische Innenseite und Spender bewegen sich gemeinsam; Arbeitsplatte und Gehäuse bleiben fest. Statusanzeige bleibt unabhängig von der Türbindung. Keine Bewegung schaltet ein physisches Gerät. Dynamische Leuchtflächen werden nicht zusätzlich an der geschlossenen Ausgangsposition dargestellt.
+
+Neue Verhaltenstests liegen in frontend/src/viewer/openings.test.ts, frontend/src/viewer/furniture-rotation.test.ts, tests/test_schema.py und scripts/upgrade-custom-packs.test.mjs; die vollständige Update-Prüfung führt sie mit aus.
+
 Aktualisierte Darstellungsentscheidung vom 13.10.2026: Keine schwebenden Status-Badges über Pack-Geräten, auch kein „Status unklar“-Schild. Status erscheint nur auf vorgesehenen Displays oder LEDs; ohne passende Modellfläche entfällt er in der Szene. Verknüpfte Geräte bleiben für Details anklickbar, Energieauswertung und Türstellungen bleiben erhalten. Dies ersetzt die unten historisch beschriebene sichtbare Unklar-Markierung; intern bleibt der Zustand ausdrücklich unbekannt.
 
 Für jede Funktion werden Originalzustand, eigene Implementierung, Integrationslücken und neue Wünsche getrennt beschrieben. Neue Anforderungen bleiben Vorschläge, bis der Nutzer sie bestätigt. Tests sollen Verhalten prüfen, nicht bloß das Vorhandensein von Feldern oder Dateien.
