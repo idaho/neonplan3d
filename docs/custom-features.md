@@ -9,6 +9,8 @@ Aktueller Stand vom 13.10.2026: Alle 15 bestätigten Funktionsgruppen sind im Br
 
 ## Vorgehen pro Feature
 
+Aktualisierte Darstellungsentscheidung vom 13.10.2026: Keine schwebenden Status-Badges über Pack-Geräten, auch kein „Status unklar“-Schild. Status erscheint nur auf vorgesehenen Displays oder LEDs; ohne passende Modellfläche entfällt er in der Szene. Verknüpfte Geräte bleiben für Details anklickbar, Energieauswertung und Türstellungen bleiben erhalten. Dies ersetzt die unten historisch beschriebene sichtbare Unklar-Markierung; intern bleibt der Zustand ausdrücklich unbekannt.
+
 Für jede Funktion werden Originalzustand, eigene Implementierung, Integrationslücken und neue Wünsche getrennt beschrieben. Neue Anforderungen bleiben Vorschläge, bis der Nutzer sie bestätigt. Tests sollen Verhalten prüfen, nicht bloß das Vorhandensein von Feldern oder Dateien.
 
 Verbindliche Arbeitsweise: Bei einem Umsetzungsauftrag bestätigte Funktionen tatsächlich implementieren, prüfen und den erreichten Stand dokumentieren. Das Zusammenführen vorhandener Branches gilt nicht als Umsetzung neuer Anforderungen. Implementiert, geprüft, noch offen und auf Home Assistant installiert stets getrennt ausweisen. Neue Feature-Branches und Verhaltenstests in die lokale Update-Konfiguration aufnehmen; Veröffentlichung und HA-Installation bleiben gesondert freizugeben.

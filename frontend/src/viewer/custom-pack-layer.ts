@@ -8,7 +8,7 @@ import { OPENING_TAU, OPEN_ANGLE, DOOR_ANGLE, TILT_ANGLE } from "./opening-motio
 
 interface PartView { part: PackPart; mesh: Mesh; key: string; baseColors:Float32Array }
 interface MotionView { definition: PackMotion; group: Group; state: MotionState; shown: number; tilt: number }
-interface ItemView { f: Furniture; group: Group; parts: PartView[]; motions: MotionView[]; displays: {field:PackDisplayField;mesh:Mesh;texture:CanvasTexture;key:string}[]; unclear: Mesh; unclearTexture:CanvasTexture }
+interface ItemView { f: Furniture; group: Group; parts: PartView[]; motions: MotionView[]; displays: {field:PackDisplayField;mesh:Mesh;texture:CanvasTexture;key:string}[] }
 const palette:Record<string,number>={body:0x172238,fabric:0x1a2644,cushion:0x243661,wood:0x19233c,white:0x1d2946,metal:0x2a3a60,dark:0x0b111f,glass:0x1c3a52,plant:0x12302e,pot:0x1d2640,accent:0x2b8fb3};
 const color=(v:string)=>v.startsWith("#")?parseInt(v.slice(1),16):palette[v]??palette.body;
 
@@ -71,11 +71,7 @@ export class CustomPackLayer {
         if(parent){s.mesh.position.sub(parent.position);parent.add(s.mesh);}else group.add(s.mesh);
         return {...s,field,key:""};
       });
-      const unclear=textSurface(Math.max(0.15,f.w*0.75),0.09);
-      unclear.mesh.position.set(0,f.h/2+0.12,0);unclear.mesh.visible=false;group.add(unclear.mesh);
-      const ctx=(unclear.texture.image as HTMLCanvasElement).getContext("2d")!;
-      ctx.fillStyle="#162137";ctx.fillRect(0,0,512,256);ctx.fillStyle="#ffcf66";ctx.font="bold 70px sans-serif";ctx.textAlign="center";ctx.fillText("Status unklar",256,155);unclear.texture.needsUpdate=true;
-      this.items.push({f,group,parts:views,motions,displays,unclear:unclear.mesh,unclearTexture:unclear.texture});
+      this.items.push({f,group,parts:views,motions,displays});
     }
   }
   meshes():Mesh[]{return this.items.flatMap(i=>[...i.parts.map(p=>p.mesh),...i.displays.map(d=>d.mesh)]).filter(m=>m.visible);}
@@ -93,7 +89,6 @@ export class CustomPackLayer {
     this.initial=false;
     this.hass=hass;this.moment={...moment};this.global=global;this.memory.begin(moment);
     for(const item of this.items){
-      let unclear=false;
       for(const p of item.parts){
         const a=statusAppearance(p.part,item.f,hass),key=JSON.stringify(a);p.mesh.visible=a.visible;
         if(p.key!==key || p.part.glow || item.motions.some(m=>m.definition.parts.includes(p.part.id??"")&&m.state.running)){
@@ -107,7 +102,6 @@ export class CustomPackLayer {
         const key=item.f.id+":"+m.definition.id, state=motionState(m.definition,item.f,hass);
         if(!state.known&&moment.historical&&instant){const previous=historicalMotion(m.definition,item.f,hass,moment);if(previous)this.memory.resolve(key,previous);}
         m.state=this.memory.resolve(key,state);
-        unclear ||= !m.state.known && !["fan","washer","dryer"].includes(m.definition.kind);
         if(instant||!global||item.f.animations===false){m.shown=m.state.open;m.tilt=m.state.tilt;this.pose(m,item.f);}
       }
       for(const spot of renderPackItem(item.f)?.spots??[]){
@@ -119,7 +113,6 @@ export class CustomPackLayer {
           for(let i=0;i<a.count;i++)a.setXYZ(i,c.r,c.g,c.b);a.needsUpdate=true;
         }
       }
-      item.unclear.visible=unclear;
       this.drawDisplays(item);
     }
     this.scheduleClock();this.invalidate();
@@ -189,7 +182,7 @@ export class CustomPackLayer {
   }
   dispose():void{
     if(this.timer)clearTimeout(this.timer);
-    for(const i of this.items){for(const p of i.parts){p.mesh.geometry.dispose();if(p.mesh.material!==this.material)(p.mesh.material as Material).dispose();}for(const d of i.displays){d.mesh.geometry.dispose();(d.mesh.material as Material).dispose();d.texture.dispose();}i.unclear.geometry.dispose();(i.unclear.material as Material).dispose();i.unclearTexture.dispose();}
+    for(const i of this.items){for(const p of i.parts){p.mesh.geometry.dispose();if(p.mesh.material!==this.material)(p.mesh.material as Material).dispose();}for(const d of i.displays){d.mesh.geometry.dispose();(d.mesh.material as Material).dispose();d.texture.dispose();}}
     this.group.removeFromParent();this.items=[];
     this.material.dispose();
   }

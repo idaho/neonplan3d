@@ -2273,7 +2273,9 @@ export class Fp3dView3d extends LitElement {
           const picture = live && kindOf(st.entity_id) === "media" ? ((st.attributes.entity_picture as string | undefined) ?? null) : null;
           if (color) screens.set(f.id, { color, level: st.state === "playing" ? 1 : 0.6, picture, ring: ringed && hasFeature("sound") && st.state === "playing" });
         }
-        if (taken.has(id)) continue;
+        // Pack appliances show state only on authored displays/LEDs. Keep their
+        // pick targets and energy consumers above, but no floating status pin.
+        if (packed || taken.has(id)) continue;
         taken.add(id);
         const kind = link.entity ? kindOf(link.entity) : null;
         const room = floor.rooms.find((r) => r.points.length >= 3 && pointInPolygon([f.x, f.z], r.points));

@@ -1077,7 +1077,13 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       if(led.getX(0)<0.9||led.getY(0)>0.05)throw new Error("Status colour did not reach only the LED");
       const unknown={...h,states:{...h.states,"binary_sensor.custom_door":{state:"unavailable",attributes:{}},"sensor.custom_temperature":{state:"unavailable",attributes:{}}}};
       layer.update(unknown,moment,true);
-      if(item.motions[0].state.open!==1||!item.unclear.visible)throw new Error("Unknown contact lost the last valid position");
+      if(item.motions[0].state.open!==1||item.motions[0].state.known)throw new Error("Unknown contact lost the last valid position or became known");
+      if("unclear" in item)throw new Error("Floating unknown-status badge still exists");
+      const view=e.shadowRoot.querySelector("fp3d-view3d");
+      view.furnitureLinks.set("unit",{entity:"sensor.custom_status",power:null});
+      const pins=view.furnitureMarkers(h,e.building,new Set(),new Set());
+      if(pins.markers.some(m=>m.furnitureId==="unit"))throw new Error("Pack status pin still floats above the appliance");
+      if(pins.targets.get("unit")!=="sensor.custom_status")throw new Error("Click-to-inspect status target was lost");
       if(item.displays.find(d=>d.field.id==="temperature").key!=="--:--")throw new Error("Missing display value has no fallback");
       layer.update(unknown,{...moment,historical:true,playing:false,seek:1,time:moment.time-3600000},true);
       if(item.motions[0].shown!==0)throw new Error("Replay inherited a live door state");
