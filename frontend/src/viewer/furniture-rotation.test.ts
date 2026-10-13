@@ -18,7 +18,15 @@ test('standard stairs accept a negative vertical start without moving X/Z or cha
     const before=new GeoBuffer(),after=new GeoBuffer();pushFurniture(before,new LineBuffer(),new GeoBuffer(),f,0);pushFurniture(after,new LineBuffer(),new GeoBuffer(),f,mountBase(floor,f));
     before.p.forEach((p,i)=>assert.ok(Math.abs(after.p[i]-p-(i%3===1?-0.6:0))<1e-8));
   }
-  assert.equal(minMountHeight({type:'chair'}),0);
+  assert.equal(minMountHeight({type:'chair'}),-10);
+});
+test('all liftable built-in and pack furniture retain signed mounting heights',()=>{
+  const floor=newFloor('f','f',0);
+  for(const type of [...FURNITURE_TYPES,'pack:test:door']){
+    const f={...plain,type,mount_y:-0.4};
+    if(!canLift(f))continue;
+    assert.equal(minMountHeight(f),-10);assert.equal(mountBase(floor,f),-0.4);
+  }
 });
 test('a glowing moving appliance panel is not duplicated at its closed position',()=>{
   const moving:PackItem={...item,parts:[{...item.parts[0],id:'door_panel',glow:true}],motions:[{id:'door',kind:'door',axis:'x',pivot:[0,0,0],parts:['door_panel']}]};

@@ -12,6 +12,7 @@ Aktueller Stand vom 13.10.2026: Alle 15 bestätigten Funktionsgruppen sind im Br
 ### Ergänzungen vom 13.10.2026
 
 - Standardtreppen gerade/U: senkrechte Position als mount_y relativ zum fertigen Raumboden auch negativ, von −10 bis +10 m. Hauptformular, kompakte 3D-Leiste und Verschieben in der Wandansicht berücksichtigen denselben unteren Grenzwert. X/Z, Treppenhöhe und alte automatische Positionen bleiben erhalten.
+- Alle manuell höhenpositionierbaren Möbel und Pack-Objekte erlauben nun −10 bis +10 m relativ zum fertigen Boden. Standard-Türen und Garagentore erhalten ebenfalls eine signierte Höhe über Boden; Fensterbrüstungen erlauben negative Werte. Türrahmen, Flügel, Glas, Griffe und Schienen folgen gemeinsam dem Versatz. Zäune, Hecken, Pergolen und übrige Außenflächen verwenden den vorhandenen signierten Höhenversatz (−10 bis +10 m); ihre Körperhöhe bleibt positiv. Automatische Deckenmontage und bestehende Platzierungen bleiben erhalten.
 - Normale Türvariante front_slot: mittiger 40-cm-Sichtschlitz mit 30-cm-Abständen oben/unten, ohne die übliche Außenleuchte über der Haustür. Bei sehr kleinen Türen passt sich der Ausschnitt an die verfügbaren Maße an.
 - Normale Türvariante sliding_wood: seitliches Schieben mit Schiene und Griff; bei eingeschalteten Produktfarben Holzton der Küchenfront, sonst Neon-Look. Kein zusätzliches Inventarstück.
 - Packs Türen/Fenster: einzelne wandmontierte Hausnummern 0–9 und Kleinbuchstaben a–c, Neon und Schwarz. Standardmaß 9 × 1 × 15 cm, über Möbelmaße anpassbar; Farb-IDs aus der Neon-ID abgeleitet.

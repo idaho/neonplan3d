@@ -4,12 +4,30 @@ from custom_components.neonplan3d.schema import (
     FURNITURE_SCHEMA,
     HOLOGRAM_SCHEMA,
     OPENING_SCHEMA,
+    OUTDOOR_SCHEMA,
     ROOM_SCHEMA,
     SETTINGS_SCHEMA,
     START_VIEW_SCHEMA,
 )
 
 ROOM = {"id": "r1", "name": "Bad", "area_id": None, "points": [[0, 0], [2, 0], [2, 2]], "floor_material": "tiles"}
+
+
+def test_signed_opening_and_outdoor_height_offsets() -> None:
+    import pytest
+    import voluptuous as vol
+
+    opening = {"id": "d", "room_id": "r1", "edge": 0, "offset": 1, "width": 0.9, "sill": -0.6, "height": 2.1}
+    for kind in ("door", "window", "garage"):
+        assert OPENING_SCHEMA({**opening, "type": kind})["sill"] == -0.6
+        for invalid in (-10.1, 100.1, float("nan"), float("inf")):
+            with pytest.raises(vol.Invalid):
+                OPENING_SCHEMA({**opening, "type": kind, "sill": invalid})
+    area = {"id": "a", "type": "fence", "points": [[0, 0], [2, 0], [2, 1], [0, 1]], "height": 1.2, "offset": -0.4}
+    assert OUTDOOR_SCHEMA(area)["offset"] == -0.4
+    for invalid in (-10.1, 10.1, float("nan"), float("inf")):
+        with pytest.raises(vol.Invalid):
+            OUTDOOR_SCHEMA({**area, "offset": invalid})
 
 
 def test_stair_negative_height_and_new_standard_door_styles() -> None:

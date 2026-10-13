@@ -1182,8 +1182,8 @@ export function spotDepth(type: string, h: number): number {
 
 /** Built-in stairs: they reach up to the next floor and cut its opening (the straight one and the U-stair). */
 export const STAIR_TYPES = new Set<string>(["stairs", "stairs_u"]);
-/** Stair starts may lie below the finished room floor; other furniture keeps its usual lower limit. */
-export function minMountHeight(f: Pick<Furniture,"type">):number { return STAIR_TYPES.has(f.type)?-10:0; }
+/** Any manually positioned inventory item may start below the finished room floor. */
+export function minMountHeight(_f: Pick<Furniture,"type">):number { return -10; }
 
 /**
  * Layout of the built-in U-stair (w × d, height h): n risers of equal height, the landing at the back is

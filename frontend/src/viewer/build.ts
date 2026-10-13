@@ -458,16 +458,16 @@ function pushOpeningLines(lines: LineBuffer, sp: Span, cut: number): void {
     info.start[1] + info.axis[1] * (s - sp.s0) + info.toRoom[1] * n,
   ];
   const foldAt = (y: number) => (y > cut + 1e-6 ? b : ALWAYS);
-  const bottom = Math.max(sp.sill, 0.004);
+  const bottom = sp.sill < 0 ? sp.sill : Math.max(sp.sill, 0.004);
   for (const n of [info.faceRoom, -info.faceOut]) {
     for (const s of [sp.s0, sp.s1]) lines.segSplit(at(s, n, bottom), at(s, n, sp.top), EDGE_SOFT, cut, b);
     lines.seg(at(sp.s0, n, sp.top), at(sp.s1, n, sp.top), EDGE_SOFT, foldAt(sp.top));
-    if (sp.sill > 0.01) lines.seg(at(sp.s0, n, sp.sill), at(sp.s1, n, sp.sill), EDGE_SOFT, foldAt(sp.sill));
+    if (Math.abs(sp.sill) > 0.01) lines.seg(at(sp.s0, n, sp.sill), at(sp.s1, n, sp.sill), EDGE_SOFT, foldAt(sp.sill));
   }
   // edges across the wall thickness (reveals), and the cut section of the jambs
   for (const s of [sp.s0, sp.s1]) {
     lines.seg(at(s, info.faceRoom, sp.top), at(s, -info.faceOut, sp.top), EDGE_SOFT, foldAt(sp.top));
-    if (sp.sill > 0.01) lines.seg(at(s, info.faceRoom, sp.sill), at(s, -info.faceOut, sp.sill), EDGE_SOFT, foldAt(sp.sill));
+    if (Math.abs(sp.sill) > 0.01) lines.seg(at(s, info.faceRoom, sp.sill), at(s, -info.faceOut, sp.sill), EDGE_SOFT, foldAt(sp.sill));
     if (sp.sill < cut && sp.top > cut) lines.seg(at(s, info.faceRoom, cut), at(s, -info.faceOut, cut), EDGE_CUT, CUT_OFFSET + b);
   }
 }

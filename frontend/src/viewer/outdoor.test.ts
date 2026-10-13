@@ -4,6 +4,18 @@ import { newFloor, outdoorGround, outdoorStanding, OUTDOOR_TYPES } from '../mode
 import { GeoBuffer, LineBuffer } from './geo.ts';
 import { pushOutdoor } from './outdoor.ts';
 
+test('fences, hedges and pergolas move below ground without changing their height',()=>{
+  for(const type of ['fence','hedge','pergola'] as const){
+    const floor=newFloor('f','f',0);
+    floor.outdoor=[{id:'a',type,height:1.2,offset:0,points:[[0,0],[3,0],[3,1],[0,1]]}];
+    const a=new GeoBuffer();pushOutdoor(a,new LineBuffer(),floor);
+    floor.outdoor[0].offset=-0.4;
+    const b=new GeoBuffer();pushOutdoor(b,new LineBuffer(),floor);
+    assert.equal(a.p.length,b.p.length);assert.ok(a.p.length>0);
+    a.p.forEach((v,i)=>assert.ok(Math.abs(b.p[i]-v-(i%3===1?-0.4:0))<1e-8));
+  }
+});
+
 test('gravel beds are ground surfaces with deterministic finite stones following their slope',()=>{
   const floor=newFloor('f','f',0);
   floor.outdoor=[{id:'gravel',type:'gravel_bed',area_id:'garden',freeform:true,offset:0.2,slope:0.1,slope_dir:'x',points:[[0,0],[3,0],[3,1],[1,1],[1,3],[0,3]]}];

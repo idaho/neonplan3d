@@ -119,7 +119,7 @@ export interface OpeningParts {
   blindTris: { id: string; start: number; end: number }[];
 }
 
-export function buildOpeningParts(infos: readonly OpeningInfo[], states: ReadonlyMap<string, OpeningState>, cut: number,productColors=false): OpeningParts {
+export function buildOpeningParts(infos: readonly OpeningInfo[], states: ReadonlyMap<string, OpeningState>, cutHeight: number,productColors=false): OpeningParts {
   const frames = new GeoBuffer();
   const glass = new GeoBuffer();
   const blinds = new GeoBuffer(true);
@@ -134,9 +134,14 @@ export function buildOpeningParts(infos: readonly OpeningInfo[], states: Readonl
     const bStart = blinds.count;
     const st = states.get(info.opening.id) ?? CLOSED;
     const W = info.width;
-    const { sill: S, top: T, bucket } = info;
+    // Doors/garages are drawn in coordinates relative to their threshold. Move the
+    // entire frame, leaf, handles and tracks together, including below-floor starts.
+    // Windows already use absolute sill coordinates in their drawing code.
+    const base = info.opening.type === "door" || info.opening.type === "garage" ? info.sill : 0;
+    const S = info.sill - base, T = info.top - base, cut = cutHeight - base;
+    const { bucket } = info;
     // local frame: x from the opening start along the wall, n from the wall axis towards the room
-    const tf: Tf = (x, n, y) => [info.start[0] + info.axis[0] * x + info.toRoom[0] * n, y, info.start[1] + info.axis[1] * x + info.toRoom[1] * n];
+    const tf: Tf = (x, n, y) => [info.start[0] + info.axis[0] * x + info.toRoom[0] * n, y + base, info.start[1] + info.axis[1] * x + info.toRoom[1] * n];
     const mid = (info.faceRoom - info.faceOut) / 2;
     // highlighted while open, or while closed when the opening asks for it (and a sensor knows)
     const markClosed = info.opening.mark === "closed";

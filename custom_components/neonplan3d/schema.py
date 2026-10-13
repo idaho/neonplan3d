@@ -198,7 +198,7 @@ OPENING_SCHEMA = vol.Schema(
         vol.Optional("wall", default=None): vol.Any(None, _ID),
         vol.Required("width"): _LENGTH,
         vol.Required("type"): vol.In(["door", "window", "garage"]),
-        vol.Required("sill"): _LENGTH,
+        vol.Required("sill"): vol.All(vol.Coerce(float), _finite_number, vol.Range(min=-10, max=100)),
         vol.Required("height"): _LENGTH,
         # window sash hinge as seen from the room; entities: None = assign automatically by area,
         # "none" = no entity
@@ -574,7 +574,9 @@ _OUTDOOR_FIELDS = vol.Schema(
         vol.Optional("outline", default=True): bool,
         # height offset in m (a driveway down to a lower garage, a raised terrace)
         # (None = 0: the editor clears the field when it is set back to 0, #242)
-        vol.Optional("offset", default=0.0): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=-10, max=10))),
+        vol.Optional("offset", default=0.0): vol.Any(
+            None, vol.All(vol.Coerce(float), _finite_number, vol.Range(min=-10, max=10))
+        ),
         # fall in m across the area along slope_dir (the high edge sits at the offset)
         vol.Optional("slope", default=0.0): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0, max=20))),
         vol.Optional("slope_dir", default="x"): vol.In(["x", "-x", "z", "-z"]),

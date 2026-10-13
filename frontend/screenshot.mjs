@@ -522,6 +522,9 @@ shots.push({name:'editor-glass-sliding-door',query:'',width:1400,height:1000,edi
 shots.push({name:'editor-standard-stair-height',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,stairHeight:true,editorScript:`
   e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[{id:'stairs',name:'Treppen',area_id:null,points:[[0,0],[6,0],[6,6],[0,6]],floor_material:'wood'}];f.openings=[];f.outdoor=[];f.walls=[];f.placements=[];f.furniture=['stairs','stairs_u'].map((type,i)=>({id:type,type,x:1.5+i*3,z:3,w:1.2,d:2.8,h:2.3,rotation:0,variant:null}));b.settings.roof.type='none';});e._split=true;e.selectItem('furniture','stairs');e.fit();
 `});
+shots.push({name:'editor-negative-object-heights',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,negativeHeights:true,editorScript:`
+  e.change(b=>{b.floors=[b.floors[0]];b.settings.pets={on:false,list:[]};b.settings.roof.type='none';const f=b.floors[0];f.rooms=[{id:'r',name:'Negative Höhen',area_id:null,points:[[0,0],[6,0],[6,6],[0,6]],floor_material:'wood'}];f.walls=[];f.placements=[];f.furniture=[{id:'chair',type:'chair',x:3,z:3,w:0.6,d:0.6,h:0.8,rotation:0,variant:null}];f.openings=['door','window','garage'].map((type,i)=>({id:type,type,room_id:'r',edge:i,offset:2,width:1.2,height:2.1,sill:0,style:type==='door'?'front_slot':null,leaves:1,hinge:'left',swing:'in'}));f.outdoor=[{id:'fence',type:'fence',height:1.2,offset:0,points:[[0,7],[6,7],[6,7.1],[0,7.1]]}];});e._split=true;e.selectItem('opening','door');e.fit();
+`});
 shots.push({name:'view-upward-spot-roof',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,upwardSpot:true,then3d:'Alle Etagen',then3dAlso:['Dach bleibt'],camera:{theta:0.5,phi:0.9,radius:9,target:{x:2.5,y:1.8,z:2.5}},editorScript:`
   const panel=document.querySelector('neonplan3d-panel');panel._quality='high';
   panel.hass={...panel.hass,states:{...panel.hass.states,'light.led_band':{entity_id:'light.led_band',state:'on',attributes:{brightness:255,rgb_color:[255,200,90]}}}};
@@ -1167,6 +1170,30 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       if(latest.openings.get('glass').open>0.01)throw new Error('Glass slider does not close: '+JSON.stringify({open:latest.openings.get('glass').open,target:latest.openings.get('glass').targetOpen,view:view.hass.states['binary_sensor.preview_glass'].state,panel:panel.hass.states['binary_sensor.preview_glass'].state}));
     });
     console.log('verified glass sliding door selection, wall opening, glass pane and contact-driven open/close without inventory furniture');
+  }
+  if(shot.negativeHeights){
+    await page.evaluate(async()=>{
+      const e=document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');
+      const settle=async()=>{await e.updateComplete;await new Promise(r=>setTimeout(r,150));};
+      for(const [kind,id,key,property] of [['furniture','chair','mount_height','mount_y'],['opening','door','mount_height','sill'],['opening','window','sill','sill'],['opening','garage','mount_height','sill'],['outdoor','fence','outdoor_offset','offset']]){
+        e.selectItem(kind,id);await settle();
+        const list=()=>kind==='opening'?e.floor.openings:kind==='outdoor'?e.floor.outdoor:e.floor.furniture;
+        const before=structuredClone(list().find(o=>o.id===id));
+        const input=[...e.shadowRoot.querySelectorAll('label.fp3d-field')].find(l=>l.textContent.trim().startsWith(e.t(key)))?.querySelector('input');
+        if(!input)throw new Error(id+' lacks a signed height field');
+        input.value='-0.4';input.dispatchEvent(new Event('change',{bubbles:true}));await settle();
+        const changed=list().find(o=>o.id===id);
+        if(changed[property]!==-0.4||(changed.h??changed.height)!==(before.h??before.height))throw new Error(id+' negative height was rejected or changed dimensions');
+        if(kind==='opening'){
+          const view=e.shadowRoot.querySelector('fp3d-view3d'),opening=view.viewer.floors[0].geo.openings.find(o=>o.opening.id===id);
+          if(Math.abs(opening.sill+0.4)>0.001)throw new Error(id+' geometry did not follow negative position');
+        }
+        e.undo();await settle();if((list().find(o=>o.id===id)[property]??null)!==(before[property]??null))throw new Error(id+' height undo failed');
+        e.redo();await settle();if(list().find(o=>o.id===id)[property]!==-0.4)throw new Error(id+' height redo failed');
+      }
+      e.selectItem('opening','door');await settle();
+    });
+    console.log('verified negative chair, door, window, garage and fence heights, opening geometry and undo/redo');
   }
   if(shot.stairHeight){
     await page.evaluate(async()=>{

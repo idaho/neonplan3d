@@ -13,6 +13,29 @@ const positions=(i:OpeningInfo,open:number,open2=0)=>{
   const result=Array.from(parts.glass.getAttribute('position').array);
   parts.frames.dispose();parts.glass.dispose();parts.blinds.dispose();return result;
 };
+test('signed opening heights translate all fixed and moving geometry without resizing',()=>{
+  for(const type of ['door','window','garage'] as const){
+    const styles=type==='door'?DOOR_STYLES.filter(s=>s!=='passage'):[null];
+    // Floor-level windows keep their low threshold when lowered; raised windows
+    // intentionally gain a window board in the existing renderer.
+    for(const style of styles)for(const offset of type==='window'?[-0.6]:[-0.6,0.4])for(const open of [0,0.5,1]){
+      const original={...info,opening:{...door,type,style}},moved={...original,sill:offset,top:info.top+offset,opening:{...original.opening,sill:offset}};
+      const states=new Map([['slide',{...CLOSED,open,cover:1-open}]]);
+      const a=buildOpeningParts([original],states,1),b=buildOpeningParts([moved],states,1+offset);
+      for(const key of ['frames','glass','blinds'] as const){
+        const p=a[key].getAttribute('position'),q=b[key].getAttribute('position');
+        assert.equal(p.count,q.count,`${type}/${style}/${open}`);
+        for(let i=0;i<p.count;i++){
+          assert.ok(Math.abs(p.getX(i)-q.getX(i))<1e-6);
+          assert.ok(Math.abs(p.getY(i)+offset-q.getY(i))<1e-6,`${type}/${style}: height translation`);
+          assert.ok(Math.abs(p.getZ(i)-q.getZ(i))<1e-6);
+        }
+        assert.deepEqual(Array.from(a[key].getAttribute('fold').array),Array.from(b[key].getAttribute('fold').array));
+        a[key].dispose();b[key].dispose();
+      }
+    }
+  }
+});
 test('glass sliding door is selectable as a normal opening style',()=>{
   assert.ok(DOOR_STYLES.includes('sliding_glass'));
   assert.equal(openingStyle(door,false),'sliding_glass');assert.equal(openingStyle(door,true),'sliding_glass');
