@@ -12597,6 +12597,10 @@ export class Fp3dEditor extends LitElement {
         stroke-dasharray: 4 3;
         cursor: grab;
       }
+      .fp3d-out-gravel_bed polygon {
+        fill: rgba(160, 170, 185, 0.16);
+        stroke: rgba(170, 185, 205, 0.6);
+      }
       .fp3d-out-lawn polygon,
       .fp3d-out-bed polygon,
       .fp3d-out-wild polygon,

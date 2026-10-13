@@ -509,6 +509,9 @@ shots.push({name:"editor-custom-features",query:"",width:1400,height:1000,editor
       f.furniture=[{id:"unit",type:"pack:preview.custom:unit",x:2,z:2,w:1,d:0.5,h:1,rotation:0,variant:null,bindings:{door:"binary_sensor.custom_door",status:"sensor.custom_status",temperature:"sensor.custom_temperature"}}];b.settings.roof.type="none";});
     e._split=true;e._tool="select";e.selectItem("furniture","unit");e.fit();
   `});
+shots.push({name:'editor-gravel-bed',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,gravelBed:true,editorScript:`
+  e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[];f.furniture=[];f.openings=[];f.walls=[];f.placements=[];f.outdoor=[{id:'gravel',type:'lawn',freeform:true,points:[[0,0],[4,0],[4,2],[2,2],[2,4],[0,4]],offset:0.2,slope:0.08,slope_dir:'x'}];b.settings.roof.type='none';});e._split=true;e.selectItem('outdoor','gravel');e.fit();
+`});
 shots.push({name:'editor-glass-sliding-door',query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,glassSlider:true,editorScript:`
   const panel=document.querySelector('neonplan3d-panel');panel.hass={...panel.hass,states:{...panel.hass.states,'binary_sensor.preview_glass':{entity_id:'binary_sensor.preview_glass',state:'on',attributes:{device_class:'door'}}}};
   e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[{id:'left',name:'Raum links',area_id:null,points:[[0,0],[4,0],[4,4],[0,4]],floor_material:'wood'},{id:'right',name:'Raum rechts',area_id:null,points:[[4,0],[8,0],[8,4],[4,4]],floor_material:'wood'}];f.furniture=[];f.openings=[{id:'glass',room_id:'left',edge:1,offset:2,width:1.1,type:'door',sill:0,height:2.1,style:'interior',hinge:'left',leaves:1,swing:'in',contact:'binary_sensor.preview_glass',contact2:null,tilt:null,cover:null}];f.outdoor=[];f.walls=[];f.placements=[];b.settings.roof.type='none';});e._split=true;e.selectItem('opening','glass');e.fit();
@@ -1086,6 +1089,18 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       e.shadowRoot.querySelector('.fp3d-spot-form')?.scrollIntoView({ block: 'center' });
     });
     await new Promise((r) => setTimeout(r, 300));
+  }
+  if(shot.gravelBed){
+    await page.evaluate(async()=>{
+      const e=document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');
+      const select=[...e.shadowRoot.querySelectorAll('select')].find(s=>[...s.options].some(o=>o.value==='gravel_bed')&&s.value==='lawn');
+      if(!select)throw new Error('Kiesbeet absent from outdoor kind selector');
+      const points=JSON.stringify(e.floor.outdoor[0].points);select.value='gravel_bed';select.dispatchEvent(new Event('change',{bubbles:true}));
+      await e.updateComplete;await new Promise(r=>setTimeout(r,300));
+      const a=e.floor.outdoor[0];if(a.type!=='gravel_bed'||JSON.stringify(a.points)!==points||a.offset!==0.2||a.slope!==0.08)throw new Error('Gravel selection lost its contour/height/slope');
+      if(!e.shadowRoot.querySelector('.fp3d-out-gravel_bed'))throw new Error('Gravel plan styling missing');
+    });
+    console.log('verified gravel bed selection and preserved free contour, offset and slope');
   }
   if(shot.glassSlider){
     await page.evaluate(async()=>{

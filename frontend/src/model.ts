@@ -638,7 +638,7 @@ export type WeatherEffect = (typeof WEATHER_EFFECTS)[number];
 /** The effects shown when the plan does not say: everything but fog (fog greys the whole scene). */
 export const DEFAULT_WEATHER_EFFECTS: WeatherEffect[] = ["rain", "snow", "clouds", "lightning", "sky"];
 
-export const OUTDOOR_TYPES = ["lawn", "terrace", "path", "driveway", "pool", "bed", "wild", "hedge", "fence", "pergola", "balcony"] as const;
+export const OUTDOOR_TYPES = ["lawn", "terrace", "path", "driveway", "pool", "bed", "gravel_bed", "wild", "hedge", "fence", "pergola", "balcony"] as const;
 export type OutdoorType = (typeof OUTDOOR_TYPES)[number];
 
 /** Top of each kind of outdoor area above ground level (pool: its water, below). */
@@ -649,6 +649,7 @@ export const OUTDOOR_TOP: Record<OutdoorType, number> = {
   driveway: 0.02,
   pool: -0.25,
   bed: 0.15,
+  gravel_bed: 0.03,
   wild: 0.03,
   hedge: 1.2,
   fence: 1.0,

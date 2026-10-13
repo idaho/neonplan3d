@@ -11,6 +11,24 @@ from custom_components.neonplan3d.packs import PackError, validate_payload
 from custom_components.neonplan3d.schema import FURNITURE_SCHEMA, OUTDOOR_SCHEMA
 
 PART = {"id": "body", "shape": "box", "x": 0, "z": 0, "y": 0, "w": 1, "d": 1, "h": 1, "color": "body"}
+
+
+def test_gravel_bed_keeps_free_contour_slope_and_ha_area() -> None:
+    area = {
+        "id": "gravel",
+        "type": "gravel_bed",
+        "points": [[0, 0], [3, 0], [3, 1], [1, 1], [1, 3], [0, 3]],
+        "freeform": True,
+        "area_id": "garden",
+        "offset": 0.2,
+        "slope": 0.1,
+        "slope_dir": "x",
+    }
+    clean = OUTDOOR_SCHEMA(area)
+    for key, value in area.items():
+        assert clean[key] == value
+
+
 PAYLOAD = {
     "format": "fp3dpack",
     "version": 2,

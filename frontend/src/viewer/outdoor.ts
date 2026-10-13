@@ -6,7 +6,7 @@
 
 import { Color } from "three";
 import type { Floor, OutdoorArea, OutdoorType, Vec2 } from "../model.ts";
-import { bounds, groundLevel, isAxisRect, OUTDOOR_TOP, outdoorDrop, outdoorStanding, pointInPolygon, poolFloorY, poolRimY, poolSunken, poolWaterY, signedArea } from "../model.ts";
+import { bounds, groundLevel, isAxisRect, OUTDOOR_TOP, outdoorDrop, outdoorStanding, pointInPolygon, polygonArea, poolFloorY, poolRimY, poolSunken, poolWaterY, signedArea } from "../model.ts";
 import { ALWAYS, type GeoBuffer, type LineBuffer, pushPrism, shade, triangulate } from "./geo.ts";
 
 interface Look {
@@ -23,6 +23,7 @@ const LOOKS: Record<OutdoorType, Look> = {
   driveway: { color: 0x161c2b, side: 0x111624, edge: 0x5b7cff, edgeAlpha: 0.18 },
   pool: { color: 0x0b3a5a, side: 0x0d2438, edge: 0x37e0ff, edgeAlpha: 0.6 },
   bed: { color: 0x1a1512, side: 0x14100e, edge: 0x3de0a0, edgeAlpha: 0.2 },
+  gravel_bed: { color: 0x282b35, side: 0x191c25, edge: 0x93a6be, edgeAlpha: 0.3 },
   wild: { color: 0x14211a, side: 0x0f1a14, edge: 0x9ad24f, edgeAlpha: 0.14 },
   hedge: { color: 0x16402f, side: 0x103024, edge: 0x3de0a0, edgeAlpha: 0.35 },
   fence: { color: 0x1d2946, side: 0x1d2946, edge: 0x5b7cff, edgeAlpha: 0.45 },
@@ -308,6 +309,21 @@ export function pushOutdoor(buf: GeoBuffer, lines: LineBuffer, floor: Floor, wat
         const topAt = (x: number, z: number) => groundAt(x, z) + look.top;
         const holes = outdoorHoles(areas, index);
         pushPrism(buf, poly, lowest, a.slope ? topAt : g + look.top, look.side, look.color, { aoFrom: lowest, holes });
+        if(a.type==='gravel_bed'){
+          // Bounded, deterministic stone flecks, following slope and excluding cuts.
+          const xs=poly.map(p=>p[0]),zs=poly.map(p=>p[1]),x0=Math.min(...xs),z0=Math.min(...zs),w=Math.max(...xs)-x0,d=Math.max(...zs)-z0;
+          let seed=[...a.id].reduce((n,c)=>(Math.imul(n,33)^c.charCodeAt(0))>>>0,5381);
+          const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+          const count=Math.min(512,Math.ceil(polygonArea(poly)/0.012));
+          for(let i=0;i<count;i++){
+            const x=x0+random()*w,z=z0+random()*d,r=0.012+random()*0.016;
+            const stone:Vec2[]=[[x-r,z],[x+r*0.7,z-r*0.8],[x+r*0.4,z+r]];
+            if(!stone.every(p=>pointInPolygon(p,poly)&&!holes.some(h=>pointInPolygon(p,h))))continue;
+            const vertices=stone.map(([x,z])=>[x,topAt(x,z)+0.003,z]);
+            const tint=shade(random()<0.5?0x555861:0x343740,0.75+random()*0.3);
+            buf.tri(vertices[0],vertices[2],vertices[1],tint,tint,tint,undefined,ALWAYS);
+          }
+        }
         outline((x, z) => topAt(x, z) + 0.004);
         if (a.type === "hedge") outline((x, z) => groundAt(x, z) + 0.004);
         if (a.outline !== false) {
