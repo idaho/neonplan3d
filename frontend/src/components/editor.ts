@@ -256,6 +256,7 @@ const NO_STATE_TYPES = new Set(["parking", "stairwell", "rug", "grid_point"]);
 
 export class Fp3dEditor extends LitElement {
   static properties = {
+    productColors: { attribute: false },
     _shiftX: { state: true },
     _shiftAll: { state: true },
     _bgEdit: { state: true },
@@ -357,6 +358,7 @@ export class Fp3dEditor extends LitElement {
 
   declare hass: HomeAssistant;
   declare building: Building;
+  declare productColors: boolean;
   declare narrow: boolean;
   /** Imported furniture packs (from the panel's controller). */
   declare packs: FurniturePack[] | undefined;
@@ -1031,6 +1033,7 @@ export class Fp3dEditor extends LitElement {
         .markerMode=${"important"}
         .heatMode=${"none"}
         .theme=${"neon"}
+        .productColors=${this.productColors ?? false}
         .packs=${this.packs}
         .showEnergy=${false}
         .holograms=${this._tool === "energy" ? true : null}
@@ -6572,6 +6575,7 @@ export class Fp3dEditor extends LitElement {
               .markerMode=${"none"}
               .heatMode=${"none"}
               .theme=${"neon"}
+              .productColors=${this.productColors ?? false}
               .packs=${this.packs}
               .showEnergy=${false}
               .holograms=${false}

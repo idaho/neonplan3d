@@ -220,7 +220,7 @@ export class Fp3dView3d extends LitElement {
   declare building: Building | null;
   /** Time travel: the replayed moment (hass is then the past, read-only); null = live. */
   declare replay: ReplayInfo | null;
-  productColors = false;
+  declare productColors: boolean;
   /** Time travel: a tapped device's state at the replayed moment, next to the finger. */
   private declare _info: { entity: string; x: number; y: number } | null;
   private infoTimer: ReturnType<typeof setTimeout> | undefined;
@@ -448,6 +448,7 @@ export class Fp3dView3d extends LitElement {
     super();
     this.building = null;
     this.replay = null;
+    this.productColors = false;
     this._info = null;
     this.floorId = null;
     this.roomId = null;

@@ -1087,6 +1087,15 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       if(JSON.stringify(e.floor.furniture[0])!==before)throw new Error("Runtime changed stored furniture");
       const dims=[original.x,original.z,original.w,original.d,original.h];
       panel._productColors=true;await panel.updateComplete;await new Promise(r=>setTimeout(r,250));
+      const productView=e.shadowRoot.querySelector("fp3d-view3d");
+      await e.updateComplete;await productView.updateComplete;
+      const shown=()=>productView.viewer.customLayers.get(e._floorId)?.items.find(i=>i.f.id==="unit")?.parts.find(p=>p.part.id==="door")?.part.color;
+      // The public switch must rebuild actual geometry, not just save its preference.
+      if(productView.productColors!==true||productView.viewer.productColors!==true)throw new Error("Product toggle did not propagate reactively: "+JSON.stringify({panel:panel._productColors,editor:e.productColors,view:productView.productColors,viewer:productView.viewer.productColors,ownPanel:Object.hasOwn(panel,"_productColors"),ownView:Object.hasOwn(productView,"productColors")}));
+      if(shown()!=="#aa3322")throw new Error("Product geometry colours did not update");
+      panel._productColors=false;await panel.updateComplete;await e.updateComplete;await productView.updateComplete;
+      if(productView.viewer.productColors!==false)throw new Error("Neon toggle did not propagate reactively");
+      if(shown()!=="wood")throw new Error("Neon geometry colours did not update");
       if(JSON.stringify([e.floor.furniture[0].x,e.floor.furniture[0].z,e.floor.furniture[0].w,e.floor.furniture[0].d,e.floor.furniture[0].h])!==JSON.stringify(dims))throw new Error("Product switch changed furniture");
     });
     console.log("verified custom bindings, displays, status parts, animated doors, unknown/history fallbacks and product toggle");

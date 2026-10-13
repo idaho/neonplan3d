@@ -103,7 +103,7 @@ export class Floorplan3dPanel extends LitElement {
   private declare _markers: MarkerMode;
   private declare _heat: HeatMode;
   private declare _theme: Theme;
-  private _productColors = false;
+  private declare _productColors: boolean;
   private declare _furnish: boolean;
   private declare _selFurniture: string | null;
   private declare _selDevice: string | null;
@@ -154,6 +154,7 @@ export class Floorplan3dPanel extends LitElement {
     this._heat = heat === "temperature" || heat === "humidity" || heat === "co2" || heat === "values" ? heat : "none";
     const theme = prefs.get("theme") as Theme | null;
     this._theme = theme && THEMES.includes(theme) ? theme : "neon";
+    this._productColors = false;
     const accent = prefs.get("accent");
     this._accent = accent && /^#[0-9a-f]{6}$/i.test(accent) ? accent : null;
     this._furnish = false;
@@ -696,6 +697,7 @@ export class Floorplan3dPanel extends LitElement {
     }
     return html`<fp3d-editor
       class="fp3d-body"
+      .productColors=${this._productColors}
       .hass=${this.hass}
       .building=${b}
       .narrow=${this.narrow}
