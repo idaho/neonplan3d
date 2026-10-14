@@ -187,6 +187,50 @@ async def test_activate_install_and_update(hass: HomeAssistant, hass_ws_client, 
     assert status["offers"] == [] and status["loyalty"] is None and status["supporter"] is None
 
 
+async def test_a_pack_that_newly_belongs_to_the_customer_is_announced_once(
+    hass: HomeAssistant, hass_ws_client, aioclient_mock, monkeypatch
+) -> None:
+    private, keys = _key()
+    monkeypatch.setattr(packs, "PACK_PUBLIC_KEYS", keys)
+    await _setup(hass)
+    client = await hass_ws_client(hass)
+    notices: list[tuple[str, str]] = []
+    dismissed: list[str] = []
+    monkeypatch.setattr(
+        lic.persistent_notification,
+        "async_create",
+        lambda hass, message, title=None, notification_id=None: notices.append((notification_id, title)),
+    )
+    monkeypatch.setattr(
+        lic.persistent_notification, "async_dismiss", lambda hass, notification_id: dismissed.append(notification_id)
+    )
+    living = {"id": "shop.living", "name": "Wohnzimmer", "release": 1, "url": "https://shop/x"}
+    aioclient_mock.post(f"{lic.SHOP_API}/catalog", json={"licensee": "Anna", "packs": [living]})
+    await client.send_json_auto_id({"type": "neonplan3d/license/activate", "key": "NP-ABCD-EFGH-2345-6789"})
+    assert (await client.receive_json())["success"]
+    # the first catalog of a key: no notice (the customer is on the extensions page)
+    assert notices == []
+
+    # a gift turns up in the catalog: one notice, not again on the next check
+    gift = {"id": "mastershort.fun_halloween", "name": "Fun-Pack: Halloween", "release": 1, "url": "https://shop/h"}
+    aioclient_mock.clear_requests()
+    aioclient_mock.post(f"{lic.SHOP_API}/catalog", json={"licensee": "Anna", "packs": [living, gift]})
+    await lic.async_refresh(hass, hass.data[DOMAIN])
+    await lic.async_refresh(hass, hass.data[DOMAIN])
+    assert [n[0] for n in notices] == ["neonplan3d_pack_mastershort.fun_halloween"]
+
+    # installed: the notice goes
+    fp = await lic.async_instance_fingerprint(hass)
+    aioclient_mock.post(
+        f"{lic.SHOP_API}/pack",
+        text=_sign(
+            private, keys, {**PAYLOAD, "id": gift["id"], "name": gift["name"], "instance": fp, "licensee": "Anna"}
+        ),
+    )
+    await lic.async_install(hass, hass.data[DOMAIN], gift["id"])
+    assert "neonplan3d_pack_mastershort.fun_halloween" in dismissed
+
+
 async def test_a_pack_bound_elsewhere_is_refused_on_import(hass: HomeAssistant, hass_ws_client, monkeypatch) -> None:
     private, keys = _key()
     monkeypatch.setattr(packs, "PACK_PUBLIC_KEYS", keys)

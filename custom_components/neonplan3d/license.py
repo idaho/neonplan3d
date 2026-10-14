@@ -18,12 +18,13 @@ import time
 from typing import Any
 
 import aiohttp
+from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import instance_id
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.loader import async_get_integration
 
-from .const import DOMAIN
+from .const import DOMAIN, PANEL_URL_PATH
 from .packs import PackError, fingerprint, parts_of, verify_pack
 from .storage import FloorplanData
 
@@ -297,6 +298,8 @@ async def async_install(hass: HomeAssistant, data: FloorplanData, pack_id: str) 
         raise LicenseError(err.code, err.detail) from err
     before = next((p for p in data.packs if p["id"] == payload["id"]), None)
     await data.async_add_pack(payload, parts_of(text))
+    # installed: its "ready" notice goes
+    persistent_notification.async_dismiss(hass, _notice_id(payload["id"]))
     if before and int(payload.get("release") or 1) > int(before.get("release") or 1):
         # an update: remember what it brought, the extensions page shows it once
         old = {i.get("id") for i in before.get("items", [])}
@@ -335,6 +338,7 @@ async def async_refresh(hass: HomeAssistant, data: FloorplanData, install_update
         data.license["error"] = err.code
         await data.async_save_license()
         raise
+    _announce_new_packs(hass, data, catalog["packs"])
     data.license.update(
         {
             "licensee": catalog["licensee"],
@@ -362,6 +366,37 @@ async def async_refresh(hass: HomeAssistant, data: FloorplanData, install_update
                     data.license["error"] = err.code
     await data.async_save_license()
     return status(data, instance)
+
+
+def _notice_id(pack_id: str) -> str:
+    return f"{DOMAIN}_pack_{pack_id}"
+
+
+def _announce_new_packs(hass: HomeAssistant, data: FloorplanData, catalog: list[dict[str, Any]]) -> None:
+    """A pack that newly belongs to the customer (bought, or given like a fun pack) and is not installed here:
+    one notice in Home Assistant's notifications, gone once installed. Never on the first catalog of a key (the
+    customer is on the extensions page then), never for shop offers they do not own."""
+    before = {p.get("id") for p in data.license.get("catalog") or []}
+    if not before:
+        return
+    installed = {p["id"] for p in data.packs}
+    german = (hass.config.language or "").startswith("de")
+    for p in catalog:
+        if p["id"] in before or p["id"] in installed:
+            continue
+        name = p.get("name") or p["id"]
+        if german:
+            title = "NeonPlan 3D: neues Pack bereit"
+            message = (
+                f"**{name}** gehört jetzt dir. Installieren mit einem Klick: "
+                f"[NeonPlan 3D](/{PANEL_URL_PATH}) → Erweiterungen."
+            )
+        else:
+            title = "NeonPlan 3D: a new pack is ready"
+            message = (
+                f"**{name}** is yours now. Install it with one click: [NeonPlan 3D](/{PANEL_URL_PATH}) → Extensions."
+            )
+        persistent_notification.async_create(hass, message, title=title, notification_id=_notice_id(p["id"]))
 
 
 async def async_refresh_quietly(hass: HomeAssistant, data: FloorplanData) -> None:

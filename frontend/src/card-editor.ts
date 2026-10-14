@@ -39,6 +39,7 @@ const DEFAULTS: Partial<CardConfig> = {
   marker_names: false,
   central: true,
   pets: true,
+  ghost: true,
   night: "off",
   idle_orbit: false,
 };
@@ -155,6 +156,12 @@ export class Floorplan3dCardEditor extends LitElement {
         ? html`<label class="toggle">
             <input type="checkbox" .checked=${v.pets} @change=${(e: Event) => this.set("pets", (e.target as HTMLInputElement).checked ? undefined : false)} />
             <span>${this.t("card_pets")}<small>${this.t("card_pets_hint")}</small></span>
+          </label>`
+        : nothing}
+      ${!UNRELEASED.includes("fun_halloween") || labOn()
+        ? html`<label class="toggle">
+            <input type="checkbox" .checked=${v.ghost} @change=${(e: Event) => this.set("ghost", (e.target as HTMLInputElement).checked ? undefined : false)} />
+            <span>${this.t("card_ghost")}<small>${this.t("card_ghost_hint")}</small></span>
           </label>`
         : nothing}
       <label class="toggle">

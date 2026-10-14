@@ -6,7 +6,7 @@
 
 import { Color } from "three";
 import type { Floor, OutdoorArea, OutdoorType, Vec2 } from "../model.ts";
-import { bounds, groundLevel, isAxisRect, OUTDOOR_TOP, outdoorDrop, outdoorStanding, pointInPolygon, polygonArea, poolFloorY, poolRimY, poolSunken, poolWaterY, signedArea } from "../model.ts";
+import { areaGround, bounds, groundDrop, isAxisRect, OUTDOOR_TOP, outdoorStanding, pointInPolygon, polygonArea, poolFloorY, poolRimY, poolSunken, poolWaterY, signedArea } from "../model.ts";
 import { ALWAYS, type GeoBuffer, type LineBuffer, pushPrism, shade, triangulate } from "./geo.ts";
 
 interface Look {
@@ -54,7 +54,7 @@ function againstWall(floor: Floor, p: Vec2, q: Vec2): boolean {
 /** Height of the visible surface of an area (for the lighting layer), at its high edge. */
 export function outdoorSurface(floor: Floor, a: OutdoorArea): number {
   if (a.type === "pool") return poolWaterY(floor, a);
-  return groundLevel(floor) + (a.offset ?? 0) + (outdoorStanding(a.type) ? 0.01 : OUTDOOR_TOP[a.type]);
+  return areaGround(floor, a) + (outdoorStanding(a.type) ? 0.01 : OUTDOOR_TOP[a.type]);
 }
 
 function ccw(points: Vec2[]): Vec2[] {
@@ -114,13 +114,12 @@ function pushBeam(buf: GeoBuffer, p: Vec2, q: Vec2, w: number, y0: number, y1: n
 
 /** `water`: a pool's water surface goes there (drawn see-through, so the basin shows below it); without it into `buf`. */
 export function pushOutdoor(buf: GeoBuffer, lines: LineBuffer, floor: Floor, water?: GeoBuffer): void {
-  const ground = groundLevel(floor);
   const areas = floor.outdoor ?? [];
   areas.forEach((a, index) => {
     if (a.points.length < 3) return;
     // an area may sit above or below the ground (a driveway down to a lower garage) and fall along one direction
-    const g = ground + (a.offset ?? 0);
-    const groundAt = (x: number, z: number) => g - outdoorDrop(a, x, z);
+    const g = areaGround(floor, a);
+    const groundAt = (x: number, z: number) => g - groundDrop(floor, a, x, z);
     const lowest = g - (a.type === "pool" ? 0 : (a.slope ?? 0));
     // hedges, fences and pergolas take their own height; the outline can be switched off per area
     const own = outdoorStanding(a.type) && a.height ? a.height : OUTDOOR_TOP[a.type];

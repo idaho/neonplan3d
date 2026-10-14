@@ -98,7 +98,7 @@ import { load3d } from "../load3d.ts";
 import { loadFun } from "../load-fun.ts";
 import { detectionKind, scaleGlow, buildMarkers, cameraMotionSensors, openMoreInfo, stateText, toggleEntity } from "../markers.ts";
 import { roofUnderAt, sectionCutsBelow } from "../roof-sections.ts";
-import { roomCeilingAt, roomLevelAt, centroid, furnitureFootprint, isLamp, poolFloorY, LAMP_MODEL, LIFT_SPOTS, outdoorGround, pointInPolygon, poolWaterY, spotDepth, surfaceHeight, type Building, type Furniture, type Pet, type StartView } from "../model.ts";
+import { roomCeilingAt, roomLevelAt, setTerrain, centroid, furnitureFootprint, isLamp, poolFloorY, LAMP_MODEL, LIFT_SPOTS, outdoorGround, pointInPolygon, poolWaterY, spotDepth, surfaceHeight, type Building, type Furniture, type Pet, type StartView } from "../model.ts";
 import { poolAreas, poolLinksWithDevices, poolState, poolWaterGlow, type PoolState } from "../pool.ts";
 import { pipePieces, poolFlow, waterColor, type PipePiece, type PoolDeviceType } from "../pool-flow.ts";
 import { pathLength, pipePath, pointAlong, type P3 } from "../geometry/runs.ts";
@@ -187,6 +187,7 @@ export class Fp3dView3d extends LitElement {
     _walk: { state: true },
     walkable: { attribute: false },
     petsOn: { attribute: false },
+    ghostOn: { attribute: false },
     _central: { state: true },
     _thumbsCompact: { state: true },
     _armed: { state: true },
@@ -404,6 +405,8 @@ export class Fp3dView3d extends LitElement {
   declare walkable: boolean;
   /** The card can leave the pets out (card option "pets: false"); the panel always shows them. */
   declare petsOn: boolean;
+  /** The card can leave the Halloween ghost out (card option "ghost: false"). */
+  declare ghostOn: boolean;
   /** The walk: the room one stands in (null between rooms), or false when not walking. */
   private declare _walk: { room: string | null; hint: boolean } | false;
   private walker: { dispose(): void; setStick(v: { x: number; y: number } | null): void } | null = null;
@@ -411,6 +414,9 @@ export class Fp3dView3d extends LitElement {
   private pets: { update(b: Building, pets: readonly Pet[]): void; dispose(): void } | null = null;
   private petsFor: Building | null = null;
   private petsLoading = false;
+  /** Fun pack "Halloween": the ghost floating through the house now and then. */
+  private ghost: { update(b: Building): void; dispose(): void } | null = null;
+  private ghostLoading = false;
   private walkKeys: ((e: KeyboardEvent) => void) | null = null;
   /** The outline of the room one walks in (its glass cards show). */
   private walkRoomPts: [number, number][] | null = null;
@@ -498,6 +504,7 @@ export class Fp3dView3d extends LitElement {
     this.central = true;
     this.walkable = true;
     this.petsOn = true;
+    this.ghostOn = true;
     this._walk = false;
     this.buttons = null;
     this._thumbs = [];
@@ -547,6 +554,8 @@ export class Fp3dView3d extends LitElement {
     this.pets?.dispose();
     this.pets = null;
     this.petsFor = null;
+    this.ghost?.dispose();
+    this.ghost = null;
     this.unlistenReplay?.();
     this.unlistenReplay = null;
     this.unwatchDiag?.();
@@ -659,6 +668,7 @@ export class Fp3dView3d extends LitElement {
       this.scheduleThumbs();
       this.syncDevices(true);
       void this.syncPets();
+      void this.syncGhost();
       this.viewer.setFloor(this.floorId, false);
       if (this.roomId) this.viewer.selectRoom(this.roomId);
     } catch (err) {
@@ -666,6 +676,11 @@ export class Fp3dView3d extends LitElement {
     } finally {
       this.starting = false;
     }
+  }
+
+  protected willUpdate(changed: PropertyValues): void {
+    // this bundle's own copy of the ground: lamps and markers on a sloped lawn sit on it
+    if (changed.has("building")) setTerrain(this.building ?? null);
   }
 
   protected updated(changed: PropertyValues): void {
@@ -698,6 +713,7 @@ export class Fp3dView3d extends LitElement {
       if (startChanged && this.floorId === null) v.resetView();
     }
     if (changed.has("building") || changed.has("packs") || changed.has("petsOn")) void this.syncPets();
+    if (changed.has("building") || changed.has("packs") || changed.has("ghostOn")) void this.syncGhost();
     if (changed.has("startView") && changed.get("startView") !== undefined) {
       v.setStartView(this.startViewOf());
       if (this.floorId === null) v.resetView();
@@ -1870,6 +1886,10 @@ export class Fp3dView3d extends LitElement {
       },
     };
     // play and pause by their own services: some players (an Echo through Alexa Media Player) ignore play_pause
+    // what the player says it can do (supported_features): previous 16, next 32, pause 1, play 16384 – a button it
+    // cannot serve is greyed out (#400: an Echo without "previous"); unknown features leave every button on
+    const features = hass.states[m.id]?.attributes.supported_features;
+    const can = (bit: number) => typeof features !== "number" || (features & bit) !== 0;
     const intent = this.mediaIntent.get(m.id);
     if (intent && (intent.playing === m.playing || Date.now() - intent.at > 30000)) this.mediaIntent.delete(m.id);
     const playing = this.mediaIntent.get(m.id)?.playing ?? m.playing;
@@ -1903,9 +1923,9 @@ export class Fp3dView3d extends LitElement {
         </div>
         ${open && !this.ro
           ? html`<div class="fp3d-holo-media-controls">
-                <button aria-label=${t("previous")} @pointerdown=${press.down} @pointerup=${press.up(() => call("media_previous_track"))} @click=${press.key(() => call("media_previous_track"))}>⏮</button>
-                <button aria-label=${t("play_pause")} @pointerdown=${press.down} @pointerup=${press.up(playPause)} @click=${press.key(playPause)}>${playing ? "⏸" : "▶"}</button>
-                <button aria-label=${t("next")} @pointerdown=${press.down} @pointerup=${press.up(() => call("media_next_track"))} @click=${press.key(() => call("media_next_track"))}>⏭</button>
+                <button aria-label=${t("previous")} ?disabled=${!can(16)} @pointerdown=${press.down} @pointerup=${press.up(() => call("media_previous_track"))} @click=${press.key(() => call("media_previous_track"))}>⏮</button>
+                <button aria-label=${t("play_pause")} ?disabled=${playing ? !can(1) : !can(16384)} @pointerdown=${press.down} @pointerup=${press.up(playPause)} @click=${press.key(playPause)}>${playing ? "⏸" : "▶"}</button>
+                <button aria-label=${t("next")} ?disabled=${!can(32)} @pointerdown=${press.down} @pointerup=${press.up(() => call("media_next_track"))} @click=${press.key(() => call("media_next_track"))}>⏭</button>
                 <input
                   type="range"
                   min="0"
@@ -2897,6 +2917,37 @@ export class Fp3dView3d extends LitElement {
       console.error("NeonPlan 3D: the pets failed to load", err);
     } finally {
       this.petsLoading = false;
+    }
+  }
+
+  /** Fun pack "Halloween": while it is unlocked and the ghost switched on, it floats through the house now and then. */
+  private async syncGhost(): Promise<void> {
+    const b = this.building;
+    const on = !!b && hasFeature("fun_halloween") && b.settings.halloween?.ghost !== false && this.ghostOn !== false;
+    if (!this.viewer || !on) {
+      this.ghost?.dispose();
+      this.ghost = null;
+      return;
+    }
+    if (this.ghost) {
+      this.ghost.update(b);
+      return;
+    }
+    if (this.ghostLoading) return;
+    this.ghostLoading = true;
+    try {
+      const [fun, mod] = await Promise.all([loadFun(), load3d()]);
+      if (!this.viewer || this.ghost || !this.building) return;
+      this.ghost = fun.startGhost({
+        lib: mod.funLib,
+        viewer: this.viewer as never,
+        building: this.building,
+        night: () => this.hass?.states["sun.sun"]?.state === "below_horizon",
+      });
+    } catch (err) {
+      console.error("NeonPlan 3D: the ghost failed to load", err);
+    } finally {
+      this.ghostLoading = false;
     }
   }
 
@@ -4643,6 +4694,10 @@ export class Fp3dView3d extends LitElement {
         color: var(--fp3d-text);
         cursor: pointer;
         font-size: 12px;
+      }
+      .fp3d-holo-media-controls button:disabled {
+        opacity: 0.3;
+        cursor: default;
       }
       .fp3d-holo-media-controls input[type="range"] {
         width: 70px;

@@ -212,6 +212,21 @@ test("entities are grouped by device; the entity without a name of its own is th
   assert.deepEqual(primaryEntities(hass, ids).length, groups.length);
 });
 
+test("a camera is never folded under another entity of its device, even when every entity has a name (#517)", () => {
+  const hass = hassWith();
+  const add = (id: string, name: string) => {
+    hass.entities![id] = { entity_id: id, area_id: "wohnen", device_id: "unifi_cam", name };
+    hass.states[id] = { entity_id: id, state: "on", attributes: { friendly_name: name } };
+  };
+  add("switch.binnen_status_light", "Status light");
+  add("binary_sensor.binnen_motion", "Motion");
+  add("camera.binnen_high_resolution_channel", "High resolution channel");
+  const groups = groupByDevice(hass, ["switch.binnen_status_light", "binary_sensor.binnen_motion", "camera.binnen_high_resolution_channel"]);
+  assert.ok(groups.some((g) => g.primary === "camera.binnen_high_resolution_channel"));
+  // the rest of the device stays one group
+  assert.equal(groups.length, 2);
+});
+
 test("furniture finds its entities in the room's area: the TV, and power sensors by device or name", () => {
   const hass = hassWith();
   const add = (id: string, state: string, attributes: Record<string, unknown>, device?: string) => {

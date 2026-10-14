@@ -112,6 +112,8 @@ Zuletzt vollständig geprüfter Laufzeitstand: `62bc3a2` auf `feature/custom-fea
 
 ## 14. Außenflächen und Dachfenster: Originalfunktionen nicht verlieren
 
+- Integration mit Original 1.18.0 (`e7b2027`): konfigurierbare Geländehöhe und Keller-/Lichtschachtdarstellung übernehmen. Kiesbeete, Außenlicht und negative Zaun-/Flächenversätze verwenden dieselbe Gelände-Basis wie die Originalflächen. Höhenversatz relativ zum Gelände nicht mit Raum-Bodenaufbau verwechseln. Im neuen Außen-Werkzeugmenü Rechteck/Freiform mit der Custom-Kontursteuerung synchron halten, damit die sichtbare Auswahl auch die tatsächliche Zeichenart ändert.
+
 - Mehrere Außenflächen dürfen denselben HA-Bereich erhalten. Freie Punktkonturen, Neigung und signierter Höhenversatz bleiben erhalten; `gravel_bed` ist eine Außenart „Kiesbeet“, keine Möbelattrappe.
 - Kiesdarstellung deterministisch mit endlichen Werten und zur Neigung passender Oberfläche. Typwechsel darf HA-Bereich, Punkte oder Höhenprofil nicht löschen.
 - Beim Verschieben von Dach-/Pergolaflächen gebundene Spots mitnehmen; gelöste bleiben stehen. Kein beliebiger Neuaufbau des Spotrasters.

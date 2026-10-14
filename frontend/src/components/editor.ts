@@ -124,6 +124,7 @@ import {
   type OpeningStyle,
   type ScreenPicture,
   STAIR_TYPES,
+  setTerrain,
 } from "../model.ts";
 import { controls, tokens } from "../styles.ts";
 import "./entity-picker.ts";
@@ -278,6 +279,7 @@ export class Fp3dEditor extends LitElement {
     _backupBusy: { state: true },
     _wall3d: { state: true },
     _sidePinned: { state: true },
+    _sideMin: { state: true },
     _sideOpen: { state: true },
     _floorId: { state: true },
     _roomId: { state: true },
@@ -341,6 +343,9 @@ export class Fp3dEditor extends LitElement {
     _packages: { state: true },
     _rectSize: { state: true },
     _tool: { state: true },
+    _toolMenu: { state: true },
+    _toolOpen: { state: true },
+    _viewMenu: { state: true },
     _draft: { state: true },
     _outdoorFree: { state: true },
     _outdoorType: { state: true },
@@ -379,6 +384,8 @@ export class Fp3dEditor extends LitElement {
   private declare _wall3d: WallMode;
   /** Sidebar beside the 3D pane: pinned open always, or folded to a strip while nothing is selected. */
   private declare _sidePinned: boolean;
+  /** The sidebar folded to a narrow strip beside the plan (more room to move furniture); remembered per browser. */
+  private declare _sideMin: boolean;
   private declare _sideOpen: boolean;
   private declare _floorId: string | null;
   private declare _roomId: string | null;
@@ -545,6 +552,11 @@ export class Fp3dEditor extends LitElement {
   private declare _rectSize: [number, number];
   private declare _spots: { type: FurnitureType; rows: number; cols: number; entity: string | null; target: string } | null;
   private declare _tool: Tool;
+  /** The toolbar menu open (its group), and which tool's choices are unfolded in it. */
+  private declare _toolMenu: string | null;
+  private declare _toolOpen: Tool | null;
+  /** The view menu of the toolbar (fit, 3D beside, wall view, lock) is open. */
+  private declare _viewMenu: boolean;
   private declare _draft: Vec2[];
   /** Outdoor tool: corner by corner like a free-form room instead of a dragged rectangle (#97). */
   private declare _outdoorFree: boolean;
@@ -691,11 +703,21 @@ export class Fp3dEditor extends LitElement {
       // no storage
     }
     this._sidePinned = pinned;
+    let min = false;
+    try {
+      min = localStorage.getItem("neonplan3d.sideMin") === "1";
+    } catch {
+      // no storage
+    }
+    this._sideMin = min;
     this._preview = null;
     this._measureLen = 3;
     this._packages = false;
     this._rectSize = [4, 3];
     this._tool = "select";
+    this._toolMenu = null;
+    this._toolOpen = null;
+    this._viewMenu = false;
     this._draft = [];
     this._outdoorFree = false;
     this._outdoorType = "lawn";
@@ -734,6 +756,7 @@ export class Fp3dEditor extends LitElement {
   protected willUpdate(changed: PropertyValues): void {
     // this bundle keeps its own pack registry – and its own language table, so it fetches the language itself
     if (changed.has("packs")) setPacks(this.packs ?? []);
+    if (changed.has("_doc")) setTerrain(this._doc);
     if (changed.has("hass") && this.hass && !languageReady(this.hass.language)) void loadLanguage(this.hass.language).then(() => this.requestUpdate());
     // the 3D pane and the wall view's 3D both show the draft (otherwise a piece moved in the wall view jumps back)
     if (changed.has("_doc") && (this._split || this._wallView)) this.queue3d();
@@ -1185,6 +1208,7 @@ export class Fp3dEditor extends LitElement {
 
   private fit(): void {
     const pts = this.floor?.rooms.flatMap((r) => r.points) ?? [];
+    if (this._tool === "outdoor" || this._tool === "pool") for (const a of this.floor?.outdoor ?? []) pts.push(...a.points);
     // the roof tool shows the roof sections too, which reach past the rooms
     if (this._tool === "roof") for (const s of this._doc.settings.roof.sections ?? []) pts.push([s.x0, s.z0], [s.x1, s.z1]);
     const b = pts.length ? bounds(pts) : { x0: 0, z0: 0, x1: 10, z1: 8 };
@@ -2467,6 +2491,7 @@ export class Fp3dEditor extends LitElement {
       <div class="fp3d-seg" role="group" aria-label=${this.t("contour_draw")}>
         ${(["rect", "polygon"] as const).map((shape) => html`<button ?disabled=${!this.isAdmin} aria-pressed=${this._drawShape === shape} @click=${() => {
           this._drawShape = shape; this._draft = []; this._cursor = null;
+          if (this._tool === "outdoor") this._outdoorFree = shape === "polygon";
           if (this._tool === "roof") this._roofId = null;
         }}>${this.t(shape === "rect" ? "tool_rect" : "tool_polygon")}</button>`)}
       </div>
@@ -2710,7 +2735,7 @@ export class Fp3dEditor extends LitElement {
     };
     this.change((_, floor) => floor.furniture.push(item));
     this.selectItem("furniture", item.id);
-    this._tool = "select";
+    // the tool stays: the next one is placed right away (Esc or "Select" ends it)
   }
 
   private addOutdoor(points: Vec2[], freeform = true): void {
@@ -2727,8 +2752,7 @@ export class Fp3dEditor extends LitElement {
     if (type === "pool" && hasFeature("pool")) area.pool = {};
     this.change((_, floor) => floor.outdoor.push(area));
     this.selectItem("outdoor", area.id);
-    // the pool tool stays: ports, devices and pipes come next
-    if (this._tool !== "pool") this._tool = "select";
+    // the tool stays: the next area (or the pool's ports and pipes) right away; Esc or "Select" ends it
   }
 
   private get outdoorArea(): OutdoorArea | undefined {
@@ -2768,7 +2792,7 @@ export class Fp3dEditor extends LitElement {
     );
     this._roomId = id;
     this._vertex = null;
-    this._tool = "select";
+    // the tool stays: one room after the other (Esc or "Select" ends it)
   }
 
   // ------------------------------------------------------------------ keyboard
@@ -4534,7 +4558,7 @@ export class Fp3dEditor extends LitElement {
       tilt: null,
     };
     this.change((_, f) => f.openings.push(opening));
-    this._tool = "select";
+    // the tool stays: six doors and windows in a row without going back to the menu (Esc or "Select" ends it)
     this.selectItem("opening", opening.id);
     return true;
   }
@@ -5180,6 +5204,226 @@ export class Fp3dEditor extends LitElement {
     </div>`;
   }
 
+  /** Work on another floor (from the floor menu of the toolbar). */
+  private selectFloor(id: string): void {
+    this._floorId = id;
+    this._roomId = null;
+    this._vertex = null;
+    this._draft = [];
+    this.fit();
+  }
+
+  /**
+   * The floor worked on, always at hand at the left of the toolbar whatever the tool: a menu with every floor (top
+   * floor first), "New floor" (from a Home Assistant floor or empty) and the floor's settings in the sidebar.
+   */
+  private renderFloorMenu() {
+    const floors = this._doc.floors;
+    const floor = this.floor;
+    const admin = this.isAdmin;
+    const open = this._toolMenu === "floor";
+    const close = () => ((this._toolMenu = null), (this._floorMenu = false));
+    return html`<div class="fp3d-seg fp3d-seg-menu">
+      <div class="fp3d-menu-wrap">
+        <button aria-haspopup="menu" aria-expanded=${open} @click=${() => ((this._toolMenu = open ? null : "floor"), (this._floorMenu = false), (this._viewMenu = false))}>
+          <span class="fp3d-menu-label">${this.t("floor_label")}</span> ${floor?.name ?? this.t("floors")} <span class="fp3d-caret">▾</span>
+        </button>
+        ${open
+          ? html`<div class="fp3d-menu-veil" @click=${close}></div>
+              <div class="fp3d-menu" role="menu">
+                ${[...floors].reverse().map(
+                  (f) => html`<button role="menuitem" class="fp3d-menu-item ${f.id === this._floorId ? "fp3d-menu-on" : ""}" @click=${() => (close(), this.selectFloor(f.id))}>
+                    ${f.name}<span class="fp3d-menu-more">${f.id === this._floorId ? "✓" : ""}</span>
+                  </button>`,
+                )}
+                ${admin
+                  ? html`<div class="fp3d-menu-sep"></div>
+                      <button
+                        role="menuitem"
+                        class="fp3d-menu-item"
+                        aria-expanded=${this.freeHaFloors.length ? this._floorMenu : nothing}
+                        @click=${() => (this.freeHaFloors.length ? (this._floorMenu = !this._floorMenu) : (close(), this.addFloor()))}
+                      >
+                        ${this.t("add_floor")}${this.freeHaFloors.length ? html`<span class="fp3d-menu-more">${this._floorMenu ? "▾" : "▸"}</span>` : nothing}
+                      </button>
+                      ${this._floorMenu
+                        ? html`<div class="fp3d-menu-sub">
+                            ${this.freeHaFloors.map((f) => html`<button class="fp3d-chip" @click=${() => (close(), this.addFloor(f))}>${f.name}</button>`)}
+                            <button class="fp3d-chip" @click=${() => (close(), this.addFloor())}>${this.t("floor_empty")}</button>
+                          </div>`
+                        : nothing}
+                      ${floor
+                        ? html`<button
+                            role="menuitem"
+                            class="fp3d-menu-item"
+                            @click=${() => {
+                              close();
+                              // the floor's settings are the sidebar's first page: "Select", nothing chosen
+                              this.setTool("select");
+                              this.selectItem("room", null);
+                              this._sideOpen = true;
+                            }}
+                          >
+                            ${this.t("floor_settings")}
+                          </button>`
+                        : nothing}`
+                  : nothing}
+              </div>`
+          : nothing}
+      </div>
+    </div>`;
+  }
+
+  /** Switch to a tool (from the tool menu): a fresh drawing, the sidebar for it. */
+  private setTool(tool: Tool): void {
+    const floor = this.floor;
+    this._tool = tool;
+    this._draft = [];
+    this._cursor = null;
+    this._pipeMode = false;
+    this._pipeDraft = null;
+    // the pool tool works on a pool: the selected one, else the first of the floor
+    if (tool === "pool" && this.outdoorArea?.type !== "pool") {
+      const first = floor?.outdoor.find((x) => x.type === "pool");
+      if (first) this.selectItem("outdoor", first.id);
+    }
+    // another tool: its sidebar (library, presets, details) unfolds again, even if it was collapsed for the last one
+    this.setSideFolded(false);
+  }
+
+  /**
+   * The toolbar, tidied up: "Select" stays a button; the drawing tools sit in menus by what they are for – "Build"
+   * (room, wall, door & window, floor opening, roof), "Outside" (areas, pool) – with "Furniture" and "Energy" as
+   * buttons of their own. Tools with choices (room, outdoor, pool) unfold them in the menu; a group's button names the
+   * tool in use. Undo and redo stay, the view switches (fit, 3D beside, wall view, lock) are in a view menu.
+   */
+  private renderToolBar(floor: Floor | undefined) {
+    const admin = this.isAdmin;
+    const off = !floor || !admin;
+    type Choice = { label: string; on: boolean; pick: () => void };
+    type Entry = { tool: Tool; label: string; choices?: () => Choice[] };
+    const outdoorTypes = OUTDOOR_TYPES.filter((t) => t !== "pool");
+    const room: Entry = {
+      tool: "rect",
+      label: this.t("tool_room"),
+      choices: () => [
+        { label: this.t("tool_rect"), on: this._tool === "rect", pick: () => this.setTool("rect") },
+        { label: this.t("tool_polygon"), on: this._tool === "polygon", pick: () => this.setTool("polygon") },
+        { label: this.t("tool_measure"), on: this._tool === "measure", pick: () => this.setTool("measure") },
+      ],
+    };
+    const outdoor: Entry = {
+      tool: "outdoor",
+      label: this.t("tool_outdoor"),
+      choices: () => [
+        ...outdoorTypes.map((t) => ({
+          label: this.t(`out_${t}` as I18nKey),
+          on: this._tool === "outdoor" && (this._outdoorType ?? "lawn") === t,
+          pick: () => {
+            this.setTool("outdoor");
+            this._outdoorType = t;
+          },
+        })),
+        { label: this.t("outdoor_shape_rect"), on: this._tool === "outdoor" && this._drawShape === "rect", pick: () => (this.setTool("outdoor"), (this._outdoorFree = false), (this._drawShape = "rect")) },
+        { label: this.t("outdoor_shape_free"), on: this._tool === "outdoor" && this._drawShape === "polygon", pick: () => (this.setTool("outdoor"), (this._outdoorFree = true), (this._drawShape = "polygon")) },
+      ],
+    };
+    const pool: Entry = {
+      tool: "pool",
+      label: this.t("tool_pool"),
+      choices: () => [
+        ...(["rect", "round", "oval", "free"] as const).map((k) => ({
+          label: this.t(`pool_shape_${k}` as I18nKey),
+          on: this._tool === "pool" && !this._pipeMode && (this._poolShape ?? "rect") === k,
+          pick: () => {
+            this.setTool("pool");
+            this._poolShape = k;
+            this._outdoorFree = k === "free";
+          },
+        })),
+        ...(released("pool") ? [{ label: this.t("pool_pipe_draw"), on: this._tool === "pool" && !!this._pipeMode, pick: () => (this.setTool("pool"), (this._pipeMode = true)) }] : []),
+      ],
+    };
+    const groups: { id: string; label: string; entries: Entry[] }[] = [
+      {
+        id: "build",
+        label: this.t("tool_group_build"),
+        entries: [room, { tool: "wall", label: this.t("tool_wall") }, { tool: "opening", label: this.t("tool_opening") }, { tool: "hole", label: this.t("tool_hole") }, { tool: "roof", label: this.t("tool_roof") }],
+      },
+      { id: "outside", label: this.t("tool_group_outside"), entries: [outdoor, pool] },
+    ];
+    const inEntry = (e: Entry) => e.tool === this._tool || (e === room && (this._tool === "polygon" || this._tool === "measure"));
+    // what a group's button says while one of its tools is in use: the tool, and its shape or kind
+    const detail = (e: Entry) =>
+      e === pool ? (this._pipeMode ? this.t("pool_pipe_draw") : this.t(`pool_shape_${this._poolShape ?? "rect"}` as I18nKey)) : e === outdoor ? this.t(`out_${this._outdoorType ?? "lawn"}` as I18nKey) : e === room ? this.t(`tool_${this._tool}` as I18nKey) : "";
+    const close = () => ((this._toolMenu = null), (this._toolOpen = null));
+    const plain = (tool: Tool, label: string) =>
+      html`<button aria-pressed=${this._tool === tool} ?disabled=${off} @click=${() => (close(), this.setTool(tool))}>${label}</button>`;
+    return html`<div class="fp3d-seg fp3d-seg-menu" role="group">
+        <button aria-pressed=${this._tool === "select"} ?disabled=${!floor} @click=${() => (close(), this.setTool("select"))}>${this.t("tool_select")}</button>
+        ${groups.map((g) => {
+          const active = g.entries.find(inEntry);
+          const open = this._toolMenu === g.id;
+          const text = active ? `${active.label}${detail(active) ? `: ${detail(active)}` : ""}` : g.label;
+          return html`<div class="fp3d-menu-wrap">
+            <button aria-pressed=${!!active} aria-haspopup="menu" aria-expanded=${open} ?disabled=${off} @click=${() => ((this._toolMenu = open ? null : g.id), (this._toolOpen = null), (this._viewMenu = false))}>
+              ${text} <span class="fp3d-caret">▾</span>
+            </button>
+            ${open
+              ? html`<div class="fp3d-menu-veil" @click=${close}></div>
+                  <div class="fp3d-menu" role="menu">
+                    ${g.entries.map((x) => {
+                      const choices = x.choices?.() ?? [];
+                      const unfolded = this._toolOpen === x.tool;
+                      return html`<button
+                          role="menuitem"
+                          class="fp3d-menu-item ${inEntry(x) ? "fp3d-menu-on" : ""}"
+                          aria-expanded=${choices.length ? unfolded : nothing}
+                          @click=${() => {
+                            if (choices.length) this._toolOpen = unfolded ? null : x.tool;
+                            else {
+                              this.setTool(x.tool);
+                              close();
+                            }
+                          }}
+                        >
+                          ${x.label}${choices.length ? html`<span class="fp3d-menu-more">${unfolded ? "▾" : "▸"}</span>` : nothing}
+                        </button>
+                        ${unfolded
+                          ? html`<div class="fp3d-menu-sub">
+                              ${choices.map(
+                                (c) =>
+                                  html`<button
+                                    class="fp3d-chip ${c.on ? "fp3d-menu-on" : ""}"
+                                    @click=${() => {
+                                      c.pick();
+                                      this._draft = [];
+                                      close();
+                                    }}
+                                  >
+                                    ${c.label}
+                                  </button>`,
+                              )}
+                            </div>`
+                          : nothing}`;
+                    })}
+                  </div>`
+              : nothing}
+          </div>`;
+        })}
+        ${plain("furniture", this.t("tool_furniture"))} ${plain("energy", this.t("tool_energy"))}
+      </div>
+      <div class="fp3d-seg fp3d-seg-menu">
+        <button class="fp3d-undo" ?disabled=${!this._canUndo} @click=${() => this.undo()} title=${`${this.t("undo")} (Ctrl+Z)`} aria-label=${this.t("undo")}>↶</button>
+        <button class="fp3d-undo" ?disabled=${!this._canRedo} @click=${() => this.redo()} title=${`${this.t("redo")} (Ctrl+Y)`} aria-label=${this.t("redo")}>↷</button>
+      </div>
+      <div class="fp3d-seg fp3d-seg-menu">
+        <button aria-pressed=${this._split} title=${this.t("split_3d_hint")} @click=${() => (close(), this.toggleSplit())}>${this.t("split_3d")}</button>
+        <button aria-pressed=${this._wallPick} title=${this.t("wall_view_open")} @click=${(e: Event) => (close(), this.toggleWallPick(e.currentTarget as HTMLElement))}>${this.t("wall_view")}</button>
+        <button title=${this.t("fit_hint")} @click=${() => (close(), this.fit())}>${this.t("fit")}</button>
+      </div>`;
+  }
+
   protected render(): TemplateResult {
     const floor = this.floor;
     const walls = floor ? generateWalls(floor.rooms, { exterior: this._doc.settings.wall_exterior, interior: this._doc.settings.wall_interior }, floor.walls ?? []) : null;
@@ -5189,73 +5433,8 @@ export class Fp3dEditor extends LitElement {
         <div class="fp3d-main">
           <div class="fp3d-toolbar">
             ${this._wallPick ? html`<div class="fp3d-pick-tip" style=${`left:${this.wallPickTip[0]}px;top:${this.wallPickTip[1]}px`} @click=${() => (this._wallPick = false)}>${this.t("hint_wall_pick")}</div>` : nothing}
-            <div class="fp3d-seg" role="group" aria-label=${this.t("tool_select")}>
-              ${(["select", "rect", "polygon", "wall", "opening", "furniture", "outdoor", "pool", "hole", "roof", "energy"] as Tool[]).map(
-                (tool) => html`<button
-                  aria-pressed=${this._tool === tool}
-                  ?disabled=${!floor || (!this.isAdmin && tool !== "select")}
-                  @click=${() => {
-                    this._tool = tool;
-                    this._draft = [];
-                    this._cursor = null;
-                    this._pipeMode = false;
-                    this._pipeDraft = null;
-                    // the pool tool works on a pool: the selected one, else the first of the floor
-                    if (tool === "pool" && this.outdoorArea?.type !== "pool") {
-                      const first = floor?.outdoor.find((x) => x.type === "pool");
-                      if (first) this.selectItem("outdoor", first.id);
-                    }
-                    // a tool needs the sidebar (library, presets): open it beside the 3D pane
-                    this._sideOpen = tool !== "select";
-                  }}
-                >
-                  ${this.t(`tool_${tool}` as I18nKey)}
-                </button>`,
-              )}
-            </div>
-            <div class="fp3d-seg">
-              <button ?disabled=${!this._canUndo} @click=${() => this.undo()} title="Ctrl+Z">${this.t("undo")}</button>
-              <button ?disabled=${!this._canRedo} @click=${() => this.redo()} title="Ctrl+Y">${this.t("redo")}</button>
-              <button @click=${() => this.fit()}>${this.t("fit")}</button>
-              <button aria-pressed=${this._split} title=${this.t("split_3d_hint")} @click=${() => this.toggleSplit()}>${this.t("split_3d")}</button>
-              <button aria-pressed=${this._wallPick} title=${this.t("wall_view_open")} @click=${(e: Event) => this.toggleWallPick(e.currentTarget as HTMLElement)}>▦ ${this.t("wall_view")}</button>
-              ${this.isAdmin ? html`<button aria-pressed=${!!this._doc.settings.lock_plan} title=${this.t("lock_plan_hint")} @click=${() => this.toggleLockPlan()}>${this.t("lock_plan")}</button>` : nothing}
-            </div>
-            ${this._tool === "pool"
-              ? html`<div class="fp3d-seg" role="group" aria-label=${this.t("pool_shape")}>
-                    ${(["rect", "round", "oval", "free"] as const).map(
-                      (k) =>
-                        html`<button
-                          aria-pressed=${!this._pipeMode && (this._poolShape ?? "rect") === k}
-                          @click=${() => ((this._poolShape = k), (this._outdoorFree = k === "free"), (this._pipeMode = false), (this._pipeDraft = null), (this._draft = []))}
-                        >
-                          ${k === "rect" ? "▭" : k === "round" ? "◯" : k === "oval" ? "⬭" : "✎"} ${this.t(`pool_shape_${k}` as I18nKey)}
-                        </button>`,
-                    )}
-                  </div>
-                  ${released("pool")
-                    ? html`<div class="fp3d-seg" role="group">
-                        <button aria-pressed=${!!this._pipeMode} title=${this.t("pool_pipe_draw_hint")} @click=${() => ((this._pipeMode = !this._pipeMode), (this._pipeDraft = null), (this._draft = []))}>〰 ${this.t("pool_pipe_draw")}</button>
-                      </div>`
-                    : nothing}`
-              : nothing}
-            ${this._tool === "outdoor"
-              ? html`<label class="fp3d-outdoor-type" title=${this.t("outdoor_draw_type_hint")}
-                    >${this.t("outdoor_draw_type")}
-                    <select
-                      @change=${(e: Event) => {
-                        this._outdoorType = (e.target as HTMLSelectElement).value as OutdoorType;
-                        // a pool starts as a rectangle; free form stays free for the other types
-                        if (this._outdoorType === "pool") this._outdoorFree = this._poolShape === "free";
-                        this._draft = [];
-                      }}
-                    >
-                      ${OUTDOOR_TYPES.filter((t) => t !== "pool").map((t) => html`<option value=${t} ?selected=${t === (this._outdoorType ?? "lawn")}>${this.t(`out_${t}` as I18nKey)}</option>`)}
-                    </select></label
-                  >
-                  ${this.renderDrawShape()}`
-              : nothing}
-            ${this._tool === "roof" ? this.renderDrawShape() : nothing}
+            ${this.renderFloorMenu()} ${this.renderToolBar(floor)}
+            ${["polygon", "outdoor", "roof"].includes(this._tool) ? this.renderDrawShape() : nothing}
             ${walls?.warnings.length ? html`<span class="fp3d-warn">${this.t("overlap_warning")}</span>` : nothing}
           </div>
           <div class="fp3d-stage-pair ${this._split ? "fp3d-split" : ""}" style=${this._split && !this.narrow ? `--fp3d-split:${Math.round(this._splitRatio * 100)}%` : ""}>
@@ -9442,21 +9621,36 @@ export class Fp3dEditor extends LitElement {
     }
   }
 
-  /** The sidebar: always beside the plan, or, next to the 3D pane, folded to a strip while idle. */
+  /** Fold the sidebar to its strip, or unfold it (beside the 3D pane: over the pane, while needed). */
+  private setSideFolded(folded: boolean): void {
+    if (this._split && !this._sidePinned) {
+      this._sideOpen = !folded;
+      return;
+    }
+    this._sideMin = folded;
+    try {
+      localStorage.setItem("neonplan3d.sideMin", folded ? "1" : "0");
+    } catch {
+      // no storage
+    }
+  }
+
+  /**
+   * The sidebar: beside the plan, folded to a narrow strip on request (more room for the plan); next to the 3D pane
+   * and not pinned, folded while idle and opened over the pane.
+   */
   private renderAside(floor: Floor | undefined) {
     const folding = this._split && !this._sidePinned && !this.narrow;
-    if (!folding) return html`<aside class="fp3d-side">${this.renderPinRow()}${this.renderSide(floor)}</aside>`;
-    const open = this._sideOpen;
-    if (!open) {
+    const folded = !this.narrow && (folding ? !this._sideOpen : this._sideMin);
+    if (folded) {
       return html`<aside class="fp3d-side fp3d-side-strip">
-        <button class="fp3d-strip-btn" title=${this.t("side_open")} @click=${() => (this._sideOpen = true)}>☰</button>
-        ${this._furnitureId || this._deviceId || this._openingId
-          ? html`<button class="fp3d-strip-btn fp3d-strip-hot" title=${this.t("side_details")} @click=${() => (this._sideOpen = true)}>⚙</button>`
+        <button class="fp3d-strip-btn" title=${this.t("side_open")} @click=${() => this.setSideFolded(false)}>‹</button>
+        ${this._furnitureId || this._deviceId || this._openingId || this._roomId
+          ? html`<button class="fp3d-strip-btn fp3d-strip-hot" title=${this.t("side_details")} @click=${() => this.setSideFolded(false)}>⚙</button>`
           : nothing}
-        <button class="fp3d-strip-btn" title=${this.t("tool_furniture")} @click=${() => ((this._tool = "furniture"), (this._draft = []), (this._sideOpen = true))}>🛋</button>
-        <button class="fp3d-strip-btn" title=${this.t("tool_opening")} @click=${() => ((this._tool = "opening"), (this._draft = []), (this._sideOpen = true))}>🚪</button>
       </aside>`;
     }
+    if (!folding) return html`<aside class="fp3d-side">${this.renderPinRow()}${this.renderSide(floor)}</aside>`;
     // open over the 3D pane, so the pane keeps its size
     return html`<aside class="fp3d-side fp3d-side-strip"></aside>
       <aside class="fp3d-side fp3d-side-overlay">
@@ -9465,10 +9659,12 @@ export class Fp3dEditor extends LitElement {
       </aside>`;
   }
 
-  private renderPinRow(overlay = false) {
-    if (!this._split || this.narrow) return nothing;
+  private renderPinRow(_overlay = false) {
+    if (this.narrow) return nothing;
+    const fold = html`<button class="fp3d-btn" title=${this.t("side_fold_hint")} @click=${() => this.setSideFolded(true)}>${this.t("side_close")} ›</button>`;
+    if (!this._split) return html`<div class="fp3d-pin-row">${fold}</div>`;
     return html`<div class="fp3d-pin-row">
-      ${overlay ? html`<button class="fp3d-btn" @click=${() => (this._sideOpen = false)}>${this.t("side_close")}</button>` : nothing}
+      ${fold}
       <button class="fp3d-btn" aria-pressed=${this._sidePinned} title=${this.t("side_pin_hint")} @click=${() => this.setSidePinned(!this._sidePinned)}>
         📌 ${this.t(this._sidePinned ? "side_pinned" : "side_pin")}
       </button>
@@ -9513,43 +9709,12 @@ export class Fp3dEditor extends LitElement {
     return html`
       ${admin ? nothing : html`<p class="fp3d-note">${this.t("read_only")}</p>`}
       <section>
-        <h3>${this.t("floors")}</h3>
-        <div class="fp3d-floor-list">
-          ${[...floors].reverse().map(
-            (f) => html`<button
-              class="fp3d-chip"
-              aria-pressed=${f.id === this._floorId}
-              @click=${() => {
-                this._floorId = f.id;
-                this._roomId = null;
-                this._vertex = null;
-                this._draft = [];
-                this.fit();
-              }}
-            >
-              ${f.name}
-            </button>`,
-          )}
-          ${admin
-            ? html`<button
-                class="fp3d-btn"
-                aria-expanded=${this._floorMenu}
-                @click=${() => (this.freeHaFloors.length ? (this._floorMenu = !this._floorMenu) : this.addFloor())}
-              >
-                + ${this.t("add_floor")}
-              </button>`
-            : nothing}
-        </div>
-        ${admin && this._floorMenu
-          ? html`<div class="fp3d-floor-menu">
-              <p class="fp3d-sub">${this.t("floor_from_ha")}</p>
-              ${this.freeHaFloors.map(
-                (f) => html`<button class="fp3d-btn" @click=${() => this.addFloor(f)}>
-                  ${f.name}${f.level != null ? html` <span class="fp3d-sub">· ${this.t("level", { n: f.level })}</span>` : nothing}
-                </button>`,
-              )}
-              <button class="fp3d-btn" @click=${() => this.addFloor()}>${this.t("floor_empty")}</button>
-            </div>`
+        <h3>${floor ? this.t("floor_settings_of", { floor: floor.name }) : this.t("floors")}</h3>
+        ${floors.length ? nothing : html`<p class="fp3d-sub">${this.t("floor_none_hint")}</p>`}
+        ${admin && floor
+          ? html`<button class="fp3d-btn" aria-pressed=${!!this._doc.settings.lock_plan} title=${this.t("lock_plan_hint")} @click=${() => this.toggleLockPlan()}>
+              ${this.t(this._doc.settings.lock_plan ? "plan_unlock" : "plan_lock")}
+            </button>`
           : nothing}
         ${floor
           ? html`<div class="fp3d-form">
@@ -9631,7 +9796,7 @@ export class Fp3dEditor extends LitElement {
       ${admin ? this.renderStartView() : nothing} ${admin ? this.renderFavorites() : nothing}
       ${this.renderHelpLinks()}
       ${admin && SHOW_PRESENCE ? this.renderPresenceSettings() : nothing}
-      ${floor && admin ? this.renderBackgroundForm(floor) : nothing} ${admin ? this.renderSettings() : nothing}
+      ${floor && admin ? this.renderBackgroundForm(floor) : nothing} ${admin ? this.renderSettings() : nothing} ${admin ? this.renderTerrain() : nothing}
       ${admin ? this.renderBackup() : nothing} ${admin && released("diagnostics") ? this.renderDiagnostics() : nothing}
     `;
   }
@@ -10088,6 +10253,21 @@ export class Fp3dEditor extends LitElement {
         ${this.len(this.t("opening_position"), o.offset, (v) => this.updateOpening({ offset: Math.max(0, v) }), 0.01, 0)}
         ${this.len(this.t(window ? "sill" : "mount_height"), o.sill, (v) => this.updateOpening({ sill: Math.min(100, Math.max(-10, v)) }), 0.01, -10)}
         ${this.len(this.t("opening_height"), o.height, (v) => this.updateOpening({ height: Math.max(0.3, v) }), 0.01, 0.3)}
+        ${window && this.isAdmin
+          ? html`<div class="fp3d-actions fp3d-wide">
+              <button
+                class="fp3d-btn"
+                title=${this.t("cellar_window_hint")}
+                @click=${() => {
+                  // small and high up in the wall: 1.0 × 0.5 m, its top 25 cm under the ceiling
+                  const h = this.floor?.height ?? 2.5;
+                  this.updateOpening({ width: 1, height: 0.5, sill: Math.max(0, Math.round((h - 0.75) * 100) / 100) });
+                }}
+              >
+                ▭ ${this.t("cellar_window")}
+              </button>
+            </div>`
+          : nothing}
         ${garage ? nothing : this.renderStyleSelect(o)}
         ${this.renderSidelightFields(o)}
         <label class="fp3d-field fp3d-wide" title=${this.t("opening_mark_hint")}
@@ -11859,6 +12039,32 @@ export class Fp3dEditor extends LitElement {
     </details>`;
   }
 
+  /** The ground around the house: its height, a hillside, the earth around cellars. */
+  private renderTerrain() {
+    const t = this._doc.settings.terrain ?? {};
+    const set = (patch: Partial<NonNullable<Building["settings"]["terrain"]>>) => {
+      const next = structuredClone(this._doc);
+      next.settings.terrain = { ...(next.settings.terrain ?? {}), ...patch };
+      this.setDoc(next);
+    };
+    const low = this._doc.floors.some((f) => f.elevation < -0.3);
+    return html`<details class="fp3d-section">
+      <summary>⛰ ${this.t("terrain")}</summary>
+      <p class="fp3d-sub">${this.t("terrain_hint")}</p>
+      <div class="fp3d-form">
+        ${this.len(this.t("terrain_level"), t.level ?? -0.2, (v) => set({ level: Math.max(-20, Math.min(20, v)) }), 0.05)}
+        <label class="fp3d-check fp3d-wide" title=${this.t("terrain_earth_hint")}
+          ><input type="checkbox" .checked=${t.earth !== false} @change=${(ev: Event) => set({ earth: (ev.target as HTMLInputElement).checked })} />
+          ${this.t("terrain_earth")}</label
+        >
+      </div>
+      <p class="fp3d-sub">${this.t(low ? "terrain_cellar_hint" : "terrain_no_cellar_hint")}</p>
+      ${t.level != null
+        ? html`<div class="fp3d-actions"><button class="fp3d-btn" @click=${() => set({ level: null })}>${this.t("terrain_reset")}</button></div>`
+        : nothing}
+    </details>`;
+  }
+
   private renderSettings() {
     const s = this._doc.settings;
     const set = (patch: Partial<Building["settings"]>) => {
@@ -12002,7 +12208,8 @@ export class Fp3dEditor extends LitElement {
         right: 0;
         bottom: 0;
         width: min(340px, 60%);
-        z-index: 6;
+        /* open over the 3D pane: above the toolbar too, so its buttons never sit on the sidebar's */
+        z-index: 30;
         box-shadow: -12px 0 32px rgba(0, 0, 0, 0.45);
       }
       .fp3d-pin-row {
@@ -12040,6 +12247,8 @@ export class Fp3dEditor extends LitElement {
         height: auto;
       }
       .fp3d-main {
+        /* nothing of the plan column reaches over the sidebar (its menus still hang down) */
+        overflow-x: clip;
         display: grid;
         grid-template-columns: minmax(0, 1fr);
         grid-template-rows: auto 1fr;
@@ -12050,6 +12259,8 @@ export class Fp3dEditor extends LitElement {
       }
       .fp3d-toolbar {
         position: relative;
+        /* its menus open over the plan below */
+        z-index: 20;
         display: flex;
         flex-wrap: wrap;
         gap: 8px;
@@ -12217,6 +12428,7 @@ export class Fp3dEditor extends LitElement {
       }
       .fp3d-editor-3d {
         position: relative;
+        overflow: hidden;
         flex: 1 1 0;
         min-width: 240px;
         min-height: 0;
@@ -12424,6 +12636,10 @@ export class Fp3dEditor extends LitElement {
         flex-direction: column;
         gap: 18px;
         min-height: 0;
+      }
+      .fp3d-side:not(.fp3d-side-overlay) {
+        position: relative;
+        z-index: 7;
       }
       .fp3d-narrow .fp3d-side {
         border-left: none;
@@ -13488,6 +13704,104 @@ export class Fp3dEditor extends LitElement {
         position: relative;
         min-height: 0;
         padding: 0 60px;
+      }
+      /* a group with a menu lets it hang out below (the others scroll sideways on a narrow screen) */
+      .fp3d-seg.fp3d-seg-menu {
+        overflow: visible;
+        /* too narrow for a group: its buttons wrap (they never reach over the sidebar) */
+        flex-wrap: wrap;
+        max-width: 100%;
+      }
+      .fp3d-seg > button.fp3d-undo {
+        font-size: 20px;
+        line-height: 1;
+        padding-inline: 12px;
+      }
+      .fp3d-menu-wrap {
+        position: relative;
+        display: inline-flex;
+      }
+      .fp3d-menu-veil {
+        position: fixed;
+        inset: 0;
+        z-index: 29;
+      }
+      .fp3d-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        z-index: 30;
+        min-width: 230px;
+        max-height: 70vh;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 6px;
+        border-radius: 14px;
+        background: var(--fp3d-chrome-solid, #0d1628);
+        box-shadow: var(--fp3d-shadow);
+        border: 1px solid var(--fp3d-line, rgba(120, 190, 255, 0.22));
+      }
+      .fp3d-menu-right {
+        left: auto;
+        right: 0;
+      }
+      .fp3d-seg .fp3d-menu .fp3d-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        text-align: left;
+        font-size: 14px;
+        font-weight: 600;
+        padding: 9px 12px;
+        border-radius: 10px;
+        color: var(--fp3d-text);
+        background: none;
+      }
+      .fp3d-seg .fp3d-menu .fp3d-menu-item:hover {
+        background: rgba(120, 190, 255, 0.12);
+      }
+      .fp3d-seg .fp3d-menu .fp3d-menu-on {
+        color: var(--fp3d-accent);
+        font-weight: 700;
+      }
+      .fp3d-menu-icon {
+        width: 22px;
+        text-align: center;
+      }
+      .fp3d-menu-more {
+        margin-left: auto;
+        color: var(--fp3d-muted);
+      }
+      .fp3d-caret {
+        font-size: 0.8em;
+        opacity: 0.7;
+      }
+      .fp3d-menu-label {
+        color: var(--fp3d-muted);
+        font-weight: 500;
+      }
+      .fp3d-menu-sep {
+        height: 1px;
+        margin: 4px 6px;
+        background: var(--fp3d-line, rgba(120, 190, 255, 0.22));
+      }
+      .fp3d-menu-sub {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 2px 8px 8px 16px;
+      }
+      .fp3d-seg .fp3d-menu-sub .fp3d-chip {
+        min-height: 30px;
+        padding: 5px 11px;
+        font-size: 0.92em;
+      }
+      .fp3d-seg .fp3d-menu-sub .fp3d-menu-on {
+        background: var(--fp3d-accent);
+        color: var(--fp3d-accent-text);
       }
       .fp3d-news-veil {
         position: fixed;

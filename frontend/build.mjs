@@ -96,9 +96,13 @@ function copyFonts() {
 // card editor 215 KB on 2026-10-12 (it carries the German and English texts, now with the pets)
 // main 540 KB on 2026-10-12 for the fun packs' switch (pets: the loader, settings and texts; the animals live in their own bundle)
 // main 550 KB and editor 780 KB on 2026-10-13 for the customer wishes (air conditioner, cooktop states, one-colour lamps, watt threshold) and roof windows in the room card
-// Original 1.17.2 plus all custom contracts: measured main 552, 3D 809, editor 806,
-// card editor 220 KB. Budgets keep a small margin for this combined implementation.
-const BUDGET = { "neonplan3d.js": 560 * 1024, "neonplan3d-fun.js": 40 * 1024, "neonplan3d-timetravel.js": 120 * 1024, "neonplan3d-3d.js": 820 * 1024, "neonplan3d-editor.js": 825 * 1024, "neonplan3d-card-editor.js": 225 * 1024 };
+// card editor 220 KB on 2026-10-13 for the cellar and ground texts (the card editor shares the language table)
+// card editor 225 KB on 2026-10-13 for the floor menu texts
+// main 560 KB on 2026-10-13 for the Halloween gift notice, the extension badge and the cellar texts
+// editor 790 KB on 2026-10-13 for the tidied toolbar (tool and view menus)
+// Original 1.18.0 plus retained custom features: measured 564.4 / 820.2 / 822.5 / 225.8 KB.
+// Ground/cellar rendering and the upstream toolbar add code; retain bounded margins.
+const BUDGET = { "neonplan3d.js": 570 * 1024, "neonplan3d-fun.js": 40 * 1024, "neonplan3d-timetravel.js": 120 * 1024, "neonplan3d-3d.js": 830 * 1024, "neonplan3d-editor.js": 835 * 1024, "neonplan3d-card-editor.js": 230 * 1024 };
 
 copyFonts();
 if (watch) {

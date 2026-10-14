@@ -609,6 +609,10 @@ export interface BuildingSettings {
   outage_entity?: string | null;
   /** Sunlight falls through the windows as patches on the floor (default on, #266). */
   sun_patches?: boolean;
+  /** The ground around the house: its height and the earth around cellars. */
+  terrain?: Terrain | null;
+  /** Fun pack "Halloween": the ghost that floats through the house now and then (on unless switched off). */
+  halloween?: { ghost?: boolean } | null;
   /** Plan lock: rooms, walls, doors, windows and outdoor areas cannot be moved by accident. */
   lock_plan?: boolean;
   /** The camera the house view opens with (3D view, card, kiosk); null = fitted from the front left. */
@@ -690,12 +694,50 @@ export function outdoorDrop(a: OutdoorArea, x: number, z: number): number {
 
 /** Height of the surface of an area at a point, in floor coordinates (offset and slope included). */
 export function outdoorTopAt(floor: Floor, a: OutdoorArea, x: number, z: number): number {
-  return groundLevel(floor) + (a.offset ?? 0) + OUTDOOR_TOP[a.type] - outdoorDrop(a, x, z);
+  return areaGround(floor, a) + OUTDOOR_TOP[a.type] - groundDrop(floor, a, x, z);
+}
+
+/**
+ * The ground around the house: its height (m, the ground floor at 0). Floors that reach below it stand in the
+ * earth: a cellar, the lower part of a semi-basement.
+ */
+export interface Terrain {
+  /** Null = 0.2 m under the ground floor (as before). */
+  level?: number | null;
+  /** The earth around floors below the ground (default on). */
+  earth?: boolean;
+}
+
+/** Default ground: the lawn 0.2 m under the ground floor. */
+export const DEFAULT_GROUND = -0.2;
+
+let terrainNow: { set: boolean; level: number } = { set: false, level: DEFAULT_GROUND };
+
+/** The plan's ground for the height functions below (set with the building, like the packs). */
+export function setTerrain(b: Pick<Building, "settings"> | null): void {
+  const t = b?.settings.terrain ?? null;
+  terrainNow = { set: t?.level != null, level: t?.level ?? DEFAULT_GROUND };
+}
+
+/** Height of the ground (m, the ground floor at 0). */
+export function terrainAt(_x?: number, _z?: number): number {
+  return terrainNow.level;
 }
 
 /** Ground level in floor coordinates: below the ground floor slab (0.2 m), the floor itself further up. */
 export function groundLevel(floor: Floor): number {
-  return floor.elevation > 0.3 ? 0 : -0.2;
+  if (floor.elevation > 0.3) return 0;
+  return terrainNow.set ? terrainNow.level - floor.elevation : DEFAULT_GROUND;
+}
+
+/** The level an outdoor area starts from, in floor coordinates: the ground and its own offset. */
+export function areaGround(floor: Floor, a: OutdoorArea): number {
+  return groundLevel(floor) + (a.offset ?? 0);
+}
+
+/** How far an outdoor area's surface lies below its level at a point: its own slope (pools stay level). */
+export function groundDrop(_floor: Floor, a: OutdoorArea, x: number, z: number): number {
+  return a.type === "pool" ? 0 : outdoorDrop(a, x, z);
 }
 
 /** Height outdoor lamps stand on at a point: ground level, or the top of a terrace or bed there. */
@@ -844,7 +886,7 @@ export const VALVE_POSITIONS: ValvePosition[] = ["filter", "backwash", "rinse", 
 
 /** Top of a pool's rim in floor coordinates: a little (or `rim` metres) above the lawn, or an above-ground pool's wall height. */
 export function poolRimY(floor: Floor, a: OutdoorArea): number {
-  const g = groundLevel(floor) + (a.offset ?? 0);
+  const g = areaGround(floor, a);
   return g + (a.above ? poolHeight(a) : Math.min(2, Math.max(-0.3, a.rim ?? 0.06)));
 }
 

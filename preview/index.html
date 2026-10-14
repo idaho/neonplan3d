@@ -67,7 +67,7 @@
           // the demo has NeonPlan Pro unless ?nopro asks for the locked look
           // add-ons not out yet (Pool Pro) only on a local preview or with ?pool, not on the public demo
           const unreleasedDemo = params.has("pool") || ["localhost", "127.0.0.1"].includes(location.hostname);
-          if (!params.has("nopro")) importedPacks.push({ format: "fp3dpack", version: 1, id: "demo.pro", name: "NeonPlan Pro (Demo)", publisher: "Mastershort", licensee: null, features: ["camera_cockpit", "weather", "screens", "energy_pro", "sound", "auto_pro", "time_travel", "fun_pets", ...(unreleasedDemo ? ["pool"] : [])], items: [] });
+          if (!params.has("nopro")) importedPacks.push({ format: "fp3dpack", version: 1, id: "demo.pro", name: "NeonPlan Pro (Demo)", publisher: "Mastershort", licensee: null, features: ["camera_cockpit", "weather", "screens", "energy_pro", "sound", "auto_pro", "time_travel", "fun_pets", ...(unreleasedDemo ? ["pool", "fun_halloween"] : [])], items: [] });
           try {
             const res = await fetch("../private/packs/starter.json");
             if (res.ok) importedPacks.push({ licensee: null, ...(await res.json()) });

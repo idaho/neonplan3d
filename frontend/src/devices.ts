@@ -748,7 +748,9 @@ export function groupByDevice(hass: HomeAssistant, ids: readonly string[]): Devi
   const byDevice = new Map<string, string[]>();
   const order: string[] = [];
   for (const id of ids) {
-    const device = hass.entities?.[id]?.device_id ?? `entity:${id}`;
+    // a camera is never folded under another entity of its device: a UniFi camera names all its entities, so its
+    // status light or motion sensor would become the main one and the camera land behind "+N more" (#517)
+    const device = kindOf(id) === "camera" ? `camera:${id}` : (hass.entities?.[id]?.device_id ?? `entity:${id}`);
     let list = byDevice.get(device);
     if (!list) {
       byDevice.set(device, (list = []));

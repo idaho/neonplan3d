@@ -1,8 +1,24 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { newFloor, outdoorGround, outdoorStanding, OUTDOOR_TYPES } from '../model.ts';
+import { emptyBuilding, newFloor, outdoorGround, outdoorStanding, OUTDOOR_TYPES, setTerrain } from '../model.ts';
 import { GeoBuffer, LineBuffer } from './geo.ts';
 import { pushOutdoor } from './outdoor.ts';
+
+test('custom gravel and negative fence offsets follow the original configurable ground level',()=>{
+  const b=emptyBuilding(),floor=newFloor('garden','garden',0);
+  b.floors=[floor];b.settings.terrain={level:0.8};setTerrain(b);
+  try{
+    for(const type of ['fence','gravel_bed'] as const){
+      floor.outdoor=[{id:'a',type,height:1.2,offset:-0.4,points:[[0,0],[3,0],[3,1],[0,1]]}];
+      const a=new GeoBuffer();pushOutdoor(a,new LineBuffer(),floor);
+      b.settings.terrain.level=0.2;setTerrain(b);
+      const moved=new GeoBuffer();pushOutdoor(moved,new LineBuffer(),floor);
+      assert.equal(a.p.length,moved.p.length);
+      a.p.forEach((v,i)=>assert.ok(Math.abs(moved.p[i]-v-(i%3===1?-0.6:0))<1e-8));
+      b.settings.terrain.level=0.8;setTerrain(b);
+    }
+  }finally{setTerrain(null);}
+});
 
 test('fences, hedges and pergolas move below ground without changing their height',()=>{
   for(const type of ['fence','hedge','pergola'] as const){

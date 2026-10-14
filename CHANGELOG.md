@@ -4,6 +4,31 @@ All notable changes to NeonPlan 3D. The full notes in German and English are on 
 [releases page](https://github.com/Mastershort/neonplan3d/releases). Ideas and votes:
 [Discussions → Ideas](https://github.com/Mastershort/neonplan3d/discussions/categories/ideas).
 
+## 1.18.0
+
+### New
+
+- **Cellar and ground:** section *Ground* in the editor – ground height (semi-basement), cellars shown in the earth (building-pit view when opened), plinth under a house above the ground.
+- **Cellar window** button (100 × 50 cm, 25 cm under the ceiling); light well with a grate below the ground.
+- **Tidier editor toolbar** in groups without emojis: Select, Build ▾, Outside ▾, Furniture, Energy, ↶ ↷, 3D beside, Wall view, Whole plan.
+- **Floor menu** on the far left of the toolbar in every tool: switch floors, add a floor (also from HA floors), floor settings.
+- **Tools stay in use** after placing a door, window, room, outdoor area or floor opening (Esc or Select ends them).
+- **Collapsible sidebar** in every layout; another tool unfolds it again.
+- **Whole plan** (formerly *Show all*) fits the garden too while drawing outdoors.
+- **3D view:** switches in one *Show* menu, header options behind the ⚙ on every screen.
+- **Extensions tab badge** ("2 ready", "3 new"); new packs in the account announced once in HA notifications.
+
+### Changed
+
+- *Lock floor plan* moved to the floor settings (still in a room's right-click menu).
+
+### Fixed
+
+- UniFi cameras folded under another entity of their device (#517).
+- Front door sidelight frame, mullion and glass plane (#519).
+- Media buttons the player cannot serve are greyed out (#400).
+- Flickering corner bathtub, outdoor kitchen and network rack (pack updates Bath R4, Garden R4, Smart Home R3) (#516).
+
 ## 1.17.2
 
 ### New

@@ -19,7 +19,7 @@ import { furnitureName } from "./furniture-names.ts";
 import { confirmEntities, defaultHeight, entityName, kindOf } from "./devices.ts";
 import { canLift, type LampMount } from "./model.ts";
 import { mountBase, packsVersion } from "./packs.ts";
-import { hasFeature } from "./features.ts";
+import { hasFeature, registerUrl, UNRELEASED } from "./features.ts";
 import { getLicense, unseenOffers, unseenUpdates } from "./api.ts";
 import { TimeTravel } from "./load-timetravel.ts";
 import type { HistorySpec } from "./timetravel/types.ts";
@@ -54,6 +54,10 @@ export class Floorplan3dPanel extends LitElement {
     panel: { attribute: false },
     _mode: { state: true },
     _newOffers: { state: true },
+    _readyPacks: { state: true },
+    _shopConnected: { state: true },
+    _giftLater: { state: true },
+    _showOpen: { state: true },
     _editorReady: { state: true },
     _floorId: { state: true },
     _roomId: { state: true },
@@ -89,6 +93,14 @@ export class Floorplan3dPanel extends LitElement {
   private declare _mode: Mode;
   /** Shop offers not seen yet (a dot on the extensions tab). */
   private declare _newOffers: number;
+  /** Bought packs waiting here: updates and packs not installed yet (a gift such as a fun pack too). */
+  private declare _readyPacks: number;
+  /** Whether this installation is connected to the shop (null until known). */
+  private declare _shopConnected: boolean | null;
+  /** "Later" on the gift notice: gone for this visit. */
+  private declare _giftLater: boolean;
+  /** The view's "Show" menu (walls, floors, heat map, names, trail, cameras, weather) is open. */
+  private declare _showOpen: boolean;
   private offersChecked = false;
   /** The editor bundle is loaded (it is fetched the first time the editor opens). */
   private declare _editorReady: boolean;
@@ -138,6 +150,10 @@ export class Floorplan3dPanel extends LitElement {
     this.narrow = false;
     this._mode = "view";
     this._newOffers = 0;
+    this._readyPacks = 0;
+    this._shopConnected = null;
+    this._giftLater = false;
+    this._showOpen = false;
     this._editorReady = !!customElements.get("fp3d-editor");
     this._floorId = null;
     this._roomId = null;
@@ -475,7 +491,11 @@ export class Floorplan3dPanel extends LitElement {
     if (this.offersChecked || !this.hass?.user?.is_admin) return;
     this.offersChecked = true;
     getLicense(this.hass)
-      .then((lic) => (this._newOffers = lic.active ? unseenOffers(lic.offers ?? []).length + unseenUpdates(lic.updates ?? []).length : 0))
+      .then((lic) => {
+        this._shopConnected = !!lic.active;
+        this._newOffers = lic.active ? unseenOffers(lic.offers ?? []).length : 0;
+        this._readyPacks = lic.active ? unseenUpdates(lic.updates ?? []).length + (lic.packs ?? []).filter((p) => p.installed === null).length : 0;
+      })
       .catch(() => undefined);
   }
 
@@ -499,8 +519,12 @@ export class Floorplan3dPanel extends LitElement {
             ? html`<div class="fp3d-seg" role="tablist">
                 <button role="tab" aria-pressed=${this._mode === "view"} @click=${() => this.setMode("view")}>${this.t("view")}</button>
                 <button role="tab" aria-pressed=${this._mode === "editor"} @click=${() => this.setMode("editor")}>${this.t("editor")}</button>
-                <button role="tab" class="fp3d-tab-ext" aria-pressed=${this._mode === "extensions"} @click=${() => this.setMode("extensions")} title=${this._newOffers ? this.t("offers_dot") : ""}>
-                  ✦ ${this.t("ext_tab")}${this._newOffers ? html`<span class="fp3d-dot" aria-label=${this.t("offers_dot")}></span>` : nothing}
+                <button role="tab" class="fp3d-tab-ext" aria-pressed=${this._mode === "extensions"} @click=${() => this.setMode("extensions")}>
+                  ✦ ${this.t("ext_tab")}${this._readyPacks
+                    ? html`<span class="fp3d-badge" title=${this.t("ext_badge_ready_hint")}>⬇ ${this.t("ext_badge_ready", { n: this._readyPacks })}</span>`
+                    : this._newOffers
+                      ? html`<span class="fp3d-badge" title=${this.t("offers_dot")}>${this.t("ext_badge_new", { n: this._newOffers })}</span>`
+                      : nothing}
                 </button>
               </div>`
             : nothing}
@@ -632,8 +656,46 @@ export class Floorplan3dPanel extends LitElement {
               ? this.renderExtensions()
               : this.renderView(b)
           : nothing}
+        ${this.renderGift()}
       </div>
     `;
+  }
+
+  /**
+   * A gift for everyone (the fun pack "Halloween"), once per admin until "don't show again": connected to the shop,
+   * it is waiting under Extensions; not connected, a free customer account brings it (and connects the app).
+   */
+  private renderGift() {
+    const id = "fun_halloween_2026";
+    if (!this.isAdmin || this._giftLater || this._shopConnected === null || UNRELEASED.includes("fun_halloween") || hasFeature("fun_halloween")) return nothing;
+    try {
+      if (localStorage.getItem(`neonplan3d.news.${id}`) === "never") return nothing;
+    } catch {
+      // no storage: shown each visit until "later"
+    }
+    const never = () => {
+      try {
+        localStorage.setItem(`neonplan3d.news.${id}`, "never");
+      } catch {
+        // a private window
+      }
+      this._giftLater = true;
+    };
+    const connected = this._shopConnected;
+    return html`<div class="fp3d-gift-veil" @click=${(e: Event) => e.target === e.currentTarget && (this._giftLater = true)}>
+      <div class="fp3d-gift" role="dialog" aria-label=${this.t(connected ? "gift_title" : "gift_title_free")}>
+        <div class="fp3d-gift-pic">🎃 👻 🦇</div>
+        <h3>${this.t(connected ? "gift_title" : "gift_title_free")}</h3>
+        <p>${this.t(connected ? "gift_text" : "gift_text_free")}</p>
+        <div class="fp3d-gift-actions">
+          ${connected
+            ? html`<button class="fp3d-btn fp3d-primary" @click=${() => ((this._giftLater = true), this.setMode("extensions"))}>⬇ ${this.t("gift_install")}</button>`
+            : html`<a class="fp3d-btn fp3d-primary" href=${registerUrl(this.hass?.language)} target="_blank" rel="noopener" @click=${() => (this._giftLater = true)}>🎁 ${this.t("gift_register")}</a>`}
+          <button class="fp3d-btn" @click=${() => (this._giftLater = true)}>${this.t("news_later")}</button>
+          <button class="fp3d-btn" @click=${never}>${this.t("news_never")}</button>
+        </div>
+      </div>
+    </div>`;
   }
 
   /** Restart hint, save errors and unsaved edits from an earlier session. */
@@ -684,6 +746,7 @@ export class Floorplan3dPanel extends LitElement {
       @building-edit=${(e: CustomEvent<Building>) => this.data.edit(e.detail)}
       @packs-changed=${() => void this.data.reloadPacks()}
       @offers-seen=${() => (this._newOffers = 0)}
+      @packs-ready=${(e: CustomEvent<number>) => (this._readyPacks = e.detail)}
     ></fp3d-extensions>`;
   }
 
@@ -847,6 +910,11 @@ export class Floorplan3dPanel extends LitElement {
           : nothing}
         ${this.tt.session ? html`<fp3d-time-bar .session=${this.tt.session}></fp3d-time-bar>` : nothing}
         ${this._clean ? nothing : html`<div class="fp3d-overlay">
+          <div class="fp3d-show-wrap">
+            <button class="fp3d-chip" aria-haspopup="true" aria-expanded=${this._showOpen} @click=${() => (this._showOpen = !this._showOpen)}>${this.t("show_menu")} <span class="fp3d-caret">▾</span></button>
+            ${this._showOpen
+              ? html`<div class="fp3d-show-veil" @click=${() => (this._showOpen = false)}></div>
+                  <div class="fp3d-show-panel">
           <div class="fp3d-seg">
             <button aria-pressed=${this._wallMode === "auto"} @click=${() => this.setWallMode("auto")}>${this.t("walls_auto")}</button>
             <button aria-pressed=${this._wallMode === "cut"} @click=${() => this.setWallMode("cut")}>${this.t("walls_cut")}</button>
@@ -932,6 +1000,9 @@ export class Floorplan3dPanel extends LitElement {
           >
             ${hasFeature("weather") ? "" : "🔒 "}${this.t("weather_short")}
           </button>
+                  </div>`
+              : nothing}
+          </div>
           <button class="fp3d-chip fp3d-tt-chip" aria-pressed=${tt} title=${this.t("tt_hint")} @click=${() => this.toggleTimeTravel()}>
             ${hasFeature("time_travel") ? "⏪" : "🔒"} ${this.t("tt_chip")}
           </button>
@@ -966,15 +1037,63 @@ export class Floorplan3dPanel extends LitElement {
     tokens,
     controls,
     css`
-      .fp3d-dot {
+      .fp3d-gift-veil {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        display: grid;
+        place-items: center;
+        padding: 16px;
+        background: rgba(2, 6, 14, 0.55);
+      }
+      .fp3d-gift {
+        max-width: 440px;
+        padding: 22px 22px 18px;
+        border-radius: 18px;
+        border: 1px solid #ff9a3c;
+        background: var(--fp3d-panel, #0d1628);
+        box-shadow: 0 0 40px rgba(255, 154, 60, 0.3);
+        text-align: center;
+      }
+      .fp3d-gift-pic {
+        font-size: 34px;
+        letter-spacing: 6px;
+      }
+      .fp3d-gift h3 {
+        margin: 10px 0 6px;
+      }
+      .fp3d-gift p {
+        margin: 0 0 14px;
+        color: var(--fp3d-muted, #a9b8d4);
+      }
+      .fp3d-gift-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+      }
+      .fp3d-badge {
         display: inline-block;
-        width: 8px;
-        height: 8px;
         margin-left: 6px;
-        border-radius: 50%;
+        padding: 1px 8px;
+        border-radius: 999px;
         background: #ffb547;
-        box-shadow: 0 0 8px #ffb547;
+        color: #1a1204;
+        font-size: 0.78em;
+        font-weight: 700;
+        line-height: 1.5;
+        box-shadow: 0 0 10px rgba(255, 181, 71, 0.7);
         vertical-align: middle;
+        white-space: nowrap;
+        animation: fp3d-badge-in 1.6s ease-out 2;
+      }
+      @keyframes fp3d-badge-in {
+        0% {
+          box-shadow: 0 0 0 0 rgba(255, 181, 71, 0.9);
+        }
+        100% {
+          box-shadow: 0 0 0 10px rgba(255, 181, 71, 0);
+        }
       }
       :host {
         display: block;
@@ -1095,41 +1214,36 @@ export class Floorplan3dPanel extends LitElement {
         font-size: 12.5px;
         color: var(--fp3d-muted);
       }
-      .fp3d-view-opts {
-        display: contents;
-      }
+      /* the view options (quality, look, symbols, side) fold behind ⚙ on every screen: a tidy header */
       .fp3d-opts-btn {
+        display: grid;
+        place-items: center;
+        order: 3;
+        width: 36px;
+        height: 36px;
+        border: 1px solid var(--fp3d-line);
+        border-radius: 10px;
+        background: transparent;
+        color: var(--fp3d-text);
+        font-size: 17px;
+        cursor: pointer;
+      }
+      .fp3d-opts-btn[aria-expanded="true"] {
+        color: var(--fp3d-accent);
+        border-color: var(--fp3d-accent);
+      }
+      .fp3d-view-opts {
         display: none;
       }
-      /* phones: the view options fold behind ⚙ (one header row instead of three) */
+      .fp3d-view-opts.fp3d-opts-open {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        order: 5;
+        width: 100%;
+      }
+      /* phones: version and grow move with it */
       @media (max-width: 700px) {
-        .fp3d-opts-btn {
-          display: grid;
-          place-items: center;
-          order: 3;
-          width: 36px;
-          height: 36px;
-          border: 1px solid var(--fp3d-line);
-          border-radius: 10px;
-          background: transparent;
-          color: var(--fp3d-text);
-          font-size: 17px;
-          cursor: pointer;
-        }
-        .fp3d-opts-btn[aria-expanded="true"] {
-          color: var(--fp3d-accent);
-          border-color: var(--fp3d-accent);
-        }
-        .fp3d-view-opts {
-          display: none;
-        }
-        .fp3d-view-opts.fp3d-opts-open {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-          order: 5;
-          width: 100%;
-        }
         .fp3d-version {
           order: 4;
         }
@@ -1333,6 +1447,43 @@ export class Floorplan3dPanel extends LitElement {
       }
       .fp3d-overlay > * {
         pointer-events: auto;
+      }
+      /* the view's switches in one "Show" menu that opens upwards */
+      .fp3d-show-wrap {
+        position: relative;
+        display: inline-flex;
+      }
+      .fp3d-show-veil {
+        position: fixed;
+        inset: 0;
+        z-index: 29;
+      }
+      .fp3d-show-panel {
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 30;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        width: min(470px, 92vw);
+        padding: 10px;
+        border-radius: 16px;
+        background: var(--fp3d-chrome-solid, #0d1628);
+        border: 1px solid var(--fp3d-line, rgba(120, 190, 255, 0.22));
+        box-shadow: var(--fp3d-shadow);
+      }
+      .fp3d-show-panel > .fp3d-seg {
+        flex-wrap: wrap;
+      }
+      .fp3d-show-panel > .fp3d-chip {
+        box-shadow: none;
+      }
+      .fp3d-caret {
+        font-size: 0.8em;
+        opacity: 0.7;
       }
       .fp3d-quality button {
         padding: 5px 11px;

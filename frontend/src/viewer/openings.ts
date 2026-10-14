@@ -171,11 +171,17 @@ export function buildOpeningParts(infos: readonly OpeningInfo[], states: Readonl
       let x1 = W - 0.02;
       const lights = sidelightLayout(W, style, info.hingeAtStart, info.opening);
       if (lights) {
+        // the sidelight's frame fills the whole depth of the door frame, with a real mullion beside the leaf, and
+        // its glass sits in the leaf's plane – not a thin pane in the middle of a deep wall (#519)
+        const n0 = -info.faceOut - 0.012;
+        const n1 = info.faceRoom + 0.012;
+        const glassN = face - (s * (front ? 0.06 : 0.04)) / 2;
+        const fw = 0.06;
         for (const [a, b] of lights.panels) {
-          splitBox(frames, tf, a, a + 0.04, mid - 0.03, mid + 0.03, 0.02, T - 0.02, frameC, frameTop, cut, bucket);
-          splitBox(frames, tf, b - 0.04, b, mid - 0.03, mid + 0.03, 0.02, T - 0.02, frameC, frameTop, cut, bucket);
-          splitBox(frames, tf, a, b, mid - 0.03, mid + 0.03, 0.02, 0.1, frameC, frameTop, cut, bucket);
-          panel(glass, tf, a + 0.04, b - 0.04, mid, 0.1, T - 0.02, GLASS, cut, bucket);
+          splitBox(frames, tf, a, a + fw, n0, n1, 0.02, T - 0.02, frameC, frameTop, cut, bucket);
+          splitBox(frames, tf, b - fw, b, n0, n1, 0.02, T - 0.02, frameC, frameTop, cut, bucket);
+          splitBox(frames, tf, a + fw, b - fw, n0, n1, 0.02, 0.12, frameC, frameTop, cut, bucket);
+          panel(glass, tf, a + fw, b - fw, glassN, 0.12, T - 0.02, GLASS, cut, bucket);
         }
         x0 = lights.x0;
         x1 = lights.x1;

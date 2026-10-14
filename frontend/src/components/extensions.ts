@@ -1,7 +1,7 @@
 // The "Extensions" page of the panel: the shop connection, the Pro add-ons and the installed packs.
 // It lives in the editor bundle (loaded with it) and is shown to admins only.
 
-import { css, html, LitElement, nothing } from "lit";
+import { css, html, LitElement, nothing, type PropertyValues } from "lit";
 import {
   activateLicense,
   getLicense,
@@ -18,7 +18,7 @@ import {
   type LicenseStatus,
 } from "../api.ts";
 import { DISCORD_URL, isBeta, supporterUrl } from "../beta.ts";
-import { FEATURES, FUN, knownFeature, manualUrl, released, shopUrl, unlockedFeatures } from "../features.ts";
+import { FEATURES, FUN, knownFeature, manualUrl, registerUrl, released, shopUrl, unlockedFeatures } from "../features.ts";
 import { DOG_BREEDS, PET_FURS_OF, type Building, type Pet } from "../model.ts";
 import { translate, type I18nKey } from "../i18n.ts";
 import { packName, type FurniturePack } from "../packs.ts";
@@ -183,7 +183,9 @@ export class Extensions extends LitElement {
       <h3>🎈 ${this.t("fun_title")}</h3>
       <p class="fp3d-sub">${this.t("fun_intro")}</p>
       ${shown.map((f) =>
-        unlocked.has(f)
+        f === "fun_halloween"
+          ? this.renderHalloween(unlocked.has(f))
+          : unlocked.has(f)
           ? html`<div class="fp3d-ext-feature fp3d-ext-on">
               <b>✓ ${this.t("fun_name_pets")}</b>
               <span class="fp3d-sub">${this.t("fun_feature_pets")}</span>
@@ -232,6 +234,47 @@ export class Extensions extends LitElement {
             </div>`,
       )}
     </section>`;
+  }
+
+  /** Fun pack "Halloween": decorations in the furniture library, and the ghost to switch on and off. */
+  private renderHalloween(unlocked: boolean) {
+    const ghost = this.building?.settings.halloween?.ghost !== false;
+    if (!unlocked) {
+      // without a shop connection: a free customer account brings it (and keeps the app connected)
+      const connected = !!this._license?.active;
+      return html`<div class="fp3d-ext-feature">
+        <b>🎃 ${this.t("fun_name_halloween")}</b>
+        <span class="fp3d-sub">${this.t("fun_feature_halloween")}</span>
+        <span class="fp3d-ext-links"
+          ><a class="fp3d-ext-link" href=${connected ? shopUrl(this.hass?.language) : registerUrl(this.hass?.language)} target="_blank" rel="noopener"
+            >${this.t(connected ? "fun_halloween_shop" : "fun_halloween_register")}</a
+          ></span
+        >
+      </div>`;
+    }
+    return html`<div class="fp3d-ext-feature fp3d-ext-on">
+      <b>✓ 🎃 ${this.t("fun_name_halloween")}</b>
+      <span class="fp3d-sub">${this.t("fun_feature_halloween")}</span>
+      ${this.isAdmin && this.building
+        ? html`<label class="fp3d-check"
+            ><input
+              type="checkbox"
+              .checked=${ghost}
+              @change=${(e: Event) => this.editBuilding((b) => (b.settings.halloween = { ...(b.settings.halloween ?? {}), ghost: (e.target as HTMLInputElement).checked }))}
+            />
+            ${this.t("halloween_ghost")}</label
+          >`
+        : nothing}
+      <span class="fp3d-sub">${this.t("halloween_deco_hint")}</span>
+    </div>`;
+  }
+
+  protected updated(changed: PropertyValues): void {
+    // the tab's badge follows what is left to install or update here (after an install it goes down)
+    if (changed.has("_license") && this._license?.active) {
+      const ready = (this._license.packs ?? []).filter((p) => p.installed === null || p.installed < p.release).length;
+      this.dispatchEvent(new CustomEvent("packs-ready", { detail: ready, bubbles: true, composed: true }));
+    }
   }
 
   private async loadLicense(): Promise<void> {

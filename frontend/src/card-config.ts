@@ -35,6 +35,8 @@ export interface CardConfig {
   walk?: boolean;
   /** Fun pack "pets": the animals set up in the extensions show in this card (default on). */
   pets?: boolean;
+  /** Fun pack "Halloween": the ghost floats through this card's house too (default on). */
+  ghost?: boolean;
   /** Own buttons in the central menu (replace the ones set in the editor): label, icon, action, target, data (D143). */
   buttons?: { label: string; icon?: string; action: "navigate" | "more_info" | "service" | "fire_dom_event"; target?: string; data?: Record<string, unknown> }[];
   /** Heatmap of the rooms: none | temperature | humidity | co2. */

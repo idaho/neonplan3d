@@ -863,6 +863,23 @@ SETTINGS_SCHEMA = vol.Schema(
         vol.Optional("outage_entity", default=None): vol.Any(None, vol.All(str, vol.Length(max=255))),
         # sunlight through the windows as patches on the floor
         vol.Optional("sun_patches", default=True): bool,
+        # fun pack "Halloween": the ghost floating through the house (on unless switched off)
+        vol.Optional("halloween", default=None): vol.Any(
+            None, vol.Schema({vol.Optional("ghost", default=True): bool}, extra=vol.ALLOW_EXTRA)
+        ),
+        # the ground around the house: its height and the earth around cellars
+        vol.Optional("terrain", default=None): vol.Any(
+            None,
+            vol.Schema(
+                {
+                    vol.Optional("level", default=None): vol.Any(
+                        None, vol.All(vol.Coerce(float), vol.Range(min=-20, max=20))
+                    ),
+                    vol.Optional("earth", default=True): bool,
+                },
+                extra=vol.ALLOW_EXTRA,
+            ),
+        ),
         vol.Optional("weather_effects", default=None): vol.Any(
             None, [vol.In(["rain", "snow", "fog", "clouds", "lightning", "sky"])]
         ),
