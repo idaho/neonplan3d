@@ -2,6 +2,10 @@
 
 This fork maintains every agreed custom feature in docs/custom-features.json.
 The German specification in docs/custom-features.md explains the required behaviour.
+docs/custom-feature-fixes.md is the binding regression and reconstruction checklist.
+Read it before rebuilding features or resolving upstream conflicts; the fixes are
+part of the feature contract, not optional historical notes. Add future fixes there
+with expected behaviour, regression checks and pack migrations where applicable.
 
 When updating from Mastershort/neonplan3d, integrate current original main with
 the complete custom implementation. Implement and verify any missing agreed

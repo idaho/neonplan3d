@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "documentation": ["docs/custom-features.md", "docs/custom-feature-fixes.md"],
   "features": [
     {"id":"xyz","implemented":true,"tests":["frontend/src/furniture-transform.test.ts","frontend/src/viewer/furniture-rotation.test.ts","frontend/src/geometry/wall-frame.test.ts","tests/test_furniture_rotation.py"]},
     {"id":"room_heights","implemented":true,"tests":["frontend/src/room-levels.test.ts","frontend/src/viewer/openings.test.ts","tests/test_schema.py","tests/test_room_levels.py"]},
