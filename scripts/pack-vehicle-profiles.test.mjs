@@ -58,15 +58,32 @@ test('Soul uses independent tapered windows on curved skin and a dark connected 
 test('C5 has a tall SUV nose and Soul keeps a broad upright box silhouette',()=>{
   const kia=vehicleProfiles(fixture('kia_soul2_white_black_roof')),c5=vehicleProfiles(fixture('citroen_c5_aircross_2024_black'));
   for(const [item,height,width] of [[kia,0.60,0.88],[c5,0.64,0.86]]){
-    const nose=item.parts[0].sections.at(-1).points;
+    const nose=item.parts[0].sections.filter(s=>s.at>=0.4).flatMap(s=>s.points);
     assert.ok(Math.max(...nose.map(p=>p[1]))>=height);
     assert.ok(Math.max(...nose.map(p=>p[0]))-Math.min(...nose.map(p=>p[0]))>=width);
     assert.equal(item.parts[2].sections.length,2);
-    assert.ok(item.parts[26].z+item.parts[26].d/2<item.parts[item===kia?35:37].z+item.parts[item===kia?35:37].d/2,'license plate must not be buried in grille');
+    const front=p=>p.shape==='profile'?Math.max(...p.sections.map(s=>s.at)):p.z+p.d/2;
+    assert.ok(front(item.parts[26])<front(item.parts[item===kia?35:37]),'license plate must not be buried in grille');
   }
   assert.ok(kia.parts[0].crease_angle<c5.parts[0].crease_angle,'Soul edges must stay more pronounced');
   assert.ok(Math.max(...kia.parts[3].sections[1].points.map(p=>p[0]))>0.41,'Soul roof must not taper to a narrow rounded MPV canopy');
   assert.ok(kia.parts[2].sections[0].at>=0.17,'Soul windscreen stands above a short upright bonnet');
   assert.ok(kia.parts.filter(p=>p.id.startsWith('vehicle_projector_')).length===2);
-  assert.ok(c5.parts[1].h>=0.28&&c5.parts[27].y>=0.58,'C5 bumper and lamps must not sit at estate height');
+  assert.ok(Math.max(...c5.parts[1].sections.flatMap(s=>s.points.map(p=>p[1])))>=0.44&&Math.min(...c5.parts[27].sections.flatMap(s=>s.points.map(p=>p[1])))>=0.58,'C5 bumper and lamps must not sit at estate height');
+});
+test('fronts bow around corners and lenses follow the body rather than flat Z plates',()=>{
+  for(const id of ['kia_soul2_white_black_roof','citroen_c5_aircross_2024_black']){
+    const item=vehicleProfiles(fixture(id)),nose=item.parts[0].sections.filter(s=>s.at>0.4);
+    const width=s=>Math.max(...s.points.map(p=>p[0]))-Math.min(...s.points.map(p=>p[0]));
+    assert.ok(nose.length>=12&&width(nose.at(-1))<0.1,'body closes on a small curved tip, not a wide rectangular cap');
+    assert.ok(width(nose[0])>0.8&&width(nose.at(-3))<0.4);
+    for(const index of [1,26,27,28]){
+      const p=item.parts[index];assert.equal(p.shape,'profile');
+      assert.ok(p.sections.length>=5);
+      assert.ok(p.sections.at(-1).at-p.sections[0].at>0.01,'front skin needs actual depth curvature');
+    }
+    for(const p of item.parts.filter(p=>p.shape==='profile')){
+      assert.ok(p.sections.length<=64);for(let i=1;i<p.sections.length;i++)assert.ok(p.sections[i].at>p.sections[i-1].at);
+    }
+  }
 });

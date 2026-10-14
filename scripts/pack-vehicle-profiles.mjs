@@ -1,5 +1,6 @@
 // Photo-guided second-generation Soul and facelift (2022-24) C5 Aircross.
 // Keep placement sizes/IDs. Coordinates are fractions; front is +Z.
+import { smoothVehicleFront } from './pack-vehicle-fronts.mjs';
 const round=v=>Math.round(v*1e7)/1e7;
 const lerp=(knots,z)=>{const i=knots.findIndex(p=>p[0]>=z);if(i<=0)return knots[Math.max(i,0)][1];const [a,b]=[knots[i-1],knots[i]];return a[1]+(b[1]-a[1])*(z-a[0])/(b[0]-a[0]);};
 export function vehicleProfiles(item,baseId=item.id){
@@ -165,5 +166,5 @@ export function vehicleProfiles(item,baseId=item.id){
   }
   // Tiny trim does not need the same subdivision as a bumper or wheel.
   for(const p of item.parts.filter(p=>p.shape==='rounded_box'&&!['p001','p011'].includes(p.id)))p.detail='low';
-  return item;
+  return smoothVehicleFront(item,soul,colored);
 }
