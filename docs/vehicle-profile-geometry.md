@@ -38,10 +38,11 @@ Vorhandene Modelle `kia_soul2_white_black_roof` und `citroen_c5_aircross_2024_bl
 
 - Unterschiedliche Karosserie- und Fenster-/Dachprofile: hoher, kantiger zweiter Soul versus längerem C5 Aircross mit stärker geneigtem Fensterband.
 - Karosserie-Unterkontur hebt sich bei den Radachsen an: echte Radöffnungen an den Seiten, kein vollständiger Kasten hinter den Reifen. Zentraler Unterboden bleibt im Inneren.
-- Schmale geneigte A-Säulen, passende weitere Säulen, separate Dachprofile und beim Citroën Dachreling, die dem Dachverlauf folgt. Keine massiven dreieckigen A-Säulen und keine waagerecht schwebende Reling.
+- Lackierter Kabinenkörper mit separaten, dünnen Front-/Heckscheiben und drei getrennten Seitenscheiben je Seite. Kein durchgehend verglaster Kabinenblock. Fenster enden vor den A-/B-/C-Säulen; jede Querschnittsfläche bleibt positiv und geschlossen, auch an spitz zulaufenden Fensterecken. Die historischen IDs `vehicle_a_pillar_left/right` bleiben erhalten und tragen jetzt die hinteren Dreiecksfenster; die lackierten Säulen entstehen aus dem Kabinenkörper zwischen den Fenstern.
+- Kürzere Kia-Haube, weiter nach vorne gezogenes schwarzes Dach, aufrechteres Heck und eine hohe Heckscheibe statt Sichtschlitz. Beim Citroën stärker gekrönte Schultern, eigenständige Fensterkontur und dachfolgende Reling. Spiegel, Türteilung und Seitenschweller ergänzen die Silhouette.
 - Runde Reifen/Felgen mit höherer Auflösung, sichtbare Naben/Ringe und vereinfachte Speichen. Radstand bzw. Überhänge nicht pauschal symmetrisch ansetzen.
 - Radlaufleisten als kurze dünne Profilkörper, nicht lange mehrfach unterteilte Hohlrohre. Dadurch begrenzter Geometrieaufwand bei gleicher Silhouette. Auch niedrige Qualität behält die Profilkontur, Reifen verwenden reduzierte Rundsegmentierung.
-- Spiegel mit mittlerer, kleine gerundete Zier-/Leuchtenteile mit niedriger Detailstufe; nicht überall maximale Unterteilung. Die fertigen Modelle liegen unter 10.000 nativen Dreiecken in hoher Qualität; in niedriger Qualität unter 7.000. Silhouette und Radöffnungen bleiben dabei gleich.
+- Spiegel mit mittlerer, kleine gerundete Zier-/Leuchtenteile mit niedriger Detailstufe; nicht überall maximale Unterteilung. Die am 14.10. überarbeiteten Modelle verwenden 56/59 Teile und 11.194/11.078 native Dreiecke (Kia/Citroën); bei niedriger Qualität 8.282/8.422. Budget: unter 12.000 bzw. 9.000, maximal 60 Teile. Silhouette und Radöffnungen bleiben auch bei niedriger Qualität gleich.
 - Leuchten, Grill und Kennzeichen vor der neuen Außenhaut positionieren; nicht unter die Karosserie versenken. Späteres Nachjustieren darf keine frei schwebenden Rückleuchten erzeugen.
 - Die Modelle bleiben Foto-Näherungen, keine vermessenen CAD-Nachbauten. Original gespeicherte Größe des C5 (1,84 × 4,50 × 1,689 m) absichtlich nicht stillschweigend ändern, obwohl die unten verwendete Herstellerübersicht 1,670 m Höhe mit Reling nennt.
 
@@ -53,7 +54,9 @@ Vorhandene Modelle `kia_soul2_white_black_roof` und `citroen_c5_aircross_2024_bl
 
 ## Migration, Signaturen und Abnahme
 
-Migration in `scripts/pack-vehicle-profiles.mjs`, aufgerufen vom gepflegten `scripts/upgrade-custom-packs.mjs`. Contract 12 in `private/product-packs-v2/CUSTOM-FEATURES.json`. `--force` kann nach einer Änderung am Migrationsmodul einen Neulauf trotz unveränderter Quell-Hashes auslösen; weiterhin vorherige Daten sichern, Backend-validieren, kanonisch signieren und danach gegen Neon/Product-Zuordnungen prüfen.
+Migration in `scripts/pack-vehicle-profiles.mjs`, aufgerufen vom gepflegten `scripts/upgrade-custom-packs.mjs`. Contract 13 in `private/product-packs-v2/CUSTOM-FEATURES.json` erzwingt die erneute Migration des vorherigen Profilstands. `--force` kann nach einer Änderung am Migrationsmodul einen Neulauf trotz unveränderter Quell-Hashes auslösen; weiterhin vorherige Daten sichern, Backend-validieren, kanonisch signieren und danach gegen Neon/Product-Zuordnungen prüfen.
+
+Die erste Profilversion wurde vom Nutzer optisch abgelehnt. Deshalb nicht nur technische Gültigkeit prüfen: aktuelle Einzelbilder und Seiten-/Heckansichten mit den Referenzen vergleichen. [Kia-Seitenfoto](https://veh-markets.com/cars/kia-c/544956-2015-kia-soul-white-13500miles.html) und [C5 Aircross 2024, mehrere Ansichten](https://www.ronskinnerandsons.co.uk/used-citroen-c5-aircross-tredegar-gwent-7220480) dienen für die sichtbaren Konturen. Das sind weiterhin vereinfachte native Planmodelle, keine photorealistischen CAD-Repliken.
 
 Die Skripte unter `tools/product-packs/` nicht verwenden. Exportstruktur bleibt `neon/*.fp3dpack`, `color/*_farben.fp3dpack`. Nach Änderung müssen die aktualisierte Anwendung und beide Fahrzeuge-Packs installiert sein; nur App-Update ersetzt keine bereits importierten Modelle. Private Schlüssel bleiben außerhalb Repository und Installationspaket.
 

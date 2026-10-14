@@ -23,3 +23,19 @@ test('neon/product geometry matches and models have distinct silhouettes',()=>{
   assert.notDeepEqual(items[0].parts[2].sections,items[1].parts[2].sections);
   const unchanged=fixture('unrelated');const before=structuredClone(unchanged);vehicleProfiles(unchanged);assert.deepEqual(unchanged,before);
 });
+test('individual car windows remain positive-height closed patches, not a full glass cabin',()=>{
+  for(const id of ['kia_soul2_white_black_roof','citroen_c5_aircross_2024_black']){
+    const item=vehicleProfiles(fixture(id));
+    assert.equal(item.parts.find(p=>p.id==='vehicle_cabin').color,item.parts[0].color);
+    for(const index of [4,5,9,10])for(const s of item.parts[index].sections){
+      assert.ok(s.points[2][1]>s.points[0][1]+0.005,'window must not invert at its pointed end');
+      const area=s.points.reduce((sum,a,i)=>{const b=s.points[(i+1)%s.points.length];return sum+a[0]*b[1]-b[0]*a[1];},0);
+      assert.ok(area>0);
+    }
+    assert.ok(item.parts[2].sections.length===2,'windshield must be a separate thin surface');
+    const rear=item.parts.find(p=>p.id==='vehicle_rear_screen');
+    assert.ok(Math.abs(rear.sections[1].points[0][1]-rear.sections[0].points[0][1])>0.16,'rear screen must not be a tiny slit');
+    assert.ok(item.parts.filter(p=>p.id.startsWith('vehicle_spokes')).every(p=>p.points.length===20),'alloy faces must have narrow five-spoke cutouts');
+    for(const p of item.parts.filter(p=>p.shape==='profile'))for(const s of p.sections)for(const [x,y] of s.points){assert.ok(Math.abs(x)<=0.5&&y>=0&&y<=1);}
+  }
+});

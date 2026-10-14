@@ -9,7 +9,7 @@ import { GeoBuffer, LineBuffer } from './src/viewer/geo.ts';
 import type { HomeAssistant } from './src/types.ts';
 
 let renderer:WebGLRenderer|null=null;
-export function cataloguePreview(source:FurniturePack,id:string,size=480){
+export function cataloguePreview(source:FurniturePack,id:string,size=480,view='front'){
   const original=source.items.find(i=>i.id===id);if(!original)throw new Error('Missing item '+id);
   const item=structuredClone(original);
   // Closed moving parts must not disappear from thumbnails. Status is unknown,
@@ -34,7 +34,8 @@ export function cataloguePreview(source:FurniturePack,id:string,size=480){
     const box=new Box3().setFromObject(scene),center=box.getCenter(new Vector3());
     if(![...box.min.toArray(),...box.max.toArray()].every(Number.isFinite))throw new Error('Invalid geometry bounds '+id);
     const camera=new OrthographicCamera(-1,1,1,-1,0.01,100);
-    camera.position.copy(center).add(new Vector3(0.9,0.75,1.3).normalize().multiplyScalar(20));camera.lookAt(center);camera.updateMatrixWorld();
+    const direction=view==='side'?new Vector3(1,0.06,0):view==='rear'?new Vector3(0.9,0.45,-1.3):new Vector3(0.9,0.75,1.3);
+    camera.position.copy(center).add(direction.normalize().multiplyScalar(20));camera.lookAt(center);camera.updateMatrixWorld();
     let r=0.05;
     for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z]){
       const p=new Vector3(x,y,z).applyMatrix4(camera.matrixWorldInverse);r=Math.max(r,Math.abs(p.x),Math.abs(p.y));

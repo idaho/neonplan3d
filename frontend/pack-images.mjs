@@ -72,7 +72,7 @@ try { for (const source of sources) {
       const items = pack.items.map((it) => ({
         id: it.id,
         name: name(it),
-        ...mod.cataloguePreview({licensee:null,...pack},it.id,480),
+        ...mod.cataloguePreview({licensee:null,...pack},it.id,480,info.view),
       }));
       const load = (src) => new Promise((ok,reject) => {
         const img = new Image();
@@ -141,7 +141,7 @@ try { for (const source of sources) {
     },
     `${base}/catalogue-preview.js`,
     {...pack,items:pack.items.slice((pageNo-1)*12,pageNo*12)},
-    {pages:totalPages,pageNo,count:pack.items.length},
+    {pages:totalPages,pageNo,count:pack.items.length,view:process.env.PREVIEW_VIEW??'front'},
   );
   const save = (file, url) => writeFileSync(file, Buffer.from(url.split(",")[1], "base64"));
   result.overviews.forEach(url => save(join(dir, pageNo>1 ? `overview-${pageNo}.png` : "overview.png"), url));
