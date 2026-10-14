@@ -147,11 +147,17 @@ Vorheriger vollständig geprüfter Laufzeitstand: `62bc3a2` auf `feature/custom-
 - Neue Form in Backend, Renderer, 2D-Symbolen, Geometrievergleich und signiertem Export gemeinsam implementieren. Fotos und Herstellerdaten vergleichen; nicht als exakte CAD-Replik behaupten. App und beide Fahrzeuge-Packs müssen nach der Änderung aktualisiert werden.
 - Tests: `frontend/src/viewer/profile-shapes.test.ts`, `tests/test_custom_packs.py`, `scripts/pack-vehicle-profiles.test.mjs`, zugehörige Browser-Szenen. Der volle Update-Prüflauf umfasst diese Tests.
 
+## 18. Reguläre Pack-Galerie nach jeder Modelländerung nachziehen
+
+- Einzelne neue Prüfbilder im Feature-Worktree reichen nicht. Die normale Galerie `private/product-packs-v2/previews/` muss ebenfalls aktuelle Einzelbilder und alle Übersichtseiten für Neon und Produktfarben enthalten.
+- Workflow und Prüfungen: [pack-preview-maintenance.md](pack-preview-maintenance.md). Aktuellen nativen Quell-Renderer verwenden; bewegliche Teile in neutraler Stellung nicht weglassen, Displays mit vereinbarten Fallbacks zeigen. Quelldaten/HA bleiben unverändert.
+- Alle Packs aus den Daten ermitteln, keine alte feste Pack-Anzahl. Leere Bilder/fehlende Dateien/stale Übersichtseiten verhindern den Austausch. Quell-Hashes und Mengen in einem Manifest halten; alte Galerie wiederherstellbar sichern und erst nach erfolgreichem vollständigem Lauf ersetzen.
+
 ## Wiederaufbau- und Pflegecheckliste
 
 1. Spezifikation, diesen Katalog, `docs/custom-features.json` und vorhandene private Pack-Daten lesen. Originalstand sowie lokale Features/Fixes getrennt inventarisieren; erhaltene Daten und tatsächlich fehlende Ressourcen nennen.
 2. Bestehende Pläne/Pack-IDs/Bindungen/Varianten und alte Höhenprofile als Regressionseingaben sichern. Laufzeitvertrag zwischen Backend, Editor, Viewer und Packs gemeinsam wiederherstellen.
-3. Alle 17 Abschnitte oben gegen das neue Verhalten abnehmen, nicht nur nach vorhandenen Feldern suchen. Neu angelegte Ersatzimplementierungen müssen auch dieselben Fallbacks und ausgeschlossenen Automatismen einhalten.
+3. Alle 18 Abschnitte oben gegen das neue Verhalten abnehmen, nicht nur nach vorhandenen Feldern suchen. Neu angelegte Ersatzimplementierungen müssen auch dieselben Fallbacks und ausgeschlossenen Automatismen einhalten.
 4. Den vollständigen Update-Prüflauf ausführen; zusätzlich Browser-Farbumschaltung, Kontur-Plus mit Pointerbewegung/Undo/Redo, negative Höhen, nach oben gerichtetes Licht und Geräteöffnungen prüfen. Technische Prüfliste in `docs/custom-features.json` bei neuen Tests ergänzen.
 5. Wenn Pack-Daten geändert wurden: Sicherung, Migration, Canonical-/Variantenabgleich, Signaturen und beide Exportstile prüfen. Nur bei Bedarf erneuten Pack-Import als Installationsschritt nennen.
 6. Jeden künftigen Fix hier mit **Fehlerbild, verbindlichem Verhalten, Migration und Abnahmetests** ergänzen. Code/Commit ist Beleg, aber kein Ersatz für die dauerhaft lesbare Regel. Dokumentationsstände nicht ungeprüft als installierte Version ausgeben.

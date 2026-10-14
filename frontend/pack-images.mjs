@@ -1,4 +1,4 @@
-// Shop pictures of furniture packs, drawn with the real 3D bundle (run `npm run build` first):
+// Shop pictures of furniture packs, bundled from the current native renderer source:
 // one transparent PNG per item and an overview sheet with all items of the pack.
 // Usage (from frontend/): node pack-images.mjs <pack source .json>... [--out <dir>]
 // Pictures go to <dir>/<pack id>/ (default: next to each source, in a folder named after the pack).
@@ -7,8 +7,11 @@ import { createServer } from "node:http";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, normalize, resolve } from "node:path";
 import puppeteer from "puppeteer-core";
+import { build } from 'esbuild';
 
 const root = resolve(import.meta.dirname, "..");
+const rendered=await build({entryPoints:[join(import.meta.dirname,'catalogue-preview.ts')],bundle:true,write:false,format:'esm',target:'es2022',logLevel:'silent'});
+const rendererBundle=rendered.outputFiles[0].contents;
 const args = process.argv.slice(2);
 const outAt = args.indexOf("--out");
 const outRoot = outAt >= 0 ? resolve(args[outAt + 1]) : null;
@@ -20,6 +23,8 @@ if (!sources.length) {
 
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".woff2": "font/woff2" };
 const server = createServer((req, res) => {
+  if(req.url==='/catalogue-preview.js'){res.writeHead(200,{'content-type':'text/javascript'}).end(rendererBundle);return;}
+  if(req.url==='/catalogue.html'){res.writeHead(200,{'content-type':'text/html'}).end(PAGE);return;}
   const path = normalize(decodeURIComponent(new URL(req.url, "http://x").pathname)).replace(/^([/\\])+/, "");
   const file = join(root, path);
   if (!file.startsWith(root) || !existsSync(file)) {
@@ -32,11 +37,13 @@ await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
 const base = `http://127.0.0.1:${server.address().port}`;
 
 const candidates = [process.env.CHROME_PATH, "C:/Program Files/Google/Chrome/Application/chrome.exe", "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", "/usr/bin/google-chrome", "/usr/bin/chromium"].filter(Boolean);
-const browser = await puppeteer.launch({
+const openBrowser = () => puppeteer.launch({
   executablePath: candidates.find((p) => existsSync(p)),
   headless: true,
+  protocolTimeout:300000,
   args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"],
 });
+let browser=null;
 
 const fonts = "/custom_components/neonplan3d/frontend/fonts";
 const PAGE = `<!doctype html><html><head><meta charset="utf-8"><style>
@@ -45,16 +52,19 @@ const PAGE = `<!doctype html><html><head><meta charset="utf-8"><style>
 body { margin: 0; background: #070b14; }
 </style></head><body></body></html>`;
 
-for (const source of sources) {
+try { for (const source of sources) {
   const pack = JSON.parse(readFileSync(source, "utf8"));
+  if(!/^[a-z0-9][a-z0-9_.-]*$/.test(pack.id)||pack.items.some(i=>!/^[a-z0-9][a-z0-9_.-]*$/.test(i.id)))throw new Error('Unsafe pack/item ID');
   const dir = join(outRoot ?? dirname(source), pack.id);
   mkdirSync(join(dir, "items"), { recursive: true });
+  browser=await openBrowser();
   const page = await browser.newPage();
   await page.setViewport({ width: 800, height: 600, deviceScaleFactor: 2 });
-  await page.goto(`${base}/preview/index.html?empty`, { waitUntil: "domcontentloaded" });
-  await page.setContent(PAGE, { waitUntil: "load" });
+  await page.goto(`${base}/catalogue.html`, { waitUntil: "load" });
+  const totalPages=Math.ceil(pack.items.length/12);
+  for(let pageNo=1;pageNo<=totalPages;pageNo++){
   const result = await page.evaluate(
-    async (bundle, pack) => {
+    async (bundle, pack,info) => {
       await document.fonts.load("700 20px 'Bricolage Grotesque'");
       await document.fonts.load("500 20px Figtree");
       const mod = await import(bundle);
@@ -62,16 +72,16 @@ for (const source of sources) {
       const items = pack.items.map((it) => ({
         id: it.id,
         name: name(it),
-        url: mod.furniturePreview({ type: `pack:${pack.id}:${it.id}`, w: it.size[0], d: it.size[1], h: it.size[2], variant: null, lamp: null }, 480, [{ licensee: null, ...pack }], 1.9),
+        ...mod.cataloguePreview({licensee:null,...pack},it.id,480),
       }));
-      const load = (src) => new Promise((ok) => {
+      const load = (src) => new Promise((ok,reject) => {
         const img = new Image();
         img.onload = () => ok(img);
+        img.onerror=()=>reject(new Error('Preview PNG could not be loaded'));
         img.src = src;
       });
       // overview sheets: title, then up to 12 items per sheet in a grid of tiles
-      const PER_PAGE = 12;
-      const pages = Math.ceil(items.length / PER_PAGE);
+      const pages = info.pages;
       const sheet = async (page, pageNo) => {
         const W = 1600;
         const H = 1200;
@@ -98,7 +108,7 @@ for (const source of sources) {
         g.fillText(pack.name, 68, 150);
         g.fillStyle = "#8d9bc2";
         g.font = "500 24px Figtree";
-        g.fillText(`${pack.items.length} Möbel · für Home Assistant${pack.publisher ? ` · von ${pack.publisher}` : ""}${pages > 1 ? ` · Seite ${pageNo} von ${pages}` : ""}`, 70, 192);
+        g.fillText(`${info.count} Möbel · für Home Assistant${pack.publisher ? ` · von ${pack.publisher}` : ""}${pages > 1 ? ` · Seite ${pageNo} von ${pages}` : ""}`, 70, 192);
         const n = page.length;
         const cols = n <= 4 ? n : n <= 6 ? 3 : n <= 8 ? 4 : n <= 12 ? 4 : 5;
         const rows = Math.ceil(n / cols);
@@ -127,18 +137,18 @@ for (const source of sources) {
         }
         return c.toDataURL("image/png");
       };
-      const overviews = [];
-      for (let p = 0; p < pages; p++) overviews.push(await sheet(items.slice(p * PER_PAGE, (p + 1) * PER_PAGE), p + 1));
-      return { items, overviews };
+      return { items, overviews:[await sheet(items,info.pageNo)] };
     },
-    `${base}/custom_components/neonplan3d/frontend/neonplan3d-3d.js`,
-    pack,
+    `${base}/catalogue-preview.js`,
+    {...pack,items:pack.items.slice((pageNo-1)*12,pageNo*12)},
+    {pages:totalPages,pageNo,count:pack.items.length},
   );
   const save = (file, url) => writeFileSync(file, Buffer.from(url.split(",")[1], "base64"));
-  result.overviews.forEach((url, i) => save(join(dir, i ? `overview-${i + 1}.png` : "overview.png"), url));
+  result.overviews.forEach(url => save(join(dir, pageNo>1 ? `overview-${pageNo}.png` : "overview.png"), url));
   for (const it of result.items) save(join(dir, "items", `${it.id}.png`), it.url);
-  console.log(`${basename(source)}: ${result.items.length} items -> ${dir}`);
+  if(totalPages>4)console.log(`${pack.id}: ${Math.min(pageNo*12,pack.items.length)}/${pack.items.length}`);
+  }
+  console.log(`${basename(source)}: ${pack.items.length} items -> ${dir}`);
   await page.close();
-}
-await browser.close();
-server.close();
+  await browser.close();browser=null;
+} } finally { if(browser)await browser.close();server.close(); }

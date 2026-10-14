@@ -22,6 +22,9 @@ feature; merging older individual feature branches alone does not complete the u
   Do not modify or run legacy generators under tools/product-packs/.
 - Keep signed exports in private/product-packs-v2/neon and color.
   Preserve recovery backups and keep signing keys out of commits and release archives.
+- After pack model changes, regenerate the regular gallery with
+  scripts/render-custom-pack-previews.mjs; follow docs/pack-preview-maintenance.md.
+  Verify the pictures visually. A successful render does not establish model fidelity.
 - Local implementation, commits, integration and verification are authorized.
   Publishing, pushing and Home Assistant deployment require a separate instruction.
 

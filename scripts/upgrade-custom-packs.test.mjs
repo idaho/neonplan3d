@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import './pack-vehicle-profiles.test.mjs';
+import './render-custom-pack-previews.test.mjs';
 import { test } from "node:test";
 import { upgrade, enrich } from "./upgrade-custom-packs.mjs";
 import { modernize, winderPoints } from './pack-round-shapes.mjs';

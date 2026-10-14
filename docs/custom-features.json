@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "documentation": ["docs/custom-features.md", "docs/custom-feature-fixes.md"],
+  "documentation": ["docs/custom-features.md", "docs/custom-feature-fixes.md", "docs/vehicle-profile-geometry.md", "docs/pack-preview-maintenance.md"],
   "features": [
     {"id":"xyz","implemented":true,"tests":["frontend/src/furniture-transform.test.ts","frontend/src/viewer/furniture-rotation.test.ts","frontend/src/geometry/wall-frame.test.ts","tests/test_furniture_rotation.py"]},
     {"id":"room_heights","implemented":true,"tests":["frontend/src/room-levels.test.ts","frontend/src/viewer/openings.test.ts","tests/test_schema.py","tests/test_room_levels.py"]},
@@ -15,7 +15,7 @@
     {"id":"status_parts","implemented":true,"tests":["frontend/src/pack-runtime.test.ts","tests/test_custom_packs.py"]},
     {"id":"directed_lights","implemented":true,"tests":["frontend/src/viewer/custom-features.test.ts","frontend/src/viewer/lighting.test.ts"]},
     {"id":"pack_motions","implemented":true,"tests":["frontend/src/pack-runtime.test.ts","tests/test_custom_packs.py"]},
-    {"id":"pack_shapes","implemented":true,"tests":["frontend/src/viewer/custom-features.test.ts","frontend/src/viewer/profile-shapes.test.ts","scripts/pack-vehicle-profiles.test.mjs","tests/test_custom_packs.py"]},
+    {"id":"pack_shapes","implemented":true,"tests":["frontend/src/viewer/custom-features.test.ts","frontend/src/viewer/profile-shapes.test.ts","scripts/pack-vehicle-profiles.test.mjs","scripts/render-custom-pack-previews.test.mjs","tests/test_custom_packs.py"]},
     {"id":"contact_shadows","implemented":true,"tests":["frontend/src/viewer/contact-shadows.test.ts"]}
   ]
 }
