@@ -34,6 +34,8 @@ def check(directory: Path) -> None:
         "tw",
         "td",
         "points",
+        "sections",
+        "crease_angle",
         "path",
         "radius",
         "thickness",

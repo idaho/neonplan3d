@@ -186,13 +186,25 @@ _SPOT = vol.Schema(
 PART_SCHEMA = vol.Schema(
     {
         vol.Required("shape"): vol.In(
-            ["box", "cyl", "loft", "polygon", "rounded_box", "sphere", "ellipsoid", "pipe", "torus", "bowl"]
+            ["box", "cyl", "loft", "polygon", "rounded_box", "sphere", "ellipsoid", "pipe", "torus", "bowl", "profile"]
         ),
         vol.Optional("id"): _ID,
         vol.Optional("visible"): bool,
         vol.Optional("status"): _STATUS,
         vol.Optional("points"): vol.All([vol.All([_FRACTION], vol.Length(min=2, max=2))], vol.Length(min=3, max=64)),
         vol.Optional("path"): vol.All([_VEC], vol.Length(min=2, max=64)),
+        vol.Optional("sections"): vol.All(
+            [
+                {
+                    vol.Required("at"): _FRACTION,
+                    vol.Required("points"): vol.All(
+                        [vol.ExactSequence([_FRACTION, _LEVEL])], vol.Length(min=3, max=32)
+                    ),
+                }
+            ],
+            vol.Length(min=2, max=64),
+        ),
+        vol.Optional("crease_angle"): vol.All(vol.Coerce(float), _finite, vol.Range(min=0, max=90)),
         vol.Optional("radius"): vol.All(vol.Coerce(float), _finite, vol.Range(min=0.001, max=0.5)),
         vol.Optional("thickness"): vol.All(vol.Coerce(float), _finite, vol.Range(min=0.001, max=0.5)),
         vol.Optional("detail"): vol.In(["low", "medium", "high"]),
@@ -408,6 +420,27 @@ def validate_payload(payload: Any) -> dict[str, Any]:
                 if kind == "spots" and sum(v * v for v in entry["direction"]) < 0.001:
                     raise PackError("invalid_content", "light direction must not be zero")
         for part in item["parts"]:
+            if part["shape"] == "profile":
+                if part.get("axis", "z") != "z":
+                    raise PackError("invalid_content", "profile axis must be z")
+                sections = part.get("sections", [])
+                if len(sections) < 2:
+                    raise PackError("invalid_content", "profile needs at least two cross-sections")
+                count = len(sections[0]["points"])
+                for i, section in enumerate(sections):
+                    points = section["points"]
+                    area = (
+                        sum(
+                            p[0] * points[(j + 1) % count][1] - points[(j + 1) % count][0] * p[1]
+                            for j, p in enumerate(points)
+                        )
+                        if len(points) == count
+                        else 0
+                    )
+                    if len(points) != count or not _polygon(points) or area <= 0:
+                        raise PackError("invalid_content", "profile sections need matching simple CCW contours")
+                    if i and section["at"] <= sections[i - 1]["at"]:
+                        raise PackError("invalid_content", "profile section positions must increase")
             if "status" in part and (not part.get("id") or part["status"]["binding"] not in bindings):
                 raise PackError("invalid_content", "status needs stable part id and binding")
             if part["shape"] == "polygon" and not _polygon(part.get("points", [])):

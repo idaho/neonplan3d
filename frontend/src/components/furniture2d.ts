@@ -2,7 +2,7 @@
 // The editor places them with translate/rotate/scale; strokes keep their width on screen.
 
 import { nothing, svg, type SVGTemplateResult } from "lit";
-import { packItem, type PackItem } from "../packs.ts";
+import { packItem, profilePlanPoints, type PackItem } from "../packs.ts";
 import { stairsULayout } from "../model.ts";
 
 type Part = SVGTemplateResult;
@@ -248,8 +248,9 @@ function packSymbol(item: PackItem, w: number, d: number): Part[] {
     );
   }
   return item.parts
-    .filter((p) => p.visible!==false && (p.w < 0.98 || p.d < 0.98 || p.shape==="polygon"))
+    .filter((p) => p.visible!==false && (p.w < 0.98 || p.d < 0.98 || p.shape==="polygon" || p.shape==='profile'))
     .map((p) =>
+      p.shape==='profile' ? svg`<polygon points=${profilePlanPoints(p).map(([x,z])=>`${x*w},${z*d}`).join(' ')} />` :
       p.shape==="polygon" ? svg`<polygon points=${(p.points??[]).map(([x,z])=>`${p.x*w+x*p.w*w},${p.z*d+z*p.d*d}`).join(" ")} />` :
       ["sphere","ellipsoid","torus","bowl"].includes(p.shape) ? svg`<ellipse cx=${p.x*w} cy=${p.z*d} rx=${p.w*w/2} ry=${p.d*d/2} />` :
       p.shape === "cyl" && (p.axis ?? "y") === "y"

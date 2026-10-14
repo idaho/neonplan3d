@@ -13,6 +13,35 @@ from custom_components.neonplan3d.schema import FURNITURE_SCHEMA, OUTDOOR_SCHEMA
 PART = {"id": "body", "shape": "box", "x": 0, "z": 0, "y": 0, "w": 1, "d": 1, "h": 1, "color": "body"}
 
 
+def test_profile_sections_validate_bounds_order_winding_and_smoothing() -> None:
+    points = [[-0.5, 0], [0.5, 0], [0.5, 1], [-0.5, 1]]
+    part = {
+        **PART,
+        "shape": "profile",
+        "axis": "z",
+        "crease_angle": 35,
+        "sections": [{"at": -0.5, "points": points}, {"at": 0.5, "points": points}],
+    }
+    payload = copy.deepcopy(PAYLOAD)
+    payload["items"][0]["parts"] = [part]
+    assert validate_payload(payload)["items"][0]["parts"][0]["sections"] == part["sections"]
+    invalid = [
+        {"sections": []},
+        {"axis": "x"},
+        {"crease_angle": 91},
+        {"crease_angle": math.nan},
+        {"sections": [{"at": -0.5, "points": points}, {"at": -0.5, "points": points}]},
+        {"sections": [{"at": -0.5, "points": points}, {"at": 0.5, "points": points[:-1]}]},
+        {"sections": [{"at": -0.5, "points": points[::-1]}, {"at": 0.5, "points": points}]},
+        {"sections": [{"at": -0.5, "points": [[-0.5, -0.1], *points[1:]]}, {"at": 0.5, "points": points}]},
+        {"sections": [{"at": math.inf, "points": points}, {"at": 0.5, "points": points}]},
+    ]
+    for patch in invalid:
+        payload["items"][0]["parts"] = [{**part, **patch}]
+        with pytest.raises(PackError):
+            validate_payload(payload)
+
+
 def test_gravel_bed_keeps_free_contour_slope_and_ha_area() -> None:
     area = {
         "id": "gravel",

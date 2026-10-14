@@ -21,7 +21,11 @@ export interface PackPart {
   visible?: boolean;
   status?: { binding: string; colors?: Record<string, string>; visibility?: Record<string, boolean> };
   /** A box, a cylinder, or a loft: a box whose top face is another rectangle (sloped sides). */
-  shape: "box" | "cyl" | "loft" | "polygon" | "rounded_box" | "sphere" | "ellipsoid" | "pipe" | "torus" | "bowl";
+  shape: "box" | "cyl" | "loft" | "polygon" | "rounded_box" | "sphere" | "ellipsoid" | "pipe" | "torus" | "bowl" | "profile";
+  /** Closed cross-sections along local Z. Matching CCW vertices, x -0.5..0.5, y 0..1. */
+  sections?: { at: number; points: [number, number][] }[];
+  /** Smooth only adjoining faces below this angle (degrees); 0 keeps flat facets. */
+  crease_angle?: number;
   points?: [number, number][];
   path?: [number, number, number][];
   radius?: number;
@@ -60,6 +64,13 @@ export type PackSymbol =
   | { shape: "rect"; x: number; z: number; w: number; d: number; fill?: boolean }
   | { shape: "circle"; x: number; z: number; r: number }
   | { shape: "line"; x1: number; z1: number; x2: number; z2: number };
+
+/** Envelope seen from above; profile Y coordinates do not alter the plan silhouette. */
+export function profilePlanPoints(p:PackPart):[number,number][]{
+  const sections=p.sections??[],left=sections.map(s=>[p.x+Math.min(...s.points.map(v=>v[0]))*p.w,p.z+s.at*p.d] as [number,number]);
+  const right=sections.toReversed().map(s=>[p.x+Math.max(...s.points.map(v=>v[0]))*p.w,p.z+s.at*p.d] as [number,number]);
+  return [...left,...right];
+}
 
 export interface PackItem {
   bindings?: PackBinding[];

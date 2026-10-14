@@ -536,6 +536,16 @@ for(const style of ['front_slot','sliding_wood']){
 }
 if(process.env.ROUND_PACK_DIR){
   const directory=resolve(process.env.ROUND_PACK_DIR);
+  for(const colored of [false,true]){
+    const vehicles=JSON.parse(readFileSync(join(directory,`v2.fahrzeuge${colored?'_farben':''}.json`),'utf8')).items;
+    for(const original of vehicles)for(const side of [false,true]){
+      const item=structuredClone(original);delete item.product;
+      const f={id:'vehicle',type:`pack:preview.vehicle:${item.id}`,x:2.5,z:3,w:item.size[0],d:item.size[1],h:item.size[2],rotation:0,variant:null};
+      shots.push({name:`vehicle-${item.id}-${colored?'color':'neon'}-${side?'side':'front'}`,query:'',width:1200,height:850,editor:true,mockPrivatePacks:true,shapePack:{id:'preview.vehicle',name:'Fahrzeugprofil',publisher:'Preview',items:[item]},then3d:'Erdgeschoss',camera:{theta:side?Math.PI/2:0.8,phi:side?1.49:1.0,radius:6.7,target:{x:2.5,y:0.8,z:3}},editorScript:`
+        document.querySelector('neonplan3d-panel')._quality='high';e.change(b=>{b.floors=[b.floors[0]];b.settings.roof.type='none';b.settings.pets={on:false,list:[]};const floor=b.floors[0];floor.rooms=[{id:'vehicle',name:'Fahrzeugprofil',area_id:null,points:[[0,0],[5,0],[5,6],[0,6]],floor_material:'concrete',wall_h:0}];floor.furniture=[${JSON.stringify(f)}];floor.openings=[];floor.walls=[];floor.outdoor=[];floor.placements=[];});e.fit();
+      `});
+    }
+  }
   const load=category=>JSON.parse(readFileSync(join(directory,`v2.${category}_farben.json`),'utf8')).items;
   const dishwasher=structuredClone(load('kuechenmoebel').find(i=>i.id==='kitchen_dishwasher_panel_60'));delete dishwasher.product;
   shots.push({name:'pack-dishwasher-open',query:'',width:1200,height:900,editor:true,mockPrivatePacks:true,dishwasherOpen:true,shapePack:{id:'preview.dishwasher',name:'Spülmaschine',publisher:'Preview',items:[dishwasher]},then3d:'Erdgeschoss',camera:{theta:0.3,phi:0.9,radius:3.5,target:{x:1,y:0.4,z:1.2}},editorScript:`

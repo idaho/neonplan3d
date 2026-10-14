@@ -53,6 +53,8 @@ test('standard straight and U stairs move vertically without changing their foot
 const item: PackItem = { id: "model", name: { en: "Model" }, size: [1.2, 0.5, 0.8], parts: [
   { shape: "box", x: 0.1, z: 0, w: 0.8, d: 1, y: 0, h: 0.8, color: "body", glow: true, edges: true },
   { shape: "cyl", axis: "x", x: -0.3, z: 0, w: 0.15, d: 0.2, y: 0, h: 0.2, color: "dark" },
+  { shape:'profile',x:0,y:0.4,z:0,w:0.4,d:0.8,h:0.3,color:'glass',glow:true,edges:true,crease_angle:35,
+    sections:[{at:-0.5,points:[[-0.5,0],[0.5,0],[0.3,1],[-0.3,1]]},{at:0.5,points:[[-0.4,0],[0.4,0],[0.2,0.7],[-0.2,0.7]]}] },
 ] };
 
 function checkPositions(original: number[], result: number[], f: Furniture, pivotY = base + f.h / 2) {

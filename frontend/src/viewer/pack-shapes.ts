@@ -1,6 +1,7 @@
 import { BoxGeometry, BufferGeometry, CatmullRomCurve3, CylinderGeometry, Float32BufferAttribute, LatheGeometry, SphereGeometry, TorusGeometry, TubeGeometry, Vector2, Vector3 } from "three";
 import type { PackPart } from "../packs.ts";
 import { triangulate } from "./geo.ts";
+import { toCreasedNormals } from "three/addons/utils/BufferGeometryUtils.js";
 let lowQuality=false;
 export function setPackShapeQuality(low:boolean):void{lowQuality=low;}
 
@@ -8,7 +9,23 @@ export function packShape(p: PackPart, w: number, d: number, h: number, low = lo
   const n = low || p.detail === "low" ? 12 : p.detail === "high" ? 40 : 24;
   const W = p.w * w, D = p.d * d, H = p.h * h;
   let g: BufferGeometry;
-  if (p.shape === "cyl" && p.detail) {
+  if (p.shape === "profile") {
+    const sections=p.sections??[],count=sections[0]?.points.length??0;
+    if(sections.length<2||count<3||sections.some(s=>s.points.length!==count))return null;
+    const positions:number[]=[];
+    const vertex=(s:number,i:number)=>[sections[s].points[i][0]*W,sections[s].points[i][1]*H,sections[s].at*D];
+    const triangle=(a:number[],b:number[],c:number[])=>positions.push(...a,...b,...c);
+    for(let s=0;s<sections.length-1;s++)for(let i=0;i<count;i++){
+      const j=(i+1)%count,a=vertex(s,i),b=vertex(s,j),c=vertex(s+1,j),d=vertex(s+1,i);
+      triangle(a,b,c);triangle(a,c,d);
+    }
+    for(const s of [0,sections.length-1])for(const [a,b,c] of triangulate(sections[s].points)){
+      const A=vertex(s,a),B=vertex(s,b),C=vertex(s,c);
+      const cross=(B[0]-A[0])*(C[1]-A[1])-(B[1]-A[1])*(C[0]-A[0]);
+      if((cross>0)===(s===0))triangle(A,C,B);else triangle(A,B,C);
+    }
+    g=new BufferGeometry();g.setAttribute("position",new Float32BufferAttribute(positions,3));
+  } else if (p.shape === "cyl" && p.detail) {
     const axis=p.axis??'y',length=axis==='x'?W:axis==='z'?D:H;
     const radius=(axis==='x'?Math.min(D,H):axis==='z'?Math.min(W,H):Math.min(W,D))/2;
     g=new CylinderGeometry(radius,radius,length,low?32:p.detail==='high'?64:40);
@@ -68,5 +85,11 @@ export function packShape(p: PackPart, w: number, d: number, h: number, low = lo
     g.scale(W,H,D);
   } else return null;
   g.translate(p.x*w,p.y*h,p.z*d); g.computeVertexNormals();
+  if(p.crease_angle!==undefined){
+    const previous=g;
+    g=p.crease_angle>0?toCreasedNormals(g,p.crease_angle*Math.PI/180):(g.index?g.toNonIndexed():g);
+    if(p.crease_angle===0)g.computeVertexNormals();
+    if(g!==previous)previous.dispose();
+  }
   return g;
 }

@@ -15,7 +15,7 @@
     {"id":"status_parts","implemented":true,"tests":["frontend/src/pack-runtime.test.ts","tests/test_custom_packs.py"]},
     {"id":"directed_lights","implemented":true,"tests":["frontend/src/viewer/custom-features.test.ts","frontend/src/viewer/lighting.test.ts"]},
     {"id":"pack_motions","implemented":true,"tests":["frontend/src/pack-runtime.test.ts","tests/test_custom_packs.py"]},
-    {"id":"pack_shapes","implemented":true,"tests":["frontend/src/viewer/custom-features.test.ts","tests/test_custom_packs.py"]},
+    {"id":"pack_shapes","implemented":true,"tests":["frontend/src/viewer/custom-features.test.ts","frontend/src/viewer/profile-shapes.test.ts","scripts/pack-vehicle-profiles.test.mjs","tests/test_custom_packs.py"]},
     {"id":"contact_shadows","implemented":true,"tests":["frontend/src/viewer/contact-shadows.test.ts"]}
   ]
 }

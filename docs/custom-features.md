@@ -9,6 +9,10 @@ Aktueller Dokumentationsstand vom 14.10.2026: Alle 15 bestätigten Funktionsgrup
 
 ## Vorgehen pro Feature
 
+### Fahrzeug-Geometrien vom 14.10.2026
+
+Die zusätzlichen Pack-Formen umfassen jetzt auch mehrstufige Profilkörper (`profile`) und winkelabhängige Glättung. Kia Soul II und C5 Aircross 2024 übernehmen passende Karosserie-/Fenster-/Dachkonturen, Radöffnungen und runde Räder bei unveränderten Modell-IDs, Größen und Farbzuordnungen. Verbindliche Wiederaufbau-Regeln, Datenfelder und Abnahme: [vehicle-profile-geometry.md](vehicle-profile-geometry.md). Beide Fahrzeuge-Packs müssen zusätzlich zur Anwendung aktualisiert werden; reine Codeänderungen ersetzen ihre Daten nicht.
+
 ### Integration mit Original 1.18.0 am 14.10.2026
 
 Original-main `e7b2027` ergänzt Gelände-/Kellerdarstellung, Kellerfenster mit Lichtschacht, gruppierte Werkzeug-/Etagenmenüs, einklappbare Seitenleiste, das 3D-Anzeigenmenü sowie Kamera-, Seitenteil- und Mediensteuerungsfixes. Diese Änderungen werden gemeinsam mit sämtlichen 15 Custom-Funktionsgruppen und dem Fix-Katalog integriert. Beim Werkzeugmenü bleiben freie Dach-/Außenkonturen verfügbar; die Rechteck-/Freiform-Auswahl steuert dieselbe Zeichenart. Außenobjekte und deren negative Höhenversätze folgen der neuen Gelände-Basis. Generierte Bundles werden aus den gemeinsamen Quellen neu gebaut, nicht aus einer Merge-Seite übernommen. Lokale Prüfungen und Installation bleiben getrennte Schritte.

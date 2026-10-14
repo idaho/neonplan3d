@@ -140,11 +140,18 @@ Vorheriger vollständig geprüfter Laufzeitstand: `62bc3a2` auf `feature/custom-
 - Push, Veröffentlichung, HA-Installation, Pack-Import oder HA-Konfigurationsänderungen erfordern einen separaten Auftrag. `ready`/lokales `adopted` bedeutet nicht installiert. Nicht direkt HA-`.storage` ändern.
 - Prüfung: `scripts/neon-update.test.mjs`, `scripts/neon-deploy.test.mjs`; nur angeforderte externe Änderungen vornehmen.
 
+## 17. Fahrzeugprofile und gezielte Glättung
+
+- Verbindlicher Daten-/Migration-/Abnahmevertrag: [vehicle-profile-geometry.md](vehicle-profile-geometry.md). Profilkörper verbinden mehrere passende geschlossene Querschnitte, mit begrenzter Punkt-/Ringzahl, korrekten Endkappen und kontrollierten Normalen. Neon-Outlines zeigen Knicke, keine Dreiecksgitter.
+- Bestehenden Soul II und C5 Aircross 2024 in beiden Farbstilen erhalten; Profile für Karosserie, Fenster und Dach, echte Radöffnungen, schmale A-Säulen, runde Räder und dachfolgende Reling. IDs, Größen und Zuordnungen nicht ersetzen. Radlaufleisten effizient als Profile statt dicht segmentierter Hohlrohre.
+- Neue Form in Backend, Renderer, 2D-Symbolen, Geometrievergleich und signiertem Export gemeinsam implementieren. Fotos und Herstellerdaten vergleichen; nicht als exakte CAD-Replik behaupten. App und beide Fahrzeuge-Packs müssen nach der Änderung aktualisiert werden.
+- Tests: `frontend/src/viewer/profile-shapes.test.ts`, `tests/test_custom_packs.py`, `scripts/pack-vehicle-profiles.test.mjs`, zugehörige Browser-Szenen. Der volle Update-Prüflauf umfasst diese Tests.
+
 ## Wiederaufbau- und Pflegecheckliste
 
 1. Spezifikation, diesen Katalog, `docs/custom-features.json` und vorhandene private Pack-Daten lesen. Originalstand sowie lokale Features/Fixes getrennt inventarisieren; erhaltene Daten und tatsächlich fehlende Ressourcen nennen.
 2. Bestehende Pläne/Pack-IDs/Bindungen/Varianten und alte Höhenprofile als Regressionseingaben sichern. Laufzeitvertrag zwischen Backend, Editor, Viewer und Packs gemeinsam wiederherstellen.
-3. Alle 16 Abschnitte oben gegen das neue Verhalten abnehmen, nicht nur nach vorhandenen Feldern suchen. Neu angelegte Ersatzimplementierungen müssen auch dieselben Fallbacks und ausgeschlossenen Automatismen einhalten.
+3. Alle 17 Abschnitte oben gegen das neue Verhalten abnehmen, nicht nur nach vorhandenen Feldern suchen. Neu angelegte Ersatzimplementierungen müssen auch dieselben Fallbacks und ausgeschlossenen Automatismen einhalten.
 4. Den vollständigen Update-Prüflauf ausführen; zusätzlich Browser-Farbumschaltung, Kontur-Plus mit Pointerbewegung/Undo/Redo, negative Höhen, nach oben gerichtetes Licht und Geräteöffnungen prüfen. Technische Prüfliste in `docs/custom-features.json` bei neuen Tests ergänzen.
 5. Wenn Pack-Daten geändert wurden: Sicherung, Migration, Canonical-/Variantenabgleich, Signaturen und beide Exportstile prüfen. Nur bei Bedarf erneuten Pack-Import als Installationsschritt nennen.
 6. Jeden künftigen Fix hier mit **Fehlerbild, verbindlichem Verhalten, Migration und Abnahmetests** ergänzen. Code/Commit ist Beleg, aber kein Ersatz für die dauerhaft lesbare Regel. Dokumentationsstände nicht ungeprüft als installierte Version ausgeben.

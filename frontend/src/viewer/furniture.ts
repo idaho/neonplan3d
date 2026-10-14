@@ -3,7 +3,7 @@
 // rotated and moved into place. Solids go into the floor's wall buffer, main outlines into its line
 // buffer and a soft contact shadow into the shadow layer, so furniture adds no draw calls.
 
-import { Color } from "three";
+import { Color, EdgesGeometry } from "three";
 import type { Furniture, Vec2 } from "../model.ts";
 import { builtinBase, stairsULayout, POOL_VALVE_Y } from "../model.ts";
 import { rotateFurniturePositions } from "../furniture-transform.ts";
@@ -58,6 +58,14 @@ class Builder {
     const at=(i: number) => { const [x,z]=this.tf(pos.getX(i),pos.getZ(i));return [x,base+pos.getY(i),z]; };
     const tint=(i:number)=>col.clone().multiplyScalar(0.78+0.2*Math.max(0,normals.getY(i))+0.14*(normals.getX(i)*-0.55+normals.getZ(i)*0.83));
     for(let i=0;i<pos.count;i+=3){const b=i+(this.mirrored?2:1),c=i+(this.mirrored?1:2);this.buf.tri(at(i),at(b),at(c),tint(i),tint(b),tint(c));}
+    if(p.edges){
+      const edgeGeo=new EdgesGeometry(g,p.crease_angle||35),v=edgeGeo.getAttribute('position');
+      const col=p.edges==='glow'?EDGE_TOP:p.edges==='faint'?EDGE_FAINT:EDGE_FURN;
+      for(let i=0;i<v.count;i+=2){const a=this.tf(v.getX(i),v.getZ(i)),b=this.tf(v.getX(i+1),v.getZ(i+1));
+        this.lines.seg([a[0],base+v.getY(i),a[1]],[b[0],base+v.getY(i+1),b[1]],col);
+      }
+      edgeGeo.dispose();
+    }
     if(flat!==g)flat.dispose();g.dispose();
     return true;
   }
