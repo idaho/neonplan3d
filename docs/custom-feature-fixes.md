@@ -2,7 +2,7 @@
 
 Stand: 14.10.2026. Ergänzt [custom-features.md](custom-features.md) und den Testvertrag [custom-features.json](custom-features.json). Diese Regeln gehören zum freigegebenen Funktionsumfang. Bei einer vollständigen Neuimplementierung oder einem Original-Update dürfen sie nicht als entbehrliche Detailkorrekturen verloren gehen. Alte „noch offen“-Abschnitte der Feature-Spezifikation beschreiben historische Zwischenstände, nicht den heutigen Umfang.
 
-Zuletzt vollständig geprüfter Laufzeitstand: `62bc3a2` auf `feature/custom-features-complete` und lokalem `custom`, integriert mit Original-main `3a88760` (Version 1.17.2). Prüfung: 448 Frontend-Tests, 92 Backend-Tests mit 34 Subtests, zehn Pack-Migrationstests, Typprüfungen, Lint, Formatierung, Build-Budgets und 58 signierte Packs mit 1102 geometriegleichen Produktvarianten. Diese Zahlen dokumentieren den damaligen Stand, sind keine dauerhaft festgeschriebenen Modell- oder Testlimits. Installation auf HA nicht aus dem lokalen Prüfstatus ableiten.
+Vorheriger vollständig geprüfter Laufzeitstand: `62bc3a2` auf `feature/custom-features-complete` und lokalem `custom`, integriert mit Original-main `3a88760` (Version 1.17.2). Prüfung: 448 Frontend-Tests, 92 Backend-Tests mit 34 Subtests, zehn Pack-Migrationstests, Typprüfungen, Lint, Formatierung, Build-Budgets und 58 signierte Packs mit 1102 geometriegleichen Produktvarianten. Diese Zahlen dokumentieren den damaligen Stand, sind keine dauerhaft festgeschriebenen Modell- oder Testlimits. Installation auf HA nicht aus dem lokalen Prüfstatus ableiten.
 
 ## 1. Produktfarben wechseln sofort, ohne Neuladen
 

@@ -1175,6 +1175,15 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
     await page.evaluate(async()=>{
       const e=document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');
       const settle=async()=>{await e.updateComplete;await new Promise(r=>setTimeout(r,150));};
+      // The 1.18 toolbar and custom contour controls must select the same drawing mode.
+      for(const [key,polygon] of [['outdoor_shape_rect',false],['outdoor_shape_free',true]]){
+        e._toolMenu='outside';e._toolOpen='outdoor';await settle();
+        const button=[...e.shadowRoot.querySelectorAll('.fp3d-menu-sub button')].find(b=>b.textContent.trim()===e.t(key));
+        if(!button)throw new Error('Missing original outdoor menu choice: '+key);
+        button.click();await settle();
+        if(e.drawingPolygon!==polygon||e._outdoorFree!==polygon)throw new Error('Toolbar contour choice disagrees with drawing mode');
+      }
+      e._toolMenu=null;e._toolOpen=null;e.setTool('select');await settle();
       for(const [kind,id,key,property] of [['furniture','chair','mount_height','mount_y'],['opening','door','mount_height','sill'],['opening','window','sill','sill'],['opening','garage','mount_height','sill'],['outdoor','fence','outdoor_offset','offset']]){
         e.selectItem(kind,id);await settle();
         const list=()=>kind==='opening'?e.floor.openings:kind==='outdoor'?e.floor.outdoor:e.floor.furniture;
@@ -1193,7 +1202,7 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       }
       e.selectItem('opening','door');await settle();
     });
-    console.log('verified negative chair, door, window, garage and fence heights, opening geometry and undo/redo');
+    console.log('verified original toolbar contour choices, negative chair/door/window/garage/fence heights, geometry and undo/redo');
   }
   if(shot.stairHeight){
     await page.evaluate(async()=>{
