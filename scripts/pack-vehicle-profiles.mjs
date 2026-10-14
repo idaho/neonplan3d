@@ -39,7 +39,7 @@ export function vehicleProfiles(item,baseId=item.id){
     set(middle,profile([[-0.077,sideRing(side,0.65,soul?0.977:0.95,0.44,soul?0.39:0.375)],[-0.065,sideRing(side,0.65,soul?0.977:0.95,0.44,soul?0.39:0.375)]],dark,0));
     // A-pillars are narrow sloping ribbons, not solid triangular side panels.
     upsert(`vehicle_a_pillar_${side<0?'left':'right'}`,profile([[0.085,sideRing(side,soul?0.92:0.87,soul?0.94:0.89,soul?0.37:0.357,soul?0.37:0.357)],[soul?0.235:0.25,sideRing(side,0.656,0.678,0.395,0.395)]],body,0));
-    upsert(`vehicle_mirror_${side<0?'left':'right'}`,{shape:'ellipsoid',x:side*0.468,y:0.655,z:0.125,w:0.063,h:0.04,d:0.06,color:dark,detail:'high'});
+    upsert(`vehicle_mirror_${side<0?'left':'right'}`,{shape:'ellipsoid',x:side*0.468,y:0.655,z:0.125,w:0.063,h:0.04,d:0.06,color:dark,detail:'medium'});
   }
   set(6,{shape:'rounded_box',x:0,y:0.12,z:0,w:0.64,h:0.20,d:0.9,radius:0.05,color:dark});
   set(11,{shape:'rounded_box',x:0,y:0.19,z:-0.463,w:0.9,h:0.15,d:0.04,radius:0.1,color:body});
@@ -71,5 +71,7 @@ export function vehicleProfiles(item,baseId=item.id){
   for(const p of item.parts.filter(p=>p.shape!=='profile'&&p.d<0.02&&Math.abs(p.z)>0.47))p.z=p.z<0?-0.493:0.493;
   if(soul)for(const index of [30,34])Object.assign(item.parts[index],{shape:'rounded_box',x:index===30?-0.402:0.402,z:-0.41,y:0.55,h:0.34,w:0.038,d:0.026,radius:0.12});
   for(const p of item.parts.filter(p=>p.shape==='box'&&p.z>0.49))Object.assign(p,{shape:'rounded_box',radius:0.12});
+  // Tiny trim does not need the same subdivision as a bumper or wheel.
+  for(const p of item.parts.filter(p=>p.shape==='rounded_box'&&!['p001','p011'].includes(p.id)))p.detail='low';
   return item;
 }

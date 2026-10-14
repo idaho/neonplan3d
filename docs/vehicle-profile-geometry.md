@@ -41,6 +41,7 @@ Vorhandene Modelle `kia_soul2_white_black_roof` und `citroen_c5_aircross_2024_bl
 - Schmale geneigte A-Säulen, passende weitere Säulen, separate Dachprofile und beim Citroën Dachreling, die dem Dachverlauf folgt. Keine massiven dreieckigen A-Säulen und keine waagerecht schwebende Reling.
 - Runde Reifen/Felgen mit höherer Auflösung, sichtbare Naben/Ringe und vereinfachte Speichen. Radstand bzw. Überhänge nicht pauschal symmetrisch ansetzen.
 - Radlaufleisten als kurze dünne Profilkörper, nicht lange mehrfach unterteilte Hohlrohre. Dadurch begrenzter Geometrieaufwand bei gleicher Silhouette. Auch niedrige Qualität behält die Profilkontur, Reifen verwenden reduzierte Rundsegmentierung.
+- Spiegel mit mittlerer, kleine gerundete Zier-/Leuchtenteile mit niedriger Detailstufe; nicht überall maximale Unterteilung. Die fertigen Modelle liegen unter 10.000 nativen Dreiecken in hoher Qualität; in niedriger Qualität unter 7.000. Silhouette und Radöffnungen bleiben dabei gleich.
 - Leuchten, Grill und Kennzeichen vor der neuen Außenhaut positionieren; nicht unter die Karosserie versenken. Späteres Nachjustieren darf keine frei schwebenden Rückleuchten erzeugen.
 - Die Modelle bleiben Foto-Näherungen, keine vermessenen CAD-Nachbauten. Original gespeicherte Größe des C5 (1,84 × 4,50 × 1,689 m) absichtlich nicht stillschweigend ändern, obwohl die unten verwendete Herstellerübersicht 1,670 m Höhe mit Reling nennt.
 

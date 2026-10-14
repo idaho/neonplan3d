@@ -10,6 +10,8 @@ test('both vehicle migrations keep IDs, sizes, bindings and are idempotent',()=>
     assert.ok(item.parts[0].sections.length>20);assert.equal(item.parts[2].shape,'profile');
     assert.equal(item.parts.filter(p=>p.id.startsWith('vehicle_arch')).length,4);
     assert.ok(item.parts.filter(p=>p.shape==='cyl').every(p=>p.detail==='high'));
+    assert.ok(item.parts.filter(p=>p.id.startsWith('vehicle_mirror')).every(p=>p.detail==='medium'));
+    assert.ok(item.parts.filter(p=>p.shape==='rounded_box'&&!['p001','p011'].includes(p.id)).every(p=>p.detail==='low'));
     const minY=item.parts[0].sections.map(s=>Math.min(...s.points.map(p=>p[1])));
     assert.ok(Math.max(...minY)-Math.min(...minY)>0.2,'wheel cutouts must be real body contour changes');
   }
