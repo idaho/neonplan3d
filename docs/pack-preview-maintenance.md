@@ -24,6 +24,6 @@ Alternativ das Skript aus dem jeweils aktuellen konsolidierten Feature-Worktree 
 
 Der Nachholauftrag vom 14.10.2026 umfasst 58 Packs, 1.911 Einzelbilder und 188 Übersichtseiten; künftige Mengen ergeben sich aus den aktuellen Daten. Sonder-Screenshots unter `previews-native/` bleiben Szenario-/Animationsbelege, sind nicht die reguläre Galerie und ersetzen deren Aktualisierung nicht.
 
-Für gezielte Formprüfungen unterstützt `frontend/pack-images.mjs` zusätzlich `PREVIEW_VIEW=side` und `PREVIEW_VIEW=rear` (Standard: Front-Schrägansicht). Diese Prüfungen in separate Ausgabeordner rendern, nicht die regulären Front-Vorschauen damit überschreiben. Alle Ansichten verwenden dieselbe native Pack-Geometrie, keine handgezeichneten Idealbilder.
+Für gezielte Formprüfungen unterstützt `frontend/pack-images.mjs` zusätzlich `PREVIEW_VIEW=side`, `PREVIEW_VIEW=rear` und `PREVIEW_VIEW=headon` (direkte Front; Standard: Front-Schrägansicht). Diese Prüfungen in separate Ausgabeordner rendern, nicht die regulären Front-Vorschauen damit überschreiben. Alle Ansichten verwenden dieselbe native Pack-Geometrie, keine handgezeichneten Idealbilder.
 
 Prüfungen: `node --test scripts/render-custom-pack-previews.test.mjs`, `npx tsc --project tsconfig.catalogue.json` im Frontend und Sichtprüfung repräsentativer Autos, Gerätefronten, Uhren sowie runder/gewendelter Formen.

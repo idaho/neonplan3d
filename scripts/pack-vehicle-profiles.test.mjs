@@ -36,6 +36,24 @@ test('individual car windows remain positive-height closed patches, not a full g
     const rear=item.parts.find(p=>p.id==='vehicle_rear_screen');
     assert.ok(Math.abs(rear.sections[1].points[0][1]-rear.sections[0].points[0][1])>0.16,'rear screen must not be a tiny slit');
     assert.ok(item.parts.filter(p=>p.id.startsWith('vehicle_spokes')).every(p=>p.points.length===20),'alloy faces must have narrow five-spoke cutouts');
-    for(const p of item.parts.filter(p=>p.shape==='profile'))for(const s of p.sections)for(const [x,y] of s.points){assert.ok(Math.abs(x)<=0.5&&y>=0&&y<=1);}
+    for(const p of item.parts.filter(p=>p.shape==='profile'))for(const s of p.sections){
+      for(const [x,y] of s.points)assert.ok(Math.abs(x)<=0.5&&y>=0&&y<=1);
+      assert.ok(s.points.reduce((area,a,i)=>{const b=s.points[(i+1)%s.points.length];return area+a[0]*b[1]-b[0]*a[1];},0)>0,'all profiles, including the clipped roof rails, need nonzero CCW sections');
+    }
   }
+});
+test('C5 has a tall SUV nose and Soul keeps a broad upright box silhouette',()=>{
+  const kia=vehicleProfiles(fixture('kia_soul2_white_black_roof')),c5=vehicleProfiles(fixture('citroen_c5_aircross_2024_black'));
+  for(const [item,height,width] of [[kia,0.60,0.88],[c5,0.64,0.86]]){
+    const nose=item.parts[0].sections.at(-1).points;
+    assert.ok(Math.max(...nose.map(p=>p[1]))>=height);
+    assert.ok(Math.max(...nose.map(p=>p[0]))-Math.min(...nose.map(p=>p[0]))>=width);
+    assert.equal(item.parts[2].sections.length,2);
+    assert.ok(item.parts[26].z+item.parts[26].d/2<item.parts[item===kia?35:37].z+item.parts[item===kia?35:37].d/2,'license plate must not be buried in grille');
+  }
+  assert.ok(kia.parts[0].crease_angle<c5.parts[0].crease_angle,'Soul edges must stay more pronounced');
+  assert.ok(Math.max(...kia.parts[3].sections[1].points.map(p=>p[0]))>0.41,'Soul roof must not taper to a narrow rounded MPV canopy');
+  assert.ok(kia.parts[2].sections[0].at>=0.17,'Soul windscreen stands above a short upright bonnet');
+  assert.ok(kia.parts.filter(p=>p.id.startsWith('vehicle_projector_')).length===2);
+  assert.ok(c5.parts[1].h>=0.28&&c5.parts[27].y>=0.58,'C5 bumper and lamps must not sit at estate height');
 });

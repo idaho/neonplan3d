@@ -34,7 +34,7 @@ export function cataloguePreview(source:FurniturePack,id:string,size=480,view='f
     const box=new Box3().setFromObject(scene),center=box.getCenter(new Vector3());
     if(![...box.min.toArray(),...box.max.toArray()].every(Number.isFinite))throw new Error('Invalid geometry bounds '+id);
     const camera=new OrthographicCamera(-1,1,1,-1,0.01,100);
-    const direction=view==='side'?new Vector3(1,0.06,0):view==='rear'?new Vector3(0.9,0.45,-1.3):new Vector3(0.9,0.75,1.3);
+    const direction=view==='side'?new Vector3(1,0.06,0):view==='headon'?new Vector3(0,0.04,1):view==='rear'?new Vector3(0.9,0.45,-1.3):new Vector3(0.9,0.75,1.3);
     camera.position.copy(center).add(direction.normalize().multiplyScalar(20));camera.lookAt(center);camera.updateMatrixWorld();
     let r=0.05;
     for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z]){
