@@ -42,7 +42,7 @@ Vorhandene Modelle `kia_soul2_white_black_roof` und `citroen_c5_aircross_2024_bl
 - Kürzere Kia-Haube, weiter nach vorne gezogenes schwarzes Dach, aufrechteres Heck und eine hohe Heckscheibe statt Sichtschlitz. Beim Citroën stärker gekrönte Schultern, eigenständige Fensterkontur und dachfolgende Reling. Spiegel, Türteilung und Seitenschweller ergänzen die Silhouette.
 - Runde Reifen/Felgen mit höherer Auflösung, sichtbare Naben/Ringe und vereinfachte Speichen. Radstand bzw. Überhänge nicht pauschal symmetrisch ansetzen.
 - Radlaufleisten als kurze dünne Profilkörper, nicht lange mehrfach unterteilte Hohlrohre. Dadurch begrenzter Geometrieaufwand bei gleicher Silhouette. Auch niedrige Qualität behält die Profilkontur, Reifen verwenden reduzierte Rundsegmentierung.
-- Spiegel mit mittlerer, kleine gerundete Zier-/Leuchtenteile mit niedriger Detailstufe; nicht überall maximale Unterteilung. Release 11 verwendet je 60 Teile und 11.334/10.796 native Dreiecke (Kia/Citroën); bei niedriger Qualität 8.166/8.140. Budget: unter 12.000 bzw. 9.000, maximal 60 Teile. Silhouette und Radöffnungen bleiben auch bei niedriger Qualität gleich. Kleines Kia-Emblem als 16-Punkt-Ellipsenplatte statt dicht segmentiertem Ellipsoid.
+- Spiegel mit mittlerer, kleine gerundete Zier-/Leuchtenteile mit niedriger Detailstufe; nicht überall maximale Unterteilung. Release 12 verwendet je 60 Teile und 13.284/10.796 native Dreiecke (Kia/Citroën); bei niedriger Qualität 10.116/8.140. Budget: unter 14.000 bzw. 10.500, maximal 60 Teile. Die zusätzliche Kia-Geometrie folgt den gekrümmten Glasflächen, nicht pauschal höherer Detailstufe aller Teile. Silhouette und Radöffnungen bleiben auch bei niedriger Qualität gleich. Kleines Kia-Emblem als 16-Punkt-Ellipsenplatte statt dicht segmentiertem Ellipsoid.
 - Leuchten, Grill und Kennzeichen vor der neuen Außenhaut positionieren; nicht unter die Karosserie versenken. Späteres Nachjustieren darf keine frei schwebenden Rückleuchten erzeugen.
 - Die Modelle bleiben Foto-Näherungen, keine vermessenen CAD-Nachbauten. Original gespeicherte Größe des C5 (1,84 × 4,50 × 1,689 m) absichtlich nicht stillschweigend ändern, obwohl die unten verwendete Herstellerübersicht 1,670 m Höhe mit Reling nennt.
 
@@ -54,7 +54,18 @@ Vorhandene Modelle `kia_soul2_white_black_roof` und `citroen_c5_aircross_2024_bl
 
 ## Migration, Signaturen und Abnahme
 
-Migration in `scripts/pack-vehicle-profiles.mjs`, aufgerufen vom gepflegten `scripts/upgrade-custom-packs.mjs`. Contract 14 in `private/product-packs-v2/CUSTOM-FEATURES.json` erzwingt die erneute Migration des vorherigen Profilstands. `--force` kann nach einer Änderung am Migrationsmodul einen Neulauf trotz unveränderter Quell-Hashes auslösen; weiterhin vorherige Daten sichern, Backend-validieren, kanonisch signieren und danach gegen Neon/Product-Zuordnungen prüfen.
+Migration in `scripts/pack-vehicle-profiles.mjs`, aufgerufen vom gepflegten `scripts/upgrade-custom-packs.mjs`. Contract 15 in `private/product-packs-v2/CUSTOM-FEATURES.json` erzwingt die erneute Migration des vorherigen Profilstands. `--force` kann nach einer Änderung am Migrationsmodul einen Neulauf trotz unveränderter Quell-Hashes auslösen; weiterhin vorherige Daten sichern, Backend-validieren, kanonisch signieren und danach gegen Neon/Product-Zuordnungen prüfen.
+
+## Kia: eigene Fensterkonturen und geformte Seitenhaut · Release 12
+
+Release 11 wurde erneut als „Schuhkarton“ abgelehnt. Kantige Fahrzeugproportionen dürfen nicht zu einem gleichförmigen Quader vereinfacht werden. Diese Korrektur betrifft ausschließlich den Soul; der Citroën bleibt einschließlich Teilmetadaten unverändert.
+
+- Frontscheibe an der Seite, hintere Türscheibe und hinteres festes Fenster verwenden **eigene** obere/untere Y/Z-Konturen (`soulFront`, `soulRear`, `soulQuarter`). Keine drei Fenster aus derselben rechteckigen Standardfunktion ableiten. Hinteres Festfenster keilförmig; untere Linie der hinteren Türscheibe steigt zum Heck an.
+- Die Scheibenhaut folgt über neun Höhenstützpunkte je Querschnitt der tatsächlichen lackierten Kabinenoberfläche. Alle Kabinen-Z-Knickpunkte im Fensterbereich übernehmen. Eine einzelne flache Scheibenplatte kann die gewölbte Kabine schneiden und weiße Einschnitte erzeugen. Geschlossene 18-Punkt-Querschnitte mit positiver Fläche; Außenabstand und dünne Haut erhalten, kein Z-Fighting.
+- Dunkles zusammenhängendes Rahmenband/B-/C-Stege statt heller Karosserie zwischen den Fensterflächen. Dafür die vorhandenen historischen `vehicle_door_seam_-1/1`-IDs verwenden; jetzt Fensterrahmenband, nicht die frühere untere Türnaht. Keine neuen Möbel oder instabilen Teil-IDs.
+- Karosserie zwischen den Radhäusern einziehen, Radhäuser/Schultern breiter halten. Untere Seitenflächen und Übergänge staffeln, Kabine über die Höhe wölben und Dach nach vorne/hinten sanft verjüngen. Kontrollierte Glättung 42° am geformten Körper statt einfach weitere scharfe Kanten. Der breite Soul-Dachmittelteil bleibt erhalten.
+- Griffe, Radlaufleisten, Schweller und Heckleuchten aus der tatsächlichen neuen Außenhaut ableiten; keine frei schwebenden Teile nach schmalerer Seitenkontur. Bestehende IDs, Größen, Bindungen und Farben erhalten; beide Looks geometriegleich.
+- Regressionen in `scripts/pack-vehicle-profiles.test.mjs`: Festfenster wird zur Vorderkante deutlich höher, hintere Fensterunterkante steigt zum Heck, 18-Punkt-Haut, dunkles Rahmenband, eingezogene Türzone, geschlossene nicht degenerierte Profile und idempotente Migration. Vor Export Seiten-/Schräg-/Heckansichten gegen das vorhandene Kia-Seitenfoto prüfen, normale Galerie nachziehen. Technische Tests ersetzen weiterhin keine optische Zustimmung des Nutzers.
 
 ## Front- und Silhouettenkorrektur nach erneuter Nutzerkritik · Release 11
 

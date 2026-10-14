@@ -28,7 +28,7 @@ test('individual car windows remain positive-height closed patches, not a full g
     const item=vehicleProfiles(fixture(id));
     assert.equal(item.parts.find(p=>p.id==='vehicle_cabin').color,item.parts[0].color);
     for(const index of [4,5,9,10])for(const s of item.parts[index].sections){
-      assert.ok(s.points[2][1]>s.points[0][1]+0.005,'window must not invert at its pointed end');
+      assert.ok(Math.max(...s.points.map(p=>p[1]))>Math.min(...s.points.map(p=>p[1]))+0.005,'window must not invert at its pointed end');
       const area=s.points.reduce((sum,a,i)=>{const b=s.points[(i+1)%s.points.length];return sum+a[0]*b[1]-b[0]*a[1];},0);
       assert.ok(area>0);
     }
@@ -41,6 +41,19 @@ test('individual car windows remain positive-height closed patches, not a full g
       assert.ok(s.points.reduce((area,a,i)=>{const b=s.points[(i+1)%s.points.length];return area+a[0]*b[1]-b[0]*a[1];},0)>0,'all profiles, including the clipped roof rails, need nonzero CCW sections');
     }
   }
+});
+test('Soul uses independent tapered windows on curved skin and a dark connected pillar band',()=>{
+  const item=vehicleProfiles(fixture('kia_soul2_white_black_roof'));
+  const height=s=>Math.max(...s.points.map(p=>p[1]))-Math.min(...s.points.map(p=>p[1]));
+  const quarter=item.parts.find(p=>p.id==='vehicle_a_pillar_left');
+  assert.ok(height(quarter.sections.at(-1))>height(quarter.sections[0])*10,'quarter window must widen from a wedge, not be rectangular');
+  const rear=item.parts[4];assert.ok(rear.sections[0].points[0][1]>rear.sections.at(-1).points[0][1]+0.09,'rear glazing belt rises towards the tail');
+  assert.ok(rear.sections.every(s=>s.points.length===18),'glass must follow curved cabin skin in height, not intersect it as a flat slab');
+  assert.equal(item.parts.find(p=>p.id==='vehicle_door_seam_-1').color,'#17191c');
+  const body=item.parts[0].sections;
+  const width=s=>Math.max(...s.points.map(p=>p[0]))-Math.min(...s.points.map(p=>p[0]));
+  assert.ok(width(body.find(s=>s.at===-0.32))>width(body.find(s=>s.at===-0.05))+0.05,'doors must be inset relative to muscular wheel shoulders');
+  assert.equal(item.parts.find(p=>p.id==='vehicle_sill_-1').shape,'profile');
 });
 test('C5 has a tall SUV nose and Soul keeps a broad upright box silhouette',()=>{
   const kia=vehicleProfiles(fixture('kia_soul2_white_black_roof')),c5=vehicleProfiles(fixture('citroen_c5_aircross_2024_black'));
