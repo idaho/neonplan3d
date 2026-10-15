@@ -4,6 +4,8 @@ import { pointInPolygon, roomLevel } from "../model.ts";
 import { roofFaces, roofWindowRoom } from "../solar.ts";
 import { GeoBuffer } from "./geo.ts";
 import type { RoofWindowState } from "./roof.ts";
+import { clipConvex, polygonTriangles } from "../geometry/polygon.ts";
+import { subtractWindowPolygon, windowCoverPieces } from "../roof-window-shape.ts";
 
 /** Warm floor patches through skylights, using the same sun, cloud and blind rules as wall windows. */
 export function appendRoofSun(buf: GeoBuffer, building: Building, floor: Floor, sun: { elevation: number; azimuth: number }, cloud: number, states: ReadonlyMap<string, RoofWindowState>, holes: readonly Vec2[][] = [], zones?:number[]): void {
@@ -25,6 +27,28 @@ export function appendRoofSun(buf: GeoBuffer, building: Building, floor: Floor, 
     if (facing < 0.05) continue;
     const cover = Math.min(1, Math.max(0, states.get(w.id)?.cover ?? 0));
     if (cover >= 0.99) continue;
+    if (w.points || (w.cover_direction && w.cover_direction !== "top")) {
+      const room = floor.rooms.find(r => r.id === owner.roomId);
+      if (!room) continue;
+      const ri = floor.rooms.indexOf(room), lit = floor.rooms.filter((r, i) => r.id === room.id || zones && zones[i] === zones[ri]);
+      const ground = roomLevel(floor, room), k = 0.14 * day * Math.min(1, facing * 1.5);
+      const color = new Color(k, 0.82 * k, 0.55 * k);
+      for (const piece of windowCoverPieces(w, cover, true)) {
+        const projected = piece.map(([u, v]): [number, number, number] => {
+          const p = face.o.map((n, i) => n + face.eu[i] * (w.u + u * (w.w ?? 0.78)) + face.es[i] * (w.v + v * (w.h ?? 1.18)));
+          const d = Math.min(7, (p[1] - floor.elevation - ground) * reach);
+          return [p[0] - toSun[0] * d, p[2] - toSun[1] * d, ground + 0.02];
+        });
+        for (const r of lit) for (const ids of polygonTriangles(r.points)) {
+          let pieces: number[][][] = [clipConvex(projected, ids.map(i => r.points[i]))];
+          for (const hole of holes) pieces = pieces.flatMap(p => subtractWindowPolygon(p, [...hole]));
+          for (const p of pieces) for (let i = 1; i + 1 < p.length; i++) {
+            buf.tri(...([p[0], p[i], p[i + 1]].map(q => [q[0], q[2], q[1]]) as [number[], number[], number[]]), color);
+          }
+        }
+      }
+      continue;
+    }
     // Find the room directly below the opening, not one across a wall along the projected ray.
     const center: Vec2 = [corners.reduce((s, p) => s + p[0], 0) / 4, corners.reduce((s, p) => s + p[2], 0) / 4];
     const room = floor.rooms.find((r) => pointInPolygon(center, r.points));

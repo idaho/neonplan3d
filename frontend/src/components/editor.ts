@@ -27,7 +27,8 @@ import { deviceSensors, energySummary, flowSegments, gridPoint, powerSensorFor, 
 import { CLIMATE_ATTRS, isStatusSensor, robotRoomSensor, TOGGLE_KINDS } from "../devices.ts";
 import { sectionFloor, dormerParent, effectiveDormer, proposeDormer, sectionGeometry, floorOutline, polygonBox, headroomLines, ridgeHeight, sectionCutsBelow, roofSectionsFromRooms, sectionFrame, wallTopUnder } from "../roof-sections.ts";
 import { bestFace, clampField, faceAt, faceCompass, fieldFace, fieldModules, GROUND, moveField, pointOnFace, proposeField, proposeGroundField, proposeWindow, proposeWallField, roofFaces, rowCounts, turnGroundField, fieldCenter, wallFaces, windowAsField, windowCorners, onFace, onField, rayOnFace, type RoofFace } from "../solar.ts";
-import { movedPolygonVertex, validPolygon } from "../geometry/polygon.ts";
+import { movedPolygonVertex, polygonContains, validPolygon } from "../geometry/polygon.ts";
+import { RECT_WINDOW, validWindowOutline, windowOutline, windowLocalPoints } from "../roof-window-shape.ts";
 import { ceilingSpots, spotSurfaceKey, type SpotSurface } from "../ceiling-spots.ts";
 import { syncSurfaceSpots } from "../surface-binding.ts";
 import { OPEN_ANGLE, DOOR_ANGLE, TILT_ANGLE } from "../viewer/opening-motion.ts";
@@ -168,6 +169,7 @@ type Drag =
   | { kind: "pooljoint"; pool: string; id: string; start: Vec2; base: Building; moved: boolean }
   | { kind: "roofcorner"; id: string; corner: [0 | 1, 0 | 1]; base: Building; moved: boolean }
   | { kind: "roofvertex"; id: string; index: number; base: Building; points?:Vec2[]; moved: boolean }
+  | { kind: "winvertex"; id: string; index: number; base: Building; points: Vec2[]; moved: boolean }
   | { kind: "cablept"; id: string; index: number; base: Building; moved: boolean }
   | { kind: "holopt"; base: Building; moved: boolean }
   | { kind: "bgmove"; start: Vec2; bx: number; bz: number; base: Building; moved: boolean }
@@ -185,7 +187,7 @@ interface Guides {
 }
 
 /** Drags that change the document live (restored when cancelled, recorded in the history when done). */
-const EDIT_DRAGS = new Set(["vertex", "room", "device", "opening", "furniture", "furnset", "rotate", "resize", "outdoor", "roofmove", "roofcorner", "roofvertex", "outvertex", "outbox", "pipept", "poolport", "pooldev", "pooljoint", "solarmove", "solarturn", "cablept", "holopt", "bgmove", "bgscale", "bgrotate"]);
+const EDIT_DRAGS = new Set(["vertex", "room", "device", "opening", "furniture", "furnset", "rotate", "resize", "outdoor", "roofmove", "roofcorner", "roofvertex", "winvertex", "outvertex", "outbox", "pipept", "poolport", "pooldev", "pooljoint", "solarmove", "solarturn", "cablept", "holopt", "bgmove", "bgscale", "bgrotate"]);
 
 const HISTORY = 100;
 
@@ -297,6 +299,7 @@ export class Fp3dEditor extends LitElement {
     _solarId: { state: true },
     _solarPick: { state: true },
     _roofWinId: { state: true },
+    _roofWinDraw: { state: true },
     _energyNote: { state: true },
     _cableId: { state: true },
     _furnQuery: { state: true },
@@ -419,6 +422,7 @@ export class Fp3dEditor extends LitElement {
   private declare _solarPick: boolean;
   /** Selected roof window (roof tool). */
   private declare _roofWinId: string | null;
+  private declare _roofWinDraw: string | null;
   /** What the import from the energy dashboard did (shown under its button). */
   private declare _energyNote: string | null;
   /** The cable picked in the energy tool (its key), shown with its points in the plan. */
@@ -607,6 +611,7 @@ export class Fp3dEditor extends LitElement {
     this._solarId = null;
     this._solarPick = false;
     this._roofWinId = null;
+    this._roofWinDraw = null;
     this._energyNote = null;
     this._cableId = null;
     this._furnQuery = "";
@@ -982,11 +987,15 @@ export class Fp3dEditor extends LitElement {
     const consider = (id: string, win: boolean, face: RoofFace | null, field: SolarField, locked = false) => {
       if (!face || locked) return;
       const hit = rayOnFace(face, ray.o, ray.d);
-      if (!hit || !onField(face, field, hit.u, hit.s) || (best && best.t <= hit.t)) return;
+      if (!hit || (!win && !onField(face, field, hit.u, hit.s)) || (best && best.t <= hit.t)) return;
       best = { id, win, t: hit.t, du: hit.u - field.u, ds: hit.s - field.v };
     };
     if (this._tool === "energy") for (const f of doc.settings.roof.solar ?? []) consider(f.id, false, fieldFace(doc, f, roof), f, !!f.locked);
-    if (this._tool === "roof") for (const w of doc.settings.roof.windows ?? []) consider(w.id, true, roof.find((x) => x.key === w.face) ?? null, windowAsField(w), !!w.locked);
+    if (this._tool === "roof") for (const w of doc.settings.roof.windows ?? []) {
+      const face = roof.find(x => x.key === w.face);
+      const hit = face ? rayOnFace(face, ray.o, ray.d) : null;
+      if (hit && polygonContains(windowLocalPoints(w), [hit.u, hit.s])) consider(w.id, true, face ?? null, windowAsField(w), !!w.locked);
+    }
     if (!best) return false;
     const b = best as { id: string; win: boolean; du: number; ds: number };
     this.grab3d = { id: b.id, win: b.win, du: b.du, ds: b.ds, base: doc, moved: false };
@@ -1020,7 +1029,10 @@ export class Fp3dEditor extends LitElement {
       (d) => {
         if (g.win) {
           const w = d.settings.roof.windows?.find((x) => x.id === g.id);
-          if (w) Object.assign(w, { face: face.key, ...kept });
+          if (w) {
+            const next = { ...w, ...(w.points ? { face: face.key, u: snapTo(best.u - g.du), v: snapTo(best.s - g.ds) } : { face: face.key, ...kept }) };
+            if (windowCorners(face, next)) Object.assign(w, next);
+          }
           return;
         }
         const f = d.settings.roof.solar?.find((x) => x.id === g.id);
@@ -1378,6 +1390,27 @@ export class Fp3dEditor extends LitElement {
     }
     const world = this.toWorld(...local);
     const target = e.target as Element;
+    if (this._tool === "roof" && this._roofWinDraw && this.isAdmin) {
+      this.drag = { kind: "tap", startScreen: local, last: local, panning: false };
+      return;
+    }
+    const winHandle = this._tool === "roof" ? target.closest("[data-win-vertex], [data-win-mid]") : null;
+    if (winHandle && this.isAdmin) {
+      const insert = winHandle.hasAttribute("data-win-mid");
+      const [id, rawIndex] = winHandle.getAttribute(insert ? "data-win-mid" : "data-win-vertex")!.split(":");
+      const w = this._doc.settings.roof.windows?.find(x => x.id === id);
+      if (!w || w.locked || this._doc.settings.lock_plan) return;
+      const base = this._doc, points = windowOutline(w).map(p => [...p] as Vec2);
+      let index = Number(rawIndex);
+      if (insert) {
+        if (points.length >= 32) return;
+        const a = points[index], b = points[(index + 1) % points.length];
+        points.splice(++index, 0, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
+        this.change(d => { d.settings.roof.windows!.find(x => x.id === id)!.points = points; }, base, false);
+      }
+      this.drag = { kind: "winvertex", id, index, base, points, moved: insert };
+      return;
+    }
     if (this._wallPick) {
       this.pickWall(world);
       return;
@@ -1952,7 +1985,10 @@ export class Fp3dEditor extends LitElement {
           (doc) => {
             if (drag.win) {
               const w = doc.settings.roof.windows?.find((x) => x.id === drag.id);
-              if (w) Object.assign(w, { face: face.key, ...kept });
+              if (w) {
+                const next = { ...w, ...(w.points ? { face: face.key, u, v } : { face: face.key, ...kept }) };
+                if (windowCorners(face, next)) Object.assign(w, next);
+              }
               return;
             }
             const f = doc.settings.roof.solar?.find((x) => x.id === drag.id);
@@ -2155,6 +2191,18 @@ export class Fp3dEditor extends LitElement {
           drag.base,
           false,
         );
+        break;
+      }
+      case "winvertex": {
+        const w = drag.base.settings.roof.windows?.find(x => x.id === drag.id);
+        const face = w ? roofFaces(drag.base).find(f => f.key === w.face) : null;
+        const hit = face ? pointOnFace(face, world) : null;
+        if (!w || !face || !hit) return;
+        const points = drag.points.map(p => [...p] as Vec2);
+        points[drag.index] = [(hit.u - w.u) / (w.w ?? 0.78), (hit.s - w.v) / (w.h ?? 1.18)];
+        if (!validWindowOutline(points) || !windowCorners(face, { ...w, points })) return;
+        drag.moved = true;
+        this.change(d => { d.settings.roof.windows!.find(x => x.id === drag.id)!.points = points; }, drag.base, false);
         break;
       }
       case "roofvertex": {
@@ -2373,6 +2421,7 @@ export class Fp3dEditor extends LitElement {
       case "roofmove":
       case "roofcorner":
       case "roofvertex":
+      case "winvertex":
       case "cablept":
       case "outbox":
       case "pipept":
@@ -2478,12 +2527,13 @@ export class Fp3dEditor extends LitElement {
       }
     }
     const last = draft[draft.length - 1];
+    if (this._roofWinDraw && draft.length >= 32) return;
     if (last && Math.hypot(last[0] - p[0], last[1] - p[1]) < 1e-6) return;
     this._draft = [...draft, p];
   }
 
   private get drawingPolygon(): boolean {
-    return this._tool === "polygon" || ((this._tool === "outdoor" || this._tool === "roof") && this._drawShape === "polygon") || (this._tool === "pool" && !this._pipeMode && this._outdoorFree);
+    return (this._tool === "roof" && !!this._roofWinDraw) || this._tool === "polygon" || ((this._tool === "outdoor" || this._tool === "roof") && this._drawShape === "polygon") || (this._tool === "pool" && !this._pipeMode && this._outdoorFree);
   }
 
   private renderDrawShape() {
@@ -2546,6 +2596,20 @@ export class Fp3dEditor extends LitElement {
   }
 
   private closeDraft(): void {
+    if (this._tool === "roof" && this._roofWinDraw) {
+      const w = this._doc.settings.roof.windows?.find(x => x.id === this._roofWinDraw);
+      const face = w ? roofFaces(this._doc).find(f => f.key === w.face) : null;
+      const hits = face ? this._draft.map(p => pointOnFace(face, p)) : [];
+      if (!w || !face || hits.length < 3 || hits.some(p => !p)) { alert(this.t("contour_invalid")); return; }
+      const local: Vec2[] = hits.map(p => [p!.u, p!.s]);
+      const box = polygonBox(local), width = box.x1 - box.x0, height = box.z1 - box.z0;
+      const points: Vec2[] = local.map(([u, v]) => [(u - box.x0) / width, (v - box.z0) / height]);
+      const next = { ...w, u: box.x0, v: box.z0, w: width, h: height, points };
+      if (width < 0.3 || height < 0.3 || width > 50 || height > 50 || !validWindowOutline(points) || !windowCorners(face, next)) { alert(this.t("contour_invalid")); return; }
+      this.updateRoofWindow(next);
+      this._roofWinDraw = null; this._draft = []; this._cursor = null; this._guides = {};
+      return;
+    }
     if (this._tool === "outdoor" || this._tool === "pool" || this._tool === "roof") {
       if (!validPolygon(this._draft)) { alert(this.t("contour_invalid")); return; }
       if (this._tool !== "roof") this.addOutdoor(this._draft, true);
@@ -2847,6 +2911,7 @@ export class Fp3dEditor extends LitElement {
       e.preventDefault();
       this.closeDraft();
     } else if (e.key === "Escape") {
+      if (this._roofWinDraw) { this._roofWinDraw = null; this._draft = []; this._cursor = null; return; }
       if (this._ctx) {
         this._ctx = null;
         return;
@@ -3229,7 +3294,13 @@ export class Fp3dEditor extends LitElement {
       const face = faces.get(w.face);
       const c = face ? windowCorners(face, w) : null;
       if (!c) return nothing;
-      return svg`<g data-roofwin=${w.id} class=${`fp3d-roofwin${w.id === this._roofWinId ? " fp3d-roofwin-sel" : ""}`}><polygon points=${c.map((p) => this.toScreen([p[0], p[2]]).join(",")).join(" ")} /></g>`;
+      const handles = w.id === this._roofWinId && w.points && this.isAdmin && !w.locked && !this._doc.settings.lock_plan && !this._roofWinDraw;
+      return svg`<g data-roofwin=${w.id} class=${`fp3d-roofwin${w.id === this._roofWinId ? " fp3d-roofwin-sel" : ""}`}><polygon points=${c.map((p) => this.toScreen([p[0], p[2]]).join(",")).join(" ")} /></g>
+        ${handles ? c.map((p, i) => {
+          const q = c[(i + 1) % c.length], a = this.toScreen([p[0], p[2]]), m = this.toScreen([(p[0] + q[0]) / 2, (p[2] + q[2]) / 2]);
+          return svg`<g class="fp3d-win-handle" data-win-vertex=${`${w.id}:${i}`}><circle cx=${a[0]} cy=${a[1]} r="9"/><text x=${a[0]} y=${a[1] + 4}>${i + 1}</text></g>
+            ${c.length < 32 ? svg`<g class="fp3d-win-handle" data-win-mid=${`${w.id}:${i}`}><circle cx=${m[0]} cy=${m[1]} r="10"/><text x=${m[0]} y=${m[1] + 4}>+</text></g>` : nothing}`;
+        }) : nothing}`;
     })}</g>`;
   }
 
@@ -3250,9 +3321,13 @@ export class Fp3dEditor extends LitElement {
     this.change((doc) => {
       const w = doc.settings.roof.windows?.find((x) => x.id === id);
       if (!w) return;
-      Object.assign(w, patch);
+      if ((w.locked || doc.settings.lock_plan) && "points" in patch) return;
+      const next = { ...w, ...patch };
       const face = roofFaces(doc).find((x) => x.key === w.face);
-      if (face) Object.assign(w, clampField(face, windowAsField(w)));
+      const nextFace = roofFaces(doc).find(x => x.key === next.face) ?? face;
+      if (next.points && (!validWindowOutline(next.points) || !nextFace || !windowCorners(nextFace, next))) { alert(this.t("contour_invalid")); return; }
+      if (nextFace && !next.points) Object.assign(next, clampField(nextFace, windowAsField(next)));
+      Object.assign(w, next);
     });
   }
 
@@ -3261,6 +3336,7 @@ export class Fp3dEditor extends LitElement {
     if (!id || !this.isAdmin) return;
     this.change((doc) => (doc.settings.roof.windows = (doc.settings.roof.windows ?? []).filter((x) => x.id !== id)));
     this._roofWinId = null;
+    this._roofWinDraw = null; this._draft = []; this._cursor = null;
   }
 
   private renderRoofWindowList() {
@@ -3295,7 +3371,7 @@ export class Fp3dEditor extends LitElement {
     const index = (this._doc.settings.roof.windows ?? []).findIndex((x) => x.id === w.id) + 1;
     const covers = this.entityOptions((id) => id.startsWith("cover."));
     const contacts = this.entityOptions((id) => binaryish(id) || numberish(id));
-    return html`<button class="fp3d-btn fp3d-back" @click=${() => (this._roofWinId = null)}>‹ ${this.t("roof_sections")}</button>
+    return html`<button class="fp3d-btn fp3d-back" @click=${() => { this._roofWinId = null; this._roofWinDraw = null; this._draft = []; this._cursor = null; }}>‹ ${this.t("roof_sections")}</button>
       <section>
         <div class="fp3d-h3row">
           <h3>🪟 ${this.t("roof_window")} ${index}</h3>
@@ -3310,13 +3386,13 @@ export class Fp3dEditor extends LitElement {
             >${this.t("solar_face")}
             <select ?disabled=${!admin} @change=${(e: Event) => {
               const next = faces.find((x) => x.key === (e.target as HTMLSelectElement).value);
-              if (next) set({ ...proposeWindow(next, w.id), w: w.w, h: w.h, cover: w.cover, contact: w.contact, tilt: w.tilt, window: w.window, name: w.name, float: w.float });
+              if (next) { const p = proposeWindow(next, w.id); set({ face: next.key, u: p.u, v: p.v }); }
             }}>
               ${faces.map((x) => html`<option value=${x.key} ?selected=${x.key === w.face}>${this.faceLabel(x)}</option>`)}
             </select></label
           >
-          ${this.len(this.t("width"), w.w ?? 0.78, (v) => set({ w: Math.max(0.3, Math.min(4, round(v))) }), 0.01, 0.3)}
-          ${this.len(this.t("height_m"), w.h ?? 1.18, (v) => set({ h: Math.max(0.3, Math.min(4, round(v))) }), 0.01, 0.3)}
+          ${this.len(this.t("width"), w.w ?? 0.78, (v) => set({ w: Math.max(0.3, Math.min(50, round(v))) }), 0.01, 0.3)}
+          ${this.len(this.t("height_m"), w.h ?? 1.18, (v) => set({ h: Math.max(0.3, Math.min(50, round(v))) }), 0.01, 0.3)}
           ${this.len(this.t("solar_u"), w.u, (v) => set({ u: round(v) }), 0.05)}
           ${this.len(this.t("solar_v"), w.v, (v) => set({ v: round(v) }), 0.05)}
           <label class="fp3d-field fp3d-wide">${this.t("roof_window_hinge")}
@@ -3325,6 +3401,13 @@ export class Fp3dEditor extends LitElement {
             </select>
           </label>
           ${this.entitySelect(this.t("cover_entity"), w.cover ?? null, undefined, covers, (v) => set({ cover: v === "none" ? null : v }))}
+          <label class="fp3d-field">${this.t("roof_cover_style")}<select ?disabled=${!admin} @change=${(e: Event) => set({ cover_style: (e.target as HTMLSelectElement).value as RoofWindow["cover_style"] })}>
+            ${(["roller", "awning"] as const).map(s => html`<option value=${s} ?selected=${(w.cover_style ?? "roller") === s}>${this.t(s === "awning" ? "roof_cover_awning" : "roof_cover_roller")}</option>`)}
+          </select></label>
+          <label class="fp3d-field">${this.t("roof_cover_direction")}<select ?disabled=${!admin} @change=${(e: Event) => set({ cover_direction: (e.target as HTMLSelectElement).value as RoofWindow["cover_direction"] })}>
+            ${(["top", "bottom", "left", "right"] as const).map(s => html`<option value=${s} ?selected=${(w.cover_direction ?? "top") === s}>${this.t(`roof_cover_${s}`)}</option>`)}
+          </select></label>
+          <label class="fp3d-field">${this.t("color")}<input type="color" .value=${w.cover_color ?? "#64748b"} ?disabled=${!admin} @change=${(e: Event) => set({ cover_color: (e.target as HTMLInputElement).value })}></label>
           ${this.entitySelect(this.t("contact_entity"), w.contact ?? null, undefined, contacts, (v) => set({ contact: v === "none" ? null : v }))}
           ${this.entitySelect(this.t("roof_window_tilt"), w.tilt ?? null, undefined, contacts, (v) => set({ tilt: v === "none" ? null : v }))}
           ${this.entitySelect(this.t("roof_window_motor"), w.window ?? null, undefined, covers, (v) => set({ window: v === "none" ? null : v }))}
@@ -3333,6 +3416,14 @@ export class Fp3dEditor extends LitElement {
             <input .value=${w.name ?? ""} ?disabled=${!admin} maxlength="64" @change=${(e: Event) => set({ name: (e.target as HTMLInputElement).value.trim() || null })}
           /></label>
         </div>
+        <div class="fp3d-actions">
+          <button class="fp3d-btn" ?disabled=${!admin || !!w.locked || !!this._doc.settings.lock_plan} @click=${() => set({ points: w.points ? null : RECT_WINDOW.map(p => [...p] as Vec2) })}>${this.t(w.points ? "roof_window_rectangle" : "roof_window_freeform")}</button>
+          <button class="fp3d-btn" ?disabled=${!admin || !!w.locked || !!this._doc.settings.lock_plan} @click=${() => { this._roofWinDraw = w.id; this._draft = []; this._cursor = null; }}>${this.t("roof_window_draw")}</button>
+        </div>
+        ${this._roofWinDraw === w.id ? html`<p class="fp3d-sub">${this.t("roof_window_draw_hint")}</p><div class="fp3d-actions"><button class="fp3d-btn" ?disabled=${this._draft.length < 3} @click=${() => this.closeDraft()}>${this.t("contour_finish")}</button><button class="fp3d-btn" @click=${() => { this._roofWinDraw = null; this._draft = []; }}>${this.t("cancel")}</button></div>` : nothing}
+        ${w.points ? html`<fieldset style="border:0;padding:0;margin:0;min-width:0" ?disabled=${!admin || !!w.locked || !!this._doc.settings.lock_plan}>${this.renderPointList(w.points.map(([u, v]) => [u * (w.w ?? 0.78), v * (w.h ?? 1.18)]), (i, axis, value) => {
+          const points = windowOutline(w).map(p => [...p] as Vec2); points[i][axis] = value / (axis === 0 ? w.w ?? 0.78 : w.h ?? 1.18); set({ points });
+        }, i => set({ points: w.points!.filter((_, j) => j !== i) }), null, true)}</fieldset>` : nothing}
         <label class="fp3d-check"
           ><input type="checkbox" ?disabled=${!admin} .checked=${!!w.float} @change=${(e: Event) => set({ float: (e.target as HTMLInputElement).checked || undefined })} />
           ${this.t("roof_window_float")}</label
@@ -5278,6 +5369,7 @@ export class Fp3dEditor extends LitElement {
   private setTool(tool: Tool): void {
     const floor = this.floor;
     this._tool = tool;
+    this._roofWinDraw = null;
     this._draft = [];
     this._cursor = null;
     this._pipeMode = false;
@@ -14942,6 +15034,9 @@ export class Fp3dEditor extends LitElement {
       .fp3d-points {
         margin: 12px 0;
       }
+      .fp3d-win-handle { cursor: move; pointer-events: all; }
+      .fp3d-win-handle circle { fill: #132b40; stroke: #42def5; stroke-width: 2px; }
+      .fp3d-win-handle text { fill: white; text-anchor: middle; font: 12px sans-serif; pointer-events: none; }
       .fp3d-point {
         display: grid;
         grid-template-columns: 18px 1fr 1fr auto;

@@ -7,7 +7,8 @@ import { Color } from "three";
 import type { Building, Floor, RoofSection, SolarField, Vec2 } from "../model.ts";
 import { floorTop } from "../model.ts";
 import { cutHole, sectionFloor, dormerHoles, dormerParent, effectiveDormer, offsetPolygon, sectionGeometry, sectionHeightAt, sectionPolygon, sectionFrame, sectionOverhang, sectionProfile, sectionUV, type Q, type SectionOverhang } from "../roof-sections.ts";
-import { polygonSignedArea } from "../geometry/polygon.ts";
+import { polygonSignedArea, polygonTriangles } from "../geometry/polygon.ts";
+import { subtractWindowPolygon, windowOutline, windowCoverPieces } from "../roof-window-shape.ts";
 import { DEG, EDGE_BASE, EDGE_SOFT, EDGE_TOP, GeoBuffer, LineBuffer, pushPrism, shade } from "./geo.ts";
 import { fieldModules, roofFaces, roofWindowRoom, windowCorners, type RoofFace } from "../solar.ts";
 import { moduleNormal, type SolarFacing } from "./solar-facing.ts";
@@ -98,9 +99,36 @@ export function buildRoof(b: Building, windows: ReadonlyMap<string, RoofWindowSt
   const roof = b.settings.roof;
   const one = roof?.type === "custom" ? null : buildSingleRoof(b);
   const parts = roof?.type === "custom" ? buildSections(b, roof.sections ?? [], roof.overhang) : one ? [one] : [];
+  cutWindowOpenings(b, parts);
   pushSolar(b, parts);
   pushRoofWindows(b, parts, windows);
   return parts;
+}
+
+/** Cut both roof skins (including slab undersides) to the actual opening, not its envelope. */
+function cutWindowOpenings(b: Building, parts: RoofGeometry[]): void {
+  const faces = roofFaces(b);
+  for (const w of b.settings.roof.windows ?? []) {
+    const face = faces.find(f => f.key === w.face), corners = face ? windowCorners(face, w) : null;
+    if (!face || !corners) continue;
+    const part = face.section ? parts.find(p => p.sections?.includes(face.section!)) : parts[0];
+    if (!part) continue;
+    const hole: Vec2[] = corners.map(p => [p[0] - face.n[0] * 0.02, p[2] - face.n[2] * 0.02]);
+    for (const buffer of [part.solid, part.glass]) {
+      const out = new GeoBuffer();
+      for (let i = 0; i < buffer.p.length; i += 9) {
+        const triangle = [0, 3, 6].map(j => [buffer.p[i + j], buffer.p[i + j + 2], buffer.p[i + j + 1]]);
+        const col = new Color().setRGB(buffer.c[i], buffer.c[i + 1], buffer.c[i + 2]);
+        const dy = part.floor.elevation + part.base;
+        const onSlope = triangle.every(p => Math.abs(face.n[0] * (p[0] - face.o[0]) + face.n[1] * (p[2] + dy - face.o[1]) + face.n[2] * (p[1] - face.o[2])) < 0.5);
+        const pieces = !onSlope || Math.abs(polygonSignedArea(triangle)) < 1e-9 ? [triangle] : subtractWindowPolygon(triangle, hole);
+        for (const piece of pieces) for (let j = 1; j + 1 < piece.length; j++) {
+          out.tri(...([piece[0], piece[j], piece[j + 1]].map(p => [p[0], p[2], p[1]]) as [number[], number[], number[]]), col);
+        }
+      }
+      buffer.p = out.p; buffer.c = out.c; buffer.f = out.f;
+    }
+  }
 }
 
 /** Roof windows: frame and glass in the slope; the sash uses its selected pivot, the blind comes down. */
@@ -116,40 +144,52 @@ function pushRoofWindows(b: Building, parts: RoofGeometry[], states: ReadonlyMap
     if (!part) continue;
     const dy = part.floor.elevation + part.base;
     const L = (p: number[]): number[] => [p[0], p[1] - dy, p[2]];
-    const [a, c, d, e] = corners.map(L);
+    const local = corners.map(L);
     const st = states.get(w.id) ?? { open: 0, tilt: 0, cover: 0 };
     // floating over its room only above a room of the roof's own floor: a slope reaching down over a lower floor
     // would leave the window hanging in the air under the floor shown (#482)
     const float = !!w.float && roofWindowRoom(b, face, w)?.floor.id === part.floor.id;
     const win = float ? (part.win ??= { solid: new GeoBuffer(), lines: new LineBuffer() }) : (part.winRoof ??= { solid: new GeoBuffer(), lines: new LineBuffer() });
     const up = (p: number[], k: number) => [p[0] + face.n[0] * k, p[1] + face.n[1] * k, p[2] + face.n[2] * k];
-    const mix = (p: number[], q: number[], t: number) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
     // the fixed frame in the roof; it glows warm while the window is open or tilted
     const frame = st.open > 0.02 || st.tilt > 0.02 ? WINDOW_WARM : WINDOW_FRAME;
-    const ring = [a, c, d, e].map((p) => up(p, 0.06));
-    const foot = [a, c, d, e].map((p) => up(p, -0.02));
-    for (let i = 0; i < 4; i++) {
-      win.lines.seg(ring[i], ring[(i + 1) % 4], frame);
+    const ring = local.map((p) => up(p, 0.06));
+    const foot = local.map((p) => up(p, -0.02));
+    for (let i = 0; i < ring.length; i++) {
+      win.lines.seg(ring[i], ring[(i + 1) % ring.length], frame);
       // the curb: from just below the roof's surface up to the frame, all round
-      const j = (i + 1) % 4;
+      const j = (i + 1) % ring.length;
       win.solid.tri(foot[i], foot[j], ring[j], WINDOW_CURB);
       win.solid.tri(foot[i], ring[j], ring[i], WINDOW_CURB);
     }
     // The sash rotates around the selected pivot (open up to 30° by motor position; tilted 12°).
     const angle = (st.open > 0.02 ? 30 * Math.min(1, st.open) : st.tilt > 0.5 ? 12 : 0) * DEG;
-    const [bot0, bot1, top1, top0] = roofWindowSash([a, c, d, e].map((p) => up(p, 0.065)), face.n, face.es, w.hinge, angle);
-    win.solid.tri(bot0, bot1, top1, WINDOW_GLASS);
-    win.solid.tri(bot0, top1, top0, WINDOW_GLASS);
-    for (const [p, q] of [[bot0, bot1], [bot1, top1], [top1, top0], [top0, bot0]]) win.lines.seg(p, q, frame);
-    // the blind comes down from the top over the sash
+    const sashBase = local.map(p => up(p, 0.065));
+    const sash = roofWindowSash(sashBase, face.n, face.es, w.hinge, angle);
+    for (const [i, j, k] of polygonTriangles(windowOutline(w))) win.solid.tri(sash[i], sash[j], sash[k], WINDOW_GLASS);
+    for (let i = 0; i < sash.length; i++) win.lines.seg(sash[i], sash[(i + 1) % sash.length], frame);
+    // Clip the blind/awning in its configured direction, preserving any concave notches.
     if (st.cover > 0.02) {
-      const k = Math.min(1, st.cover);
-      const b0 = up(mix(top0, bot0, k), 0.01);
-      const b1 = up(mix(top1, bot1, k), 0.01);
-      const t0 = up(top0, 0.01);
-      const t1 = up(top1, 0.01);
-      win.solid.tri(b0, b1, t1, WINDOW_BLIND);
-      win.solid.tri(b0, t1, t0, WINDOW_BLIND);
+      const awning = w.cover_style === "awning";
+      const color = /^#[0-9a-f]{6}$/i.test(w.cover_color ?? "") ? new Color(w.cover_color!) : WINDOW_BLIND;
+      const at = ([u, v]: Vec2) => w.points
+        ? L(face.o.map((n, i) => n + face.eu[i] * (w.u + u * (w.w ?? 0.78)) + face.es[i] * (w.v + v * (w.h ?? 1.18)) + face.n[i] * 0.095))
+        : up(local[0].map((_, i) => (1 - v) * ((1 - u) * local[0][i] + u * local[1][i]) + v * ((1 - u) * local[3][i] + u * local[2][i])), 0.075);
+      const boundary = new Map<string, [number[], number[]]>();
+      for (const piece of windowCoverPieces(w, st.cover)) {
+        let p = piece.map(at);
+        if (!awning) {
+          // Rotate the clipped blind with the sash, using the full sash's pivot (not the partial blind's bounds).
+          p = roofWindowSash([...sashBase, ...p], face.n, face.es, w.hinge, angle).slice(sashBase.length);
+        } else p = p.map(q => up(q, 0.045));
+        for (let i = 1; i + 1 < p.length; i++) win.solid.tri(p[0], p[i], p[i + 1], color);
+        if (awning) for (let i = 0; i < p.length; i++) {
+          const a = p[i], b = p[(i + 1) % p.length];
+          const key = [a, b].map(q => q.map(v => Math.round(v * 1e7)).join(",")).sort().join(";");
+          if (boundary.has(key)) boundary.delete(key); else boundary.set(key, [a, b]);
+        }
+      }
+      for (const [a, b] of boundary.values()) win.lines.seg(a, b, WINDOW_FRAME);
     }
   }
 }
@@ -269,7 +309,6 @@ function buildSections(b: Building, sections: readonly RoofSection[], overhang: 
   const floors = b.floors.filter((f) => f.rooms.length > 0).sort((p, q) => p.elevation - q.elevation);
   if (!floors.length) return [];
   const parts = new Map<string, RoofGeometry>();
-  const faceMap = new Map(roofFaces(b).map((f) => [f.key, f]));
   for (const sec of sections) {
     if (Math.abs(sec.x1 - sec.x0) < 0.1 || Math.abs(sec.z1 - sec.z0) < 0.1) continue;
     // the floor the section sits on: the highest one that starts below its walls' top
@@ -286,13 +325,6 @@ function buildSections(b: Building, sections: readonly RoofSection[], overhang: 
     const attic = floorTop(floor) > sec.base + 0.05 && !sec.dormer && !parent;
     // the slope opens under every dormer and cross gable sitting on this section, and under its roof windows
     const holes = sections.filter((d) => d !== sec && dormerParent(sections, d) === sec).flatMap((d) => dormerHoles(sec, d));
-    for (const w of b.settings.roof.windows ?? []) {
-      const face = faceMap.get(w.face);
-      const corners = face && face.section === sec.id ? windowCorners(face, w) : null;
-      if (!corners) continue;
-      const uv = corners.map((p) => sectionUV(sec, p[0], p[2]));
-      holes.push({ u0: Math.min(...uv.map((q) => q[0])), u1: Math.max(...uv.map((q) => q[0])), v0: Math.min(...uv.map((q) => q[1])), v1: Math.max(...uv.map((q) => q[1])) });
-    }
     // a dormer's rear runs into the slope: no gable there, only at its front (the lower end of the slope)
     // a dormer only as deep as its ridge needs to meet the slope
     const drawn = parent ? effectiveDormer(parent, sec) : sec;

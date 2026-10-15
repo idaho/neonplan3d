@@ -8,8 +8,9 @@ import type { Building, Floor, RoofSection, RoofWindow, SolarField, Vec2 } from 
 import { floorTop, outdoorGround, pointInPolygon } from "./model.ts";
 import { generateWalls } from "./geometry/walls.ts";
 import { sectionFrame, sectionOverhang, sectionProfile, sectionPolygon } from "./roof-sections.ts";
-import { polygonContains, polygonContainsPolygon } from "./geometry/polygon.ts";
+import { polygonContains, polygonContainsPolygon, polygonTriangles, polygonSignedArea } from "./geometry/polygon.ts";
 import { wallLevels } from "./room-levels.ts";
+import { validWindowOutline, windowLocalPoints, windowOutline } from "./roof-window-shape.ts";
 
 const DEG = Math.PI / 180;
 type V3 = [number, number, number];
@@ -542,8 +543,15 @@ export function windowAsField(w: RoofWindow): SolarField {
   return { id: w.id, face: w.face, u: w.u, v: w.v, rows: 1, cols: 1, portrait: true, module_w: w.w || ROOF_WINDOW_W, module_h: w.h || ROOF_WINDOW_H };
 }
 
-/** The four corners of a roof window, a little above the roof (lower left, lower right, upper right, upper left); null off the face. */
-export function windowCorners(face: RoofFace, w: RoofWindow): [V3, V3, V3, V3] | null {
+/** Window contour above the roof. Legacy rectangles: lower left, lower right, upper right, upper left. Null off the face. */
+export function windowCorners(face: RoofFace, w: RoofWindow): V3[] | null {
+  if (w.points) {
+    if (!validWindowOutline(w.points)) return null;
+    if (windowLocalPoints(w).some(([u, v]) => !onFace(face, u, v))) return null;
+    const points = windowLocalPoints(w).map(([u, v]) => face.o.map((n, i) => n + face.eu[i] * u + face.es[i] * v + face.n[i] * 0.02) as V3);
+    if (face.footprint && !polygonContainsPolygon(face.footprint, points.map(p => [p[0] - face.n[0] * 0.02, p[2] - face.n[2] * 0.02]))) return null;
+    return points;
+  }
   const m = fieldModules(face, windowAsField(w))[0];
   if (!m) return null;
   // the modules ride 7 cm above the roof on rails; a roof window sits nearly flush
@@ -555,12 +563,15 @@ export function windowCorners(face: RoofFace, w: RoofWindow): [V3, V3, V3, V3] |
  * The room under a roof window: the one holding the window's middle in the plan on the highest floor below it,
  * so the room's card shows it like the windows in its walls and the sun falls through it into that room (#482).
  */
-export function roofWindowRoom(b: Building, face: RoofFace | undefined, w: RoofWindow): { floor: Floor; roomId: string; corners: [V3, V3, V3, V3] } | null {
+export function roofWindowRoom(b: Building, face: RoofFace | undefined, w: RoofWindow): { floor: Floor; roomId: string; corners: V3[] } | null {
   const c = face ? windowCorners(face, w) : null;
   if (!c) return null;
-  const x = (c[0][0] + c[2][0]) / 2;
-  const y = (c[0][1] + c[2][1]) / 2;
-  const z = (c[0][2] + c[2][2]) / 2;
+  const outline = windowOutline(w);
+  const triangle = w.points ? polygonTriangles(outline).sort((a, b) => Math.abs(polygonSignedArea(b.map(i => outline[i]))) - Math.abs(polygonSignedArea(a.map(i => outline[i]))))[0] : null;
+  const center = triangle ? triangle.map(i => c[i]) : c;
+  const x = center.reduce((sum, p) => sum + p[0], 0) / center.length;
+  const y = center.reduce((sum, p) => sum + p[1], 0) / center.length;
+  const z = center.reduce((sum, p) => sum + p[2], 0) / center.length;
   for (const f of [...b.floors].sort((p, q) => q.elevation - p.elevation)) {
     if (f.elevation > y) continue;
     const room = f.rooms.find((r) => pointInPolygon([x, z], r.points));

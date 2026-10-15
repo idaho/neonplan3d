@@ -496,6 +496,11 @@ export interface RoofWindow {
   /** Size in metres (null = 0.78 × 1.18, a common size). */
   w?: number | null;
   h?: number | null;
+  /** Optional simple contour, 3–32 normalised points within the width/height envelope. */
+  points?: Vec2[] | null;
+  cover_style?: "roller" | "awning";
+  cover_direction?: "top" | "bottom" | "left" | "right";
+  cover_color?: string | null;
   /** Pivot along the slope; omitted on older plans means top-hung. */
   hinge?: "top" | "middle" | "bottom";
   cover?: EntityRef;

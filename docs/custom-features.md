@@ -3,6 +3,12 @@ Total output lines: 694
 
 # NeonPlan Custom Features Entwurf
 
+## Ergänzung 15.10.2026: Freiform-Dachfenster und Dachmarkisen
+
+Zusätzlich zum bisherigen Funktionsumfang: frei gezeichnete Fenster-/Glasflächen auf einer Dachfläche (3–32 Eckpunkte), mit verschiebbaren Ecken und Kanten-„+“, Undo/Redo und editierbaren Maßen. Rollo am Flügel oder flächige Markise über dem Glas, Auszug von oben/unten/links/rechts und eigene Stofffarbe; vorhandene HA-Cover-Bindung steuert die Stellung. Konkave Ausschnitte bleiben frei, Dachöffnung und Sonnenlicht folgen der tatsächlichen Kontur. Bestehende rechteckige Fenster einschließlich Motor, Kontakten, Drehpunkt und schwebender Darstellung bleiben kompatibel. Kein neues Inventarstück, kein Pack-Import nötig. Details und verbindliche Wiederaufbauprüfung: [Fix-Katalog, Abschnitt 19](custom-feature-fixes.md#19-freiform-dachfenster-und-dachmarkisen). Lokaler Quellstand ist nicht automatisch auf HA installiert.
+
+## Bisheriger Stand
+
 Die eigene NeonPlan-Version soll ausgewählte zusätzliche Funktionen erhalten, ohne aktuelle Originalfunktionen zurückzusetzen. Die Anforderungen werden schrittweise gemeinsam festgelegt. Bestehende Implementierungen sind Ausgangspunkte, noch keine vollständig freigegebene Spezifikation.
 
 Aktueller Dokumentationsstand vom 14.10.2026: Alle 15 bestätigten Funktionsgruppen sind im Branch `feature/custom-features-complete` implementiert und mit Original-main 1.18.0 (`e7b2027`) integriert. Vorheriger geprüfter Laufzeitstand: `62bc3a2`, einschließlich negativer Höhen für Möbel, Türen/Fenster und Außenobjekte. Dazu gehören auch Pack-Bindungen, Anzeigen, Statusbauteile, Öffnungsanimationen, gerichtete Strahler, zusätzliche Formen, Kontaktschatten und der globale Produktfarbenwechsel. Der folgende Anforderungstext und die älteren Bestandsaufnahmen dokumentieren die Entwicklung; Aussagen zu damals offenen Punkten sind historisch. Maßgeblich sind diese Spezifikation, der verbindliche [Fix- und Wiederaufbau-Katalog](custom-feature-fixes.md) und die Prüfschritte in `docs/custom-features.json`. Eine Neuimplementierung muss auch den Fix-Katalog erfüllen, nicht nur die 15 groben Feature-Gruppen. Durch diese Dokumentationsänderung wurde Home Assistant nicht aktualisiert und nichts veröffentlicht.

@@ -28,6 +28,49 @@ class RoofWindowTests(unittest.TestCase):
         with self.assertRaises(vol.Invalid):
             schema.ROOF_WINDOW_SCHEMA({"id": "sky", "face": "main:a", "u": 1, "v": 1, "hinge": "left"})
 
+    def test_freeform_and_shading_roundtrip_preserves_bindings(self):
+        points = [[0, 0], [1, 0], [1, 0.4], [0.4, 0.4], [0.4, 1], [0, 1]]
+        for direction in ("top", "bottom", "left", "right"):
+            window = {
+                "id": "sky",
+                "face": "main:a",
+                "u": 1,
+                "v": 1,
+                "w": 8,
+                "h": 5,
+                "points": points,
+                "cover_style": "awning",
+                "cover_direction": direction,
+                "cover_color": "#708090",
+                "cover": "cover.terrace",
+                "window": "cover.motor",
+                "contact": "binary_sensor.window",
+                "float": True,
+                "hinge": "middle",
+            }
+            result = schema.ROOF_WINDOW_SCHEMA(json.loads(json.dumps(schema.ROOF_WINDOW_SCHEMA(window))))
+            for key, value in window.items():
+                self.assertEqual(result[key], value)
+
+    def test_invalid_freeform_and_shading_are_rejected(self):
+        base = {"id": "sky", "face": "main:a", "u": 1, "v": 1}
+        for patch in (
+            {"points": [[0, 0], [1, 1], [0, 1], [1, 0]]},
+            {"points": [[0, 0], [1, 0], [1, 0], [0, 1]]},
+            {"points": [[0, 0], [1.1, 0], [0, 1]]},
+            {"points": [[0, 0], [float("nan"), 0], [0, 1]]},
+            {"points": [[0, 0], [0.01, 0], [0, 0.01]]},
+            {"points": [[0, 0], [1, 0]]},
+            {"points": [[0, 0], [1, 0], [1, 1], [0, 1]] * 9},
+            {"cover_style": "curtain"},
+            {"cover_direction": "diagonal"},
+            {"cover_color": "red"},
+            {"w": float("nan")},
+            {"h": float("inf")},
+        ):
+            with self.subTest(patch=patch), self.assertRaises(vol.Invalid):
+                schema.ROOF_WINDOW_SCHEMA({**base, **patch})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -690,15 +690,51 @@ SOLAR_STRING_SCHEMA = vol.Schema(
     extra=vol.ALLOW_EXTRA,
 )
 
+
 # a roof window on a roof face, with an optional blind (cover) and contacts
+def _window_outline(points: list[list[float]]) -> list[list[float]]:
+    _simple_polygon(points)
+    area = (
+        abs(
+            sum(
+                p[0] * points[(i + 1) % len(points)][1] - points[(i + 1) % len(points)][0] * p[1]
+                for i, p in enumerate(points)
+            )
+        )
+        / 2
+    )
+    if area < 0.05:
+        raise vol.Invalid("window contour must cover at least 5 percent of its envelope")
+    return points
+
+
 ROOF_WINDOW_SCHEMA = vol.Schema(
     {
         vol.Required("id"): _ID,
         vol.Required("face"): vol.All(str, vol.Length(max=80)),
         vol.Required("u"): vol.All(vol.Coerce(float), vol.Range(min=-50, max=200)),
         vol.Required("v"): vol.All(vol.Coerce(float), vol.Range(min=-50, max=200)),
-        vol.Optional("w", default=None): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0.3, max=4))),
-        vol.Optional("h", default=None): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0.3, max=4))),
+        vol.Optional("w", default=None): vol.Any(
+            None, vol.All(vol.Coerce(float), _finite_angle, vol.Range(min=0.3, max=50))
+        ),
+        vol.Optional("h", default=None): vol.Any(
+            None, vol.All(vol.Coerce(float), _finite_angle, vol.Range(min=0.3, max=50))
+        ),
+        vol.Optional("points", default=None): vol.Any(
+            None,
+            vol.All(
+                [
+                    vol.All(
+                        [vol.All(vol.Coerce(float), _finite_angle, vol.Range(min=0, max=1))], vol.Length(min=2, max=2)
+                    )
+                ],
+                vol.Length(min=3, max=32),
+                _window_outline,
+            ),
+        ),
+        vol.Optional("cover_style", default="roller"): vol.In(["roller", "awning"]),
+        vol.Optional("cover_direction", default="top"): vol.In(["top", "bottom", "left", "right"]),
+        vol.Optional("cover_color", default=None): vol.Any(None, vol.All(str, vol.Match(r"^#[0-9a-fA-F]{6}$"))),
         vol.Optional("hinge", default="top"): vol.In(["top", "middle", "bottom"]),
         vol.Optional("cover", default=None): _ENTITY_REF,
         vol.Optional("contact", default=None): _ENTITY_REF,

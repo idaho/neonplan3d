@@ -10,6 +10,11 @@ export function roofWindowSash(corners: number[][], normal: readonly number[], s
     const along = delta.reduce((s, v, i) => s + v * slope[i], 0);
     return axis.map((v, i) => v + delta[i] * Math.cos(angle) - normal[i] * along * Math.sin(angle) * sign);
   };
-  const [a, b, c, d] = corners;
-  return [rotate(a, a, d), rotate(b, b, c), rotate(c, b, c), rotate(d, a, d)];
+  const values = corners.map(p => p.reduce((s, v, i) => s + v * slope[i], 0));
+  const low = Math.min(...values), high = Math.max(...values);
+  return corners.map((p, j) => {
+    const a = p.map((v, i) => v + slope[i] * (low - values[j]));
+    const b = p.map((v, i) => v + slope[i] * (high - values[j]));
+    return rotate(p, a, b);
+  });
 }

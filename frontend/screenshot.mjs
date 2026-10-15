@@ -89,7 +89,21 @@ const PACK_MOUNT_SCRIPT = `
   e.setDoc(structuredClone(e._doc));
 `;
 
+const ROOF_FREEFORM_SCRIPT = `
+  const b = structuredClone(e._doc), f = b.floors[0];
+  Object.assign(f, { elevation: 0, height: 2.8, openings: [], furniture: [], placements: [], outdoor: [], walls: [], background: null,
+    rooms: [{ id: 'terrace', name: 'Terrassenglasdach', area_id: null, floor_material: 'tiles', points: [[0,0],[8,0],[8,6],[0,6]] }] });
+  b.floors = [f];
+  b.settings.pets = { on: false, list: [] };
+  b.settings.roof = { type: 'custom', pitch: 10, overhang: 0, sections: [{ id: 'canopy', x0: 0, z0: 0, x1: 8, z1: 6, shape: 'pent', axis: 'x', base: 2.8, eave_a: 2.8, eave_b: 3.86, pitch_a: 10, pitch_b: 10, open: true }],
+    windows: [{ id: 'free', name: 'Terrassenmarkise', face: 'canopy:a', u: 1, v: 1, w: 4, h: 3, points: [[0,0],[1,0],[1,0.4],[0.4,0.4],[0.4,1],[0,1]], cover_style: 'awning', cover_direction: 'left', cover_color: '#b59664', cover: 'cover.terrasse', contact: 'binary_sensor.terrasse', float: true }] };
+  e.setDoc(b); e._floorId = f.id; e._tool = 'roof'; e._roofWinId = 'free'; e._roofId = null; e.fit();
+`;
+
 const shots = [
+  { name: "editor-roof-freeform", query: "", width: 1440, height: 1100, editor: true, mockPrivatePacks: true, editorScript: ROOF_FREEFORM_SCRIPT, roofWindowExercise: true },
+  { name: "editor-roof-freeform-tablet", query: "", width: 1000, height: 1100, editor: true, mockPrivatePacks: true, editorScript: ROOF_FREEFORM_SCRIPT, roofWindowExercise: true },
+  { name: "view-roof-freeform-awning", query: "", width: 1280, height: 900, editor: true, mockPrivatePacks: true, editorScript: ROOF_FREEFORM_SCRIPT, then3d: true, camera: { theta: 0.4, phi: 0.65, radius: 12, target: { x: 4, y: 1.8, z: 3 } }, roofAwning: true },
   { name: "view-house", query: "?fp3d_stats", width: 1280, height: 800 },
   { name: "promo-house", query: "", width: 1280, height: 800 },
   { name: "view-stacked", query: "", width: 1280, height: 800, click: "Gestapelt" },
@@ -581,7 +595,7 @@ if(process.env.ROUND_PACK_DIR){
 }
 for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
   const page = await browser.newPage();
-  if (shot.freeformExercise || shot.spotsExercise) page.on("dialog", async (dialog) => { errors.push(`${shot.name}: ${dialog.message()}`); await dialog.dismiss(); });
+  if (shot.freeformExercise || shot.spotsExercise || shot.roofWindowExercise) page.on("dialog", async (dialog) => { errors.push(`${shot.name}: ${dialog.message()}`); await dialog.dismiss(); });
   if (shot.mockPrivatePacks || shot.keptRoofNear !== undefined || shot.roofSunClosed !== undefined || shot.gableSide !== undefined || shot.solarBelow !== undefined || shot.roofHinge !== undefined) {
     await page.setRequestInterception(true);
     page.on("request", (request) => {
@@ -691,6 +705,46 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       new Function("e", code)(e);
     }, shot.editorScript);
     await new Promise((r) => setTimeout(r, 1200 + (shot.afterWait ?? 0)));
+    if (shot.roofWindowExercise) {
+      const at = await page.evaluate(() => {
+        const e = document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');
+        const el = e.shadowRoot.querySelector('[data-win-mid="free:0"]');
+        if (!el) throw new Error('Freeform midpoint handles are missing');
+        const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2];
+      });
+      await page.mouse.move(...at); await page.mouse.down(); await page.mouse.move(at[0] + 1, at[1] + 1); await page.mouse.up();
+      await new Promise(r => setTimeout(r, 350));
+      await page.evaluate(async () => {
+        const e = document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');
+        const settle = async () => { await e.updateComplete; await new Promise(r => setTimeout(r, 200)); };
+        const current = () => e._doc.settings.roof.windows[0];
+        if (current().points.length !== 7) throw new Error('Midpoint insertion lost on tiny drag');
+        e.undo(); await settle(); if (current().points.length !== 6) throw new Error('Window contour undo failed');
+        e.redo(); await settle(); if (current().points.length !== 7) throw new Error('Window contour redo failed');
+        const select = [...e.shadowRoot.querySelectorAll('label')].find(l => l.textContent.includes('Auszugsrichtung')).querySelector('select');
+        select.value = 'right'; select.dispatchEvent(new Event('change')); await settle();
+        if (current().cover_direction !== 'right' || current().cover !== 'cover.terrasse') throw new Error('Shading configuration lost the cover binding');
+        [...e.shadowRoot.querySelectorAll('button')].find(b => b.textContent.trim() === 'Kontur neu zeichnen').click(); await settle();
+      });
+      for (const point of [[1,1],[5,1],[5,2.2],[2.2,2.2],[2.2,4],[1,4]]) {
+        const pos = await page.evaluate(p => {
+          const e = document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');
+          const a = e.toScreen(p), r = e.shadowRoot.querySelector('svg.fp3d-plan').getBoundingClientRect(); return [a[0]+r.x,a[1]+r.y];
+        }, point);
+        await page.mouse.click(...pos); await new Promise(r => setTimeout(r, 100));
+      }
+      await page.evaluate(async () => {
+        const e = document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-editor');
+        if(e._draft.length !== 6) throw new Error('Freeform roof-window drawing failed: '+e._draft.length);
+        e.closeDraft(); await e.updateComplete; await new Promise(r => setTimeout(r, 250));
+        const w = e._doc.settings.roof.windows[0];
+        if(w.points.length !== 6 || w.w < 3.9 || w.h < 2.9 || w.cover_style !== 'awning' || w.contact !== 'binary_sensor.terrasse' || !w.float) throw new Error('Redrawing lost geometry or original window settings');
+        const data = document.querySelector('neonplan3d-panel').data.building.settings.roof.windows[0];
+        if(JSON.stringify(data)!==JSON.stringify(w))throw new Error('Parent plan did not receive the freeform window');
+        if(e.shadowRoot.querySelector('aside').scrollWidth > e.shadowRoot.querySelector('aside').clientWidth + 2)throw new Error('Window controls overflow the sidebar');
+      });
+      console.log('verified freeform roof-window drawing, tiny-drag insertion, undo/redo, shading and plan bindings');
+    }
     if (shot.spotsExercise) {
       await page.evaluate(async () => {
         const e = document.querySelector("neonplan3d-panel").shadowRoot.querySelector("fp3d-editor");
@@ -998,6 +1052,14 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       }
       if (v.roof.solid.depthWrite) throw new Error('Glass roof still occludes the room');
     });
+  }
+  if (shot.roofAwning) {
+    await page.evaluate(() => {
+      const v = document.querySelector('neonplan3d-panel').shadowRoot.querySelector('fp3d-view3d').viewer;
+      v.setKeepRoof(true); v.setWeather(null);
+      v.setRoofWindows(new Map([['free', {open:0,tilt:0,cover:0.55}]])); v.invalidate();
+    });
+    await new Promise(r => setTimeout(r, 500));
   }
   if (shot.roofSunClosed !== undefined) {
     await page.evaluate((closed) => {
