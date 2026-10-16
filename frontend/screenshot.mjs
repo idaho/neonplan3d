@@ -403,7 +403,7 @@ const shots = [
   { name: "empty", query: "?empty", width: 1280, height: 800 },
   { name: "site-demo", query: "?site&lang=en", width: 1280, height: 800 },
   { name: "site-demo-phone", query: "?site&lang=de", width: 390, height: 844 },
-  { name: "view-household", query: "", width: 1600, height: 1000, editor: true, editorScript: HOUSEHOLD_SCRIPT, then3d: "Erdgeschoss", camera: { target: { x: 12, y: 0.6, z: 7.8 }, radius: 7, phi: 0.95 }, afterWait: 1500 },
+  { name: "view-household", query: "", width: 1600, height: 1000, editor: true, mockPrivatePacks: true, editorScript: HOUSEHOLD_SCRIPT, then3d: "Erdgeschoss", camera: { target: { x: 12, y: 0.6, z: 7.8 }, radius: 7, phi: 0.95 }, afterWait: 1500 },
   { name: "view-household-card", query: "", width: 1280, height: 800, editor: true, editorScript: HOUSEHOLD_SCRIPT, then3d: "Erdgeschoss", afterWait: 1500 },
   { name: "editor-household-bin", query: "", width: 1280, height: 1100, editor: true, editorScript: HOUSEHOLD_SCRIPT + " setTimeout(() => { e._roomId = 'garage'; e._furnitureId = e._doc.floors[0].furniture.find((m) => m.type === 'waste_bin' && m.bin_kind === 'paper').id; }, 500);", scrollSide: true, afterWait: 900 },
 ];
