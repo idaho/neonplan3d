@@ -120,6 +120,10 @@ export interface Opening {
   contact_invert?: boolean;
   /** Windows: no rain warning for this one (it may stay open in the rain, under a canopy, D328). */
   rain_ignore?: boolean;
+  /** Windows below the ground: false leaves out the light well (a path runs past the window, #524). */
+  well?: boolean;
+  /** How far the light well's rim and grate stand above the ground in m (null = level with it), e.g. above gravel. */
+  well_rim?: number | null;
   /** Highlight in 3D while open (null, default) or while closed (a WC or a child's room door). */
   mark?: "closed" | null;
   /** Ask before moving the blind or garage door; it then does not follow a swipe either. */
@@ -184,6 +188,40 @@ export interface Furniture {
   only_color?: string | null;
   /** With a power sensor: the item counts as running above this many watts (null = the default, 10 W). */
   run_w?: number | null;
+  /** Awning: the fabric's fall in degrees (null = 12°). */
+  awning_pitch?: number | null;
+  /** Awning: false leaves out the valance hanging from the front bar. */
+  awning_valance?: boolean;
+  /** Awning: a sensor with the position while it moves (0–100), for covers that only report at the end. */
+  awning_position?: EntityRef;
+  /** Awning: seconds it takes to run out fully, to move along when the cover only says opening or closing (null = 20 s). */
+  awning_time?: number | null;
+  /** Awning: the cover counts the other way round (100 = in). */
+  awning_invert?: boolean;
+  /** Waste bin: what goes in (decides its usual colours and its words in the waste calendar; null = rest). */
+  bin_kind?: "rest" | "bio" | "paper" | "plastic" | "glass" | "garden" | "recycling" | "other" | null;
+  /** Waste bin: its body colour ("#rrggbb"; null = the usual one of its kind in the country). */
+  bin_color?: string | null;
+  /** Waste bin: its lid colour ("#rrggbb"; null = like the body, or the country's usual lid). */
+  bin_lid?: string | null;
+  /** Haushalt Pro: the waste calendar (calendar.*) or a sensor with the next pickup of this bin. */
+  bin_source?: EntityRef;
+  /** Haushalt Pro: own words that find this bin's entries in the calendar (comma separated; null = by its kind). */
+  bin_match?: string | null;
+  /** Haushalt Pro, mailbox: the sensor of the door it is emptied through (post counts until it opens). */
+  mailbox_door?: EntityRef;
+  /** Haushalt Pro, plant: a plant.* entity or a soil moisture sensor; thirsty below `moisture_min`. */
+  moisture?: EntityRef;
+  /** Haushalt Pro, plant: the moisture (%) below which it is thirsty (null = 20). */
+  moisture_min?: number | null;
+  /** Haushalt Pro, washer, dryer, dishwasher: the time left (minutes, an end time or "H:MM"). */
+  remaining?: EntityRef;
+  /** Haushalt Pro: a consumable or service of the item (a filter, salt, rinse aid): due when on, at or below `service_min`, or its date. */
+  service?: EntityRef;
+  /** Haushalt Pro: the number (percent or days left) at or below which the service is due (null = 10). */
+  service_min?: number | null;
+  /** Haushalt Pro, fridge: minutes a door may stand open before it warns (null = 2). */
+  door_alarm?: number | null;
   /** An own symbol for the marker: a Material Design icon name without "mdi:" (null = by kind). */
   icon?: string | null;
   /** Linked entity, e.g. the TV's media player (null = automatic, "none" = none). */
@@ -616,6 +654,8 @@ export interface BuildingSettings {
   sun_patches?: boolean;
   /** The ground around the house: its height and the earth around cellars. */
   terrain?: Terrain | null;
+  /** Haushalt Pro: from which hour the day before a bin glows (null = 14) and until which hour on the day (null = 12). */
+  household?: { bin_from?: number | null; bin_until?: number | null } | null;
   /** Fun pack "Halloween": the ghost that floats through the house now and then (on unless switched off). */
   halloween?: { ghost?: boolean } | null;
   /** Plan lock: rooms, walls, doors, windows and outdoor areas cannot be moved by accident. */
@@ -1163,6 +1203,9 @@ export const FURNITURE_TYPES = [
   "parking",
   "fridge_smart",
   "stairwell",
+  "awning",
+  "waste_bin",
+  "mailbox",
 ] as const;
 
 /** Furniture library sections (the editor lists them in this order). */
@@ -1175,6 +1218,8 @@ export const FURNITURE_GROUPS: Record<string, FurnitureType[]> = {
   bath: ["bathtub", "shower", "wc", "washbasin", "washer", "dryer"],
   work: ["desk", "worktop", "office_chair", "tall_cabinet", "coat_rack", "radiator", "ac_unit", "stairs", "stairs_u", "robot_vacuum"],
   vehicles: ["parking"],
+  outdoor: ["awning"],
+  household: ["waste_bin", "mailbox"],
 };
 
 /** Energy devices: placed and set up in the Energy tool (stored like furniture, not in the library). */
@@ -1316,6 +1361,12 @@ export function builtinBase(f: Pick<Furniture, "type" | "h"> & { variant?: strin
     case "ac_unit":
       // an air conditioner's indoor unit hangs high on the wall
       return 2.05;
+    case "awning":
+      // the cassette over a terrace door
+      return 2.3;
+    case "mailbox":
+      // a wall mailbox and a mailbox bank hang on the wall
+      return f.variant === "bank" ? 0.75 : f.variant === "pole" || f.variant === "pillar" || f.variant === "parcel" ? 0 : 1.0;
     case "inverter":
       return 1.1;
     case "wallbox":
@@ -1340,6 +1391,7 @@ export const ELECTRIC_FURNITURE = new Set<string>([
   ...LAMP_TYPES,
   "radiator",
   "ac_unit",
+  "awning",
   "robot_vacuum",
   "inverter",
   "home_battery",
@@ -1421,6 +1473,11 @@ export const FURNITURE_SIZE: Record<FurnitureType, [number, number, number]> = {
   lamp_garden: [0.12, 0.12, 0.3],
   radiator: [1.0, 0.1, 0.6],
   ac_unit: [0.85, 0.22, 0.3],
+  // width along the wall, the projection (how far it reaches out fully extended), the cassette
+  awning: [3.0, 2.5, 0.22],
+  // a 240 l wheelie bin; a wall mailbox
+  waste_bin: [0.58, 0.73, 1.07],
+  mailbox: [0.38, 0.14, 0.34],
   robot_vacuum: [0.36, 0.5, 0.1],
   parking: [2.6, 5.2, 0.02],
   lamp_pendant: [0.4, 0.4, 0.8],

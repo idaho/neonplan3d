@@ -5,7 +5,7 @@ import { mountBase, setPacks, type PackItem } from "../packs.ts";
 import { stairHoles } from './build.ts';
 import { furnitureTransform } from "../furniture-transform.ts";
 import { GeoBuffer, LineBuffer } from "./geo.ts";
-import { pushFridgeDoors, pushFurniture, pushPackGlow, pushPackLamp } from "./furniture.ts";
+import { pushAwning, pushFridgeDoors, pushFurniture, pushPackGlow, pushPackLamp } from "./furniture.ts";
 import { pushLampModel } from "./viewer3d.ts";
 
 const base = 1.2;
@@ -91,6 +91,17 @@ test("mirrored pack models, glowing parts and lamps share the same transform", (
     build(a, f);
     build(b, { ...f, ...tilted });
     assert.ok(b.count > 0);
+    checkPositions(a.p, b.p, { ...f, ...tilted });
+  }
+});
+
+test("new upstream awning variants retain custom XYZ rotation while extending", () => {
+  for (const variant of ["arm", "drop", "vertical", "pergola", "side"]) for (const out of [0, 0.5, 1]) {
+    const f = { ...plain, type: "awning", variant };
+    const a = new GeoBuffer(), b = new GeoBuffer();
+    pushAwning(a, f, base, out);
+    pushAwning(b, { ...f, ...tilted }, base, out);
+    assert.ok(a.count > 0, variant);
     checkPositions(a.p, b.p, { ...f, ...tilted });
   }
 });

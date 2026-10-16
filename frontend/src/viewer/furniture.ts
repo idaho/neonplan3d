@@ -8,6 +8,7 @@ import type { Furniture, Vec2 } from "../model.ts";
 import { builtinBase, stairsULayout, POOL_VALVE_Y } from "../model.ts";
 import { rotateFurniturePositions } from "../furniture-transform.ts";
 import { mountBase, packItem, packScreen, renderPackItem, type PackItem } from "../packs.ts";
+import { binColors, binShape, householdCountry, mailboxShape, type BinShape, type MailboxShape } from "../household.ts";
 import type { Floor } from "../model.ts";
 import { ALWAYS, DEG, EDGE_TOP, GeoBuffer, LineBuffer, pushLoft, pushLyingCyl, pushPrism, shade } from "./geo.ts";
 import { packShape } from "./pack-shapes.ts";
@@ -122,9 +123,8 @@ class Builder {
     const along = axis === "x" ? cx : cz;
     const across = axis === "x" ? cz : cx;
     const at = (a: number, c: number): Vec2 => (axis === "x" ? this.tf(a, c) : this.tf(c, a));
-    const p0 = this.buf.p.length;
+    // the faces are turned outwards in world space already (also when the builder mirrors)
     pushLyingCyl(this.buf, at, along - len / 2, along + len / 2, across, cy, r, side, cap, n);
-    if (this.mirrored) flipWinding(this.buf, p0);
     if (edges) {
       for (const a of [along - len / 2, along + len / 2]) {
         for (let i = 0; i < n; i++) {
@@ -419,6 +419,117 @@ function fridge(b: Builder, w: number, d: number, h: number): void {
   b.seg(hx, split - 0.4, d / 2 + 0.015, hx, split - 0.08, d / 2 + 0.015, EDGE_GLOW);
 }
 
+/** A real colour toned into the neon look: darker for a body, a little brighter for a lid. */
+const tone = (hex: string, k: number) => shade(parseInt(hex.slice(1), 16), k).getHex();
+
+/**
+ * A waste bin in its shape and colours (household.ts): wheelie bins taper to the bottom and have their wheels and
+ * handle at the back (-z), a 1100 l container stands on four castors, a sack is tied at the top.
+ */
+function wasteBin(b: Builder, w: number, d: number, h: number, shape: BinShape, colors: [string, string]): void {
+  const body = tone(colors[0], 0.55);
+  const lid = tone(colors[1], 0.8);
+  const lidTop = tone(colors[1], 1);
+  if (shape === "bag") {
+    // a full sack: wider in the middle, gathered and tied at the top
+    b.loft([-w * 0.42, w * 0.42, -d * 0.4, d * 0.4], [-w / 2, w / 2, -d / 2, d / 2], 0, h * 0.55, body, body, EDGE_FAINT);
+    b.loft([-w / 2, w / 2, -d / 2, d / 2], [-w * 0.12, w * 0.12, -d * 0.12, d * 0.12], h * 0.55, h * 0.9, lid, lid, EDGE_FAINT);
+    b.cyl(0, 0, Math.min(w, d) * 0.1, h * 0.9, h, lidTop, lidTop, 8);
+    return;
+  }
+  if (shape === "caddy") {
+    b.loft([-w * 0.45, w * 0.45, -d * 0.45, d * 0.45], [-w / 2, w / 2, -d / 2, d / 2], 0, h * 0.85, body, body, EDGE_FURN);
+    b.box(-w / 2, w / 2, h * 0.85, h * 0.95, -d / 2, d / 2, lid, lidTop, EDGE_FAINT);
+    // the carrying handle over the lid
+    b.box(-w * 0.42, -w * 0.36, h * 0.95, h, -0.01, 0.01, lid);
+    b.box(w * 0.36, w * 0.42, h * 0.95, h, -0.01, 0.01, lid);
+    b.box(-w * 0.42, w * 0.42, h * 0.98, h, -0.01, 0.01, lid);
+    return;
+  }
+  if (shape === "underground") {
+    // only the column of an underground container stands out of the ground: a slot in front, the lid on top
+    const r = Math.min(w, d) * 0.32;
+    b.cyl(0, 0, r, 0, h * 0.9, body, body, 16, EDGE_FURN);
+    b.cyl(0, 0, r * 1.08, h * 0.9, h, lid, lidTop, 16, EDGE_FAINT);
+    b.box(-r * 0.5, r * 0.5, h * 0.62, h * 0.8, r * 0.7, r * 1.02, C.dark);
+    // the paved plate around it
+    b.box(-w / 2, w / 2, 0, 0.02, -d / 2, d / 2, C.metal, C.metal, EDGE_FAINT);
+    return;
+  }
+  if (shape === "bin1100") {
+    const cast = 0.14;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.cyl(sx * (w / 2 - 0.12), sz * (d / 2 - 0.12), 0.05, 0, cast, C.dark, C.dark, 8);
+    b.loft([-w / 2 + 0.06, w / 2 - 0.06, -d / 2 + 0.06, d / 2 - 0.08], [-w / 2, w / 2, -d / 2, d / 2], cast, h - 0.1, body, body, EDGE_FURN);
+    // two lid halves, the front one a little lower (a rounded lid seen as two slopes)
+    b.loft([-w / 2, w / 2, -d / 2, 0], [-w / 2, w / 2, -d / 2, 0], h - 0.1, h, lid, lidTop, EDGE_FAINT);
+    b.loft([-w / 2, w / 2, 0, d / 2], [-w / 2, w / 2, 0, d / 2 - 0.05], h - 0.1, h - 0.03, lid, lidTop, EDGE_FAINT);
+    return;
+  }
+  // wheelie bins (120 l, 240 l, a multi-compartment bin): wheels and handle at the back
+  const wheel = Math.min(0.2, h * 0.19);
+  const back = -d / 2;
+  for (const sx of [-1, 1]) b.lyingCyl("x", sx * (w / 2 - 0.05), back + wheel / 2 + 0.01, 0, wheel, 0.05, wheel, C.dark, C.metal, 12);
+  b.loft([-w * 0.42, w * 0.42, back + 0.07, d / 2 - 0.05], [-w / 2 + 0.01, w / 2 - 0.01, back + 0.05, d / 2 - 0.01], 0.03, h - 0.05, body, body, EDGE_FURN);
+  // the lid reaches over the front; the handle runs along the back
+  b.box(-w / 2, w / 2, h - 0.05, h, back + 0.03, d / 2, lid, lidTop, EDGE_FAINT);
+  b.box(-w * 0.42, w * 0.42, h - 0.1, h - 0.02, back, back + 0.04, lid, lidTop);
+  if (shape === "multi") {
+    // the lid in two parts: a seam across it, and the front split for a second compartment
+    b.seg(-w / 2, h + 0.002, (back + d / 2) / 2, w / 2, h + 0.002, (back + d / 2) / 2, EDGE_GLOW);
+    b.seg(0, h * 0.25, d / 2 - 0.01, 0, h - 0.06, d / 2 - 0.01, EDGE_FAINT);
+  }
+}
+
+/** A mailbox in its local shape. */
+function mailbox(b: Builder, w: number, d: number, h: number, shape: MailboxShape): void {
+  const body = C.metal;
+  const top = shade(C.metal, 1.25).getHex();
+  const panel = shade(C.metal, 0.85).getHex();
+  if (shape === "pole") {
+    // the US mailbox on a post: a box with a round top lying lengthwise, a red flag on its side
+    const post = Math.min(0.09, w * 0.4);
+    const boxH = Math.min(0.24, h * 0.22);
+    b.box(-post / 2, post / 2, 0, h - boxH, -post / 2, post / 2, C.wood, C.woodTop, EDGE_FAINT);
+    b.box(-w / 2, w / 2, h - boxH, h - boxH * 0.45, -d / 2, d / 2, body, top, EDGE_FURN);
+    b.lyingCyl("z", 0, 0, h - boxH * 0.9, h, d, w, body, top, 14, EDGE_FURN);
+    b.box(w / 2, w / 2 + 0.015, h - boxH * 0.4, h + 0.08, -d * 0.1, -d * 0.04, 0x8a1c1c);
+    b.box(w / 2, w / 2 + 0.015, h + 0.02, h + 0.08, -d * 0.04, d * 0.12, 0x8a1c1c);
+    return;
+  }
+  if (shape === "pillar") {
+    // a post box on a pillar: the box on top, a newspaper roll below
+    const boxH = Math.min(0.4, h * 0.3);
+    b.box(-w * 0.2, w * 0.2, 0, h - boxH, -d * 0.2, d * 0.2, C.dark, C.dark, EDGE_FAINT);
+    b.lyingCyl("z", 0, 0, h - boxH - 0.2, h - boxH - 0.04, d * 0.9, 0.16, body, top, 12, EDGE_FAINT);
+    b.loft([-w / 2, w / 2, -d / 2, d / 2], [-w / 2, w / 2, -d / 2, d / 2 - 0.05], h - boxH, h, body, top, EDGE_FURN);
+    b.box(-w * 0.32, w * 0.32, h - 0.1, h - 0.08, d / 2 - 0.05, d / 2 - 0.04, C.dark);
+    return;
+  }
+  if (shape === "parcel") {
+    // a parcel box: a big door in front, a letter slot above
+    b.box(-w / 2, w / 2, 0, h, -d / 2, d / 2, body, top, EDGE_FURN);
+    b.box(-w / 2 + 0.04, w / 2 - 0.04, 0.08, h * 0.72, d / 2, d / 2 + 0.012, panel, top, EDGE_FAINT);
+    b.box(-w * 0.3, w * 0.3, h * 0.82, h * 0.86, d / 2, d / 2 + 0.01, C.dark);
+    return;
+  }
+  if (shape === "bank") {
+    // a mailbox bank: three by two boxes, each with its own slot
+    b.box(-w / 2, w / 2, 0, h, -d / 2, d / 2, body, top, EDGE_FURN);
+    for (let i = 0; i < 3; i++)
+      for (let j = 0; j < 2; j++) {
+        const x0 = -w / 2 + (w / 3) * i + 0.015;
+        const y0 = (h / 2) * j + 0.015;
+        b.box(x0, x0 + w / 3 - 0.03, y0, y0 + h / 2 - 0.03, d / 2, d / 2 + 0.01, panel, top, EDGE_FAINT);
+        b.box(x0 + 0.04, x0 + w / 3 - 0.07, y0 + h / 2 - 0.09, y0 + h / 2 - 0.07, d / 2 + 0.01, d / 2 + 0.014, C.dark);
+      }
+    return;
+  }
+  // a wall mailbox: a box with a slanted roof and the slot under it
+  b.box(-w / 2, w / 2, 0, h * 0.8, -d / 2, d / 2, body, top, EDGE_FURN);
+  b.loft([-w / 2, w / 2, -d / 2, d / 2 + 0.02], [-w / 2, w / 2, -d / 2, -d / 2 + 0.02], h * 0.8, h, body, top, EDGE_FURN);
+  b.box(-w * 0.36, w * 0.36, h * 0.66, h * 0.7, d / 2, d / 2 + 0.008, C.dark);
+}
+
 /** Smart side-by-side fridge without its doors (they move: see pushFridgeDoors): the body and, behind the doors, shelves. */
 function fridgeSmart(b: Builder, w: number, d: number, h: number): void {
   const front = d / 2 - FRIDGE_DOOR;
@@ -436,10 +547,179 @@ function fridgeSmart(b: Builder, w: number, d: number, h: number): void {
 export const FRIDGE_DOOR = 0.06;
 
 /**
- * The two doors of a smart fridge, each swung open by a fraction (0 closed … 1 wide open) around its
- * outer hinge: the left one carries the water dispenser, the right one the screen. An open door turns
- * red – it should not stay open for long.
+ * An awning, by its kind (`variant`): "arm" a folding-arm awning over a terrace (default), "drop" a drop-arm awning
+ * at a balcony or window, "vertical" a vertical screen running down in side rails (ZIP), "pergola" a frame with posts
+ * whose fabric runs out on top, "side" a side awning pulled out sideways from a post (a privacy screen). `out` is how
+ * far it is run out (0 … 1); `base` the cassette's underside above the floor (a side awning: its top).
  */
+export function pushAwning(buf: GeoBuffer, f: Pick<Furniture, "x" | "z" | "rotation" | "rotation_x" | "rotation_z" | "w" | "d" | "h" | "variant" | "awning_pitch" | "awning_valance">, base: number, out: number): void {
+  const p0 = buf.p.length;
+  pushAwningUnrotated(buf, f, base, out);
+  rotateFurniturePositions(buf.p, p0, f, base + f.h / 2);
+}
+
+function pushAwningUnrotated(buf: GeoBuffer, f: Pick<Furniture, "x" | "z" | "rotation" | "w" | "d" | "h" | "variant" | "awning_pitch" | "awning_valance">, base: number, out: number): void {
+  const a = f.rotation * DEG;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const t = Math.max(0, Math.min(1, out));
+  // local x along the wall, local z out from the wall (the item's front), y up
+  const P = (lx: number, y: number, lz: number): number[] => [f.x + lx * c - lz * s, y, f.z + lx * s + lz * c];
+  const quad = (p: number[], q: number[], r: number[], u: number[], col: Color) => {
+    buf.tri(p, q, r, col);
+    buf.tri(p, r, u, col);
+    buf.tri(p, r, q, col);
+    buf.tri(p, u, r, col);
+  };
+  // a square beam between two local points (arms, bars, posts, rails)
+  const beam = (pl: number[], ql: number[], r: number, col: Color) => {
+    const p = P(pl[0], pl[1], pl[2]);
+    const q = P(ql[0], ql[1], ql[2]);
+    const dx = q[0] - p[0];
+    const dy = q[1] - p[1];
+    const dz = q[2] - p[2];
+    const len = Math.hypot(dx, dy, dz) || 1;
+    const d = [dx / len, dy / len, dz / len];
+    const up = Math.abs(d[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const u = [d[1] * up[2] - d[2] * up[1], d[2] * up[0] - d[0] * up[2], d[0] * up[1] - d[1] * up[0]];
+    const ul = Math.hypot(u[0], u[1], u[2]) || 1;
+    const n1 = [(u[0] / ul) * r, (u[1] / ul) * r, (u[2] / ul) * r];
+    const n2 = [d[1] * n1[2] - d[2] * n1[1], d[2] * n1[0] - d[0] * n1[2], d[0] * n1[1] - d[1] * n1[0]];
+    const K = [
+      [1, 1],
+      [-1, 1],
+      [-1, -1],
+      [1, -1],
+    ];
+    const corner = (o: number[], i: number) => [o[0] + n1[0] * K[i][0] + n2[0] * K[i][1], o[1] + n1[1] * K[i][0] + n2[1] * K[i][1], o[2] + n1[2] * K[i][0] + n2[2] * K[i][1]];
+    for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4;
+      buf.tri(corner(p, i), corner(q, i), corner(q, j), col);
+      buf.tri(corner(p, i), corner(q, j), corner(p, j), col);
+    }
+  };
+  // a box between two local corners (cassettes)
+  const box = (x0: number, x1: number, y0: number, y1: number, z0: number, z1: number, col: Color, topCol: Color) => {
+    quad(P(x0, y1, z0), P(x1, y1, z0), P(x1, y1, z1), P(x0, y1, z1), topCol);
+    quad(P(x0, y0, z1), P(x1, y0, z1), P(x1, y1, z1), P(x0, y1, z1), col);
+    quad(P(x0, y0, z0), P(x1, y0, z0), P(x1, y0, z1), P(x0, y0, z1), col);
+    quad(P(x0, y0, z0), P(x0, y0, z1), P(x0, y1, z1), P(x0, y1, z0), col);
+    quad(P(x1, y0, z0), P(x1, y0, z1), P(x1, y1, z1), P(x1, y1, z0), col);
+  };
+  const body = new Color(C.body);
+  const top = new Color(C.bodyTop);
+  const accent = new Color(C.accent);
+  const stripeA = new Color(0x1d6f8a);
+  const stripeB = new Color(0x0f2f45);
+  // a striped sheet between two local edges (p0–p1 the first edge, q0–q1 the second), stripes across the first edge
+  const sheet = (p0: number[], p1: number[], q0: number[], q1: number[], n: number) => {
+    const mix = (u: number[], v: number[], k: number) => [u[0] + (v[0] - u[0]) * k, u[1] + (v[1] - u[1]) * k, u[2] + (v[2] - u[2]) * k];
+    for (let i = 0; i < n; i++) {
+      const a0 = mix(p0, p1, i / n);
+      const a1 = mix(p0, p1, (i + 1) / n);
+      const b1 = mix(q0, q1, (i + 1) / n);
+      const b0 = mix(q0, q1, i / n);
+      quad(P(a0[0], a0[1], a0[2]), P(a1[0], a1[1], a1[2]), P(b1[0], b1[1], b1[2]), P(b0[0], b0[1], b0[2]), i % 2 ? stripeA : stripeB);
+    }
+  };
+  const hw = f.w / 2;
+  const back = -f.d / 2;
+  const cas = Math.max(0.12, Math.min(0.3, f.h));
+  const stripes = Math.max(4, Math.round(f.w / 0.3));
+  const pitch = ((f.awning_pitch ?? 12) * Math.PI) / 180;
+  const valance = (y: number, z: number) => {
+    if (f.awning_valance === false) return;
+    sheet([-hw + 0.04, y, z + 0.01], [hw - 0.04, y, z + 0.01], [-hw + 0.04, y - 0.2, z + 0.01], [hw - 0.04, y - 0.2, z + 0.01], stripes);
+  };
+  const kind = f.variant ?? "arm";
+
+  if (kind === "side") {
+    // a post with the rolled fabric at the left end, the pull bar running to the right, a post to hook it into
+    const y1 = base;
+    const y0 = 0.05;
+    const z = 0;
+    const end = -hw + 0.08 + t * (f.w - 0.16);
+    box(-hw, -hw + 0.1, 0, y1 + 0.05, z - 0.05, z + 0.05, body, top);
+    box(hw - 0.06, hw, 0, y1 + 0.05, z - 0.03, z + 0.03, body, top);
+    if (t > 0.01) sheet([-hw + 0.1, y1, z], [-hw + 0.1, y0, z], [end, y1, z], [end, y0, z], Math.max(4, Math.round((y1 - y0) / 0.3)));
+    beam([end, y0, z], [end, y1, z], 0.02, accent);
+    return;
+  }
+
+  if (kind === "vertical") {
+    // a cassette across the top, side rails down to the floor, the fabric running down to its bottom bar
+    const z0 = back;
+    const z1 = Math.min(f.d / 2, back + cas);
+    box(-hw, hw, base, base + cas, z0, z1, body, top);
+    const zf = (z0 + z1) / 2;
+    for (const x of [-hw + 0.02, hw - 0.02]) beam([x, 0.02, zf], [x, base, zf], 0.02, accent);
+    const yb = base - t * Math.max(0, base - 0.04);
+    if (t > 0.01) sheet([-hw + 0.04, base, zf], [hw - 0.04, base, zf], [-hw + 0.04, yb, zf], [hw - 0.04, yb, zf], stripes);
+    beam([-hw + 0.03, yb, zf], [hw - 0.03, yb, zf], 0.025, accent);
+    return;
+  }
+
+  if (kind === "pergola") {
+    // a fixed frame: rails from the wall to the posts at the front, falling with the pitch; the fabric runs out on top
+    const zf = f.d / 2 - 0.05;
+    const yw = base + cas;
+    const yf = yw - (zf - back) * Math.tan(pitch);
+    box(-hw, hw, base, yw, back, back + cas, body, top);
+    for (const x of [-hw + 0.05, hw - 0.05]) {
+      beam([x, yw, back + cas], [x, yf, zf], 0.035, accent);
+      beam([x, 0, zf], [x, yf, zf], 0.045, body);
+    }
+    beam([-hw + 0.05, yf, zf], [hw - 0.05, yf, zf], 0.035, accent);
+    const zr = back + cas + t * (zf - back - cas);
+    const yr = yw - (zr - back) * Math.tan(pitch) + 0.04;
+    if (t > 0.01) sheet([-hw + 0.08, yw + 0.04, back + cas], [hw - 0.08, yw + 0.04, back + cas], [-hw + 0.08, yr, zr], [hw - 0.08, yr, zr], stripes);
+    beam([-hw + 0.08, yr, zr], [hw - 0.08, yr, zr], 0.025, accent);
+    return;
+  }
+
+  // the cassette on the wall (folding-arm and drop-arm awnings)
+  const z0 = back;
+  const z1 = back + cas;
+  box(-hw, hw, base, base + cas, z0, z1, body, top);
+  const mouth = [z1 - 0.02, base + cas * 0.35];
+
+  if (kind === "drop") {
+    // arms hinged on the wall below the cassette swing out and down; the fabric runs from the cassette to their bar
+    const arm = Math.max(0.3, f.d - cas);
+    // the hinge sits an arm's length under the cassette's mouth: retracted, the bar rests at the cassette
+    const pivot = [z1, mouth[1] - arm];
+    // retracted the arms point up along the wall, run out they reach the set angle below the horizontal
+    const phi = t * (Math.PI / 2 + pitch);
+    const bar = [pivot[0] + Math.sin(phi) * arm, pivot[1] + Math.cos(phi) * arm];
+    for (const x of [-hw + 0.08, hw - 0.08]) beam([x, pivot[1], pivot[0]], [x, bar[1], bar[0]], 0.018, accent);
+    if (t > 0.01) sheet([-hw + 0.04, mouth[1], mouth[0]], [hw - 0.04, mouth[1], mouth[0]], [-hw + 0.04, bar[1], bar[0]], [hw - 0.04, bar[1], bar[0]], stripes);
+    beam([-hw + 0.02, bar[1], bar[0]], [hw - 0.02, bar[1], bar[0]], 0.03, accent);
+    if (t > 0.05) valance(bar[1], bar[0]);
+    return;
+  }
+
+  // folding-arm awning: the fabric down its fall to the front bar, two folding arms bending out sideways
+  const reach = Math.max(0, f.d - cas) * t;
+  const end = [mouth[0] + reach, mouth[1] - reach * Math.tan(pitch)];
+  if (reach > 0.01) {
+    sheet([-hw + 0.04, mouth[1], mouth[0]], [hw - 0.04, mouth[1], mouth[0]], [-hw + 0.04, end[1], end[0]], [hw - 0.04, end[1], end[0]], stripes);
+    const arm = Math.max(0.3, (f.d - cas) / 2 + 0.05);
+    for (const side of [-1, 1]) {
+      const x = side * (hw - 0.12);
+      const sh = [x, base + 0.02, z1 - 0.04];
+      const hand = [x, end[1] - 0.02, end[0]];
+      const span = Math.hypot(hand[2] - sh[2], hand[1] - sh[1]);
+      const bend = Math.sqrt(Math.max(0, arm * arm - (span / 2) ** 2));
+      const elbow = [x - side * Math.min(bend, hw - 0.15), (sh[1] + hand[1]) / 2, (sh[2] + hand[2]) / 2];
+      beam(sh, elbow, 0.018, accent);
+      beam(elbow, hand, 0.018, accent);
+    }
+  }
+  beam([-hw + 0.02, end[1], end[0]], [hw - 0.02, end[1], end[0]], 0.03, accent);
+  if (reach > 0.05) valance(end[1], end[0]);
+}
+
+/** Moving fridge doors rotate around their outer hinges, then follow the item's XYZ rotation. */
 export function pushFridgeDoors(buf: GeoBuffer, f: Pick<Furniture, "x" | "z" | "rotation" | "rotation_x" | "rotation_z" | "w" | "d" | "h" | "mirror">, base: number, left: number, right: number): void {
   const p0 = buf.p.length;
   pushFridgeDoorsUnflipped(buf, f, base, left, right);
@@ -1252,6 +1532,23 @@ function buildFurniture(buf: GeoBuffer, lines: LineBuffer, shadow: GeoBuffer, f:
     case "fridge_smart":
       fridgeSmart(b, w, d, h);
       break;
+    case "waste_bin":
+      wasteBin(b, w, d, h, binShape(f), binColors(f, householdCountry()));
+      break;
+    case "mailbox": {
+      // like the other built-in wall models it is drawn at its own height (a wall mailbox at 1 m, a bank at 0.75 m)
+      const p0 = buf.p.length;
+      const l0 = lines.p.length;
+      mailbox(b, w, d, h, mailboxShape(f));
+      const lift = builtinBase(f);
+      for (let i = p0 + 1; i < buf.p.length; i += 3) buf.p[i] += lift;
+      for (let i = l0 + 1; i < lines.p.length; i += 3) lines.p[i] += lift;
+      if (lift > 0) return; // hangs on the wall: no shadow on the floor
+      break;
+    }
+    case "awning":
+      // drawn with its moving fabric and arms by pushAwning (it runs in and out with its cover)
+      return;
     case "stove":
       stove(b, w, d, h);
       break;

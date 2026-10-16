@@ -84,6 +84,8 @@ export interface CardConfig {
   weather?: boolean;
   /** The weather entity to use (default: the first one). */
   weather_entity?: string;
+  /** Haushalt Pro: the glass card "Today in the household" (bins, post, appliances, plants …; default on). */
+  household_card?: boolean;
   /** Pro: a "Time travel" button replays the last 24 hours in the card (read-only). */
   time_travel?: boolean;
   /** How far back the time travel starts: 24 hours (default) or the week ("7d" also on a wall tablet, which else holds two days). */

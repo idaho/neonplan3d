@@ -4,7 +4,7 @@ import { emptyBuilding, newFloor, pointInPolygon } from "../model.ts";
 import { roofFaces, proposeWindow } from "../solar.ts";
 import { roofSectionsFromRooms } from "../roof-sections.ts";
 import { GeoBuffer } from "./geo.ts";
-import { appendRoofSun } from "./roof-sun.ts";
+import { appendRoofSun, appendRoofDaylight } from "./roof-sun.ts";
 
 function fixture(custom = false) {
   const b = emptyBuilding(), floor = newFloor("upper", "Upper", 3);
@@ -24,6 +24,24 @@ function area(buf: GeoBuffer) {
   }
   return sum;
 }
+
+test("diffuse roof daylight survives opposite sun, follows split levels and respects blinds and holes", () => {
+  const { b, floor } = fixture(true);
+  floor.rooms[0].elevation = floor.elevation + 0.6;
+  const render = (cover = 0, holes: [number, number][][] = []) => {
+    const buf = new GeoBuffer();
+    appendRoofDaylight(buf, b, floor, { elevation: 5 }, 0, new Map([["sky", { open: 0, tilt: 0, cover }]]), holes);
+    return buf;
+  };
+  const open = render(), half = render(0.5);
+  assert.ok(area(open) > area(half) && area(half) > 0);
+  for (let i = 1; i < open.p.length; i += 3) assert.ok(Math.abs(open.p[i] - 0.619) < 1e-6);
+  assert.equal(render(1).count, 0);
+  assert.equal(render(0, [floor.rooms[0].points]).count, 0);
+  const night = new GeoBuffer();
+  appendRoofDaylight(night, b, floor, { elevation: 0 }, 0, new Map());
+  assert.equal(night.count, 0);
+});
 
 test("gable and custom skylights project warm finite sunlight onto their owning floor", () => {
   for (const custom of [false, true]) {

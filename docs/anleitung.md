@@ -87,7 +87,7 @@ Oben gibt es drei Reiter:
 
 Zusätzlich gibt es die Dashboard-Karte, die dieselbe 3D-Ansicht in jedes Dashboard bringt. Mehr dazu in [Kapitel 8](#8-die-dashboard-karte).
 
-**Sprache:** NeonPlan folgt der Sprache deines Home-Assistant-Nutzers (Profil → Sprache). Deutsch und Englisch sind eingebaut; Französisch, Spanisch, Niederländisch, Italienisch, Ungarisch, Dänisch, Schwedisch, Norwegisch (Bokmål und Nynorsk), Finnisch, Tschechisch, Polnisch, Rumänisch und Slowenisch werden bei Bedarf nachgeladen, so bleiben die Bundles für Wandtablets klein. Fehlt ein Text in einer Sprache, erscheint er auf Englisch.
+**Sprache:** NeonPlan folgt der Sprache deines Home-Assistant-Nutzers (Profil → Sprache). Deutsch und Englisch sind eingebaut; Französisch, Spanisch, Niederländisch, Italienisch, Ungarisch, Dänisch, Schwedisch, Norwegisch (Bokmål und Nynorsk), Finnisch, Tschechisch, Polnisch, Rumänisch, Slowenisch, Portugiesisch und Chinesisch (vereinfacht) werden bei Bedarf nachgeladen, so bleiben die Bundles für Wandtablets klein. Fehlt ein Text in einer Sprache, erscheint er auf Englisch.
 
 ---
 
@@ -119,7 +119,7 @@ Ein Gruppenknopf zeigt, welches Werkzeug gerade läuft, etwa „Raum: Freie Form
 
 **Seitenleiste einklappen:** **Einklappen ›** oben in der Seitenleiste macht sie zu einem schmalen Streifen – der Grundriss bekommt den ganzen Platz, etwa zum Verschieben von Möbeln. **‹** klappt sie wieder auf, ein leuchtendes **⚙** im Streifen öffnet die Einstellungen der Auswahl. Wählst du ein anderes Werkzeug, klappt sie von selbst wieder auf. Der Browser merkt sich die Wahl.
 
-**Maus und Touch:** Mit zwei Fingern ziehst du die Ansicht, mit zwei Fingern zoomst du. Mit der Maus zoomt das Mausrad, die Ansicht ziehst du auf einer leeren Stelle. **Strg+Z** macht rückgängig, **Strg+Y** oder **Strg+Umschalt+Z** wiederholt, **Entf** löscht das Ausgewählte, **Esc** bricht ab. Die **Pfeiltasten** verschieben das Ausgewählte (Raum, Ecke, Möbel, Gerät, Wand, Außenfläche) um einen Rasterschritt, mit **Umschalt** um 10 cm, mit **Alt** um 1 cm; Türen und Fenster wandern dabei entlang ihrer Wand.
+**Maus und Touch:** Mit zwei Fingern ziehst du die Ansicht, mit zwei Fingern zoomst du. Mit der Maus zoomt das Mausrad, die Ansicht ziehst du auf einer leeren Stelle oder überall mit der **rechten oder mittleren Maustaste** (ein Rechtsklick ohne Ziehen öffnet weiter das Menü). **Strg+Z** macht rückgängig, **Strg+Y** oder **Strg+Umschalt+Z** wiederholt, **Entf** löscht das Ausgewählte, **Esc** bricht ab. Die **Pfeiltasten** verschieben das Ausgewählte (Raum, Ecke, Möbel, Gerät, Wand, Außenfläche) um einen Rasterschritt, mit **Umschalt** um 10 cm, mit **Alt** um 1 cm; Türen und Fenster wandern dabei entlang ihrer Wand.
 
 **Grundriss sperren und fixieren:** **Grundriss sperren** in den Etagen-Einstellungen (siehe [4.2](#42-etagen)) oder per Rechtsklick auf einen Raum sperrt alle Räume, Wände, Türen, Fenster und Außenflächen, auch neu gezeichnete; ein ausgewählter Raum zeigt dann „🔒 Grundriss gesperrt“, ein Klick darauf entsperrt. Möbel und Geräte fixierst du einzeln, sobald sie an ihrem Platz stehen: mit dem Schloss **🔓 Fixieren** oben im Formular, mit der Taste **L** oder per **Rechtsklick** (auf dem Tablet langes Drücken). Das Rechtsklick-Menü bietet außerdem **Duplizieren**, **Drehen 90°** und **Löschen**. Gesperrtes lässt sich auswählen und im Formular bearbeiten, aber nicht mehr ziehen, nicht mit den Pfeiltasten schieben und nur nach Rückfrage löschen; Ziehen bewegt dann die Ansicht. Fixierte Möbel und Geräte bleiben auch in der 3D-Hälfte stehen.
 
@@ -430,7 +430,7 @@ Wie durch normale Fenster fällt Sonnenlicht durch Dachfenster als warmer Lichtf
 
 Unter den Dachflächen legt **+ Dachfenster** ein Fenster in eine Dachfläche (Standard 78 × 118 cm). Es lässt sich im Grundriss verschieben, auch auf eine andere Dachfläche, und hat wie ein normales Fenster **Rollladen**, **Kontakt** und **Kippkontakt**: Der Flügel öffnet am gewählten Angelpunkt, gekippt ein Stück, und der Rollladen fährt von oben über die Scheibe.
 
-Zu jedem Dachfenster gehören ein **Name** (optional), **Rollladen**, **Kontakt** und **Kippkontakt** – und ein **Fenstermotor**: Velux, Roto oder Fakro melden die Fensterstellung als Cover, der Flügel öffnet in 3D so weit, wie der Motor steht. Offen oder gekippt leuchtet der Rahmen warm wie bei einem Wandfenster. Liegt das Fenster in einer Dachfläche, schneidet es ein Loch in die Schräge, so sieht man aus dem Dachgeschoss hinaus. Blendet das Dach beim Heranzoomen an eine Etage oder einen Raum aus, blenden die Dachfenster mit aus. Mit **Ohne Dach über dem Raum zeigen** bleibt ein Fenster dann an seiner Stelle über dem Raum stehen – offen, gekippt, mit dem Rollladen. Jedes Dachfenster gehört zu dem Raum darunter: Tippst du den Raum an, stehen Rollladen, Kontakt und Fenstermotor in seiner Raumkarte, und scheint die Sonne auf die Dachfläche, fällt ihr Licht durch das Fenster auf den Boden des Raums (mit dem Rollladen weniger).
+Zu jedem Dachfenster gehören ein **Name** (optional), **Rollladen**, **Kontakt** und **Kippkontakt** – und ein **Fenstermotor**: Velux, Roto oder Fakro melden die Fensterstellung als Cover, der Flügel öffnet in 3D so weit, wie der Motor steht. Offen oder gekippt leuchtet der Rahmen warm wie bei einem Wandfenster. Liegt das Fenster in einer Dachfläche, schneidet es ein Loch in die Schräge, so sieht man aus dem Dachgeschoss hinaus. Blendet das Dach beim Heranzoomen an eine Etage oder einen Raum aus, blenden die Dachfenster mit aus. Mit **Ohne Dach über dem Raum zeigen** bleibt ein Fenster dann an seiner Stelle über dem Raum stehen – offen, gekippt, mit dem Rollladen. Reicht die Schräge über einen Raum der Etage darunter, gehört das Fenster zu dieser Etage und zeigt sich mit ihr. Jedes Dachfenster gehört zu dem Raum darunter: Tippst du den Raum an, stehen Rollladen, Kontakt und Fenstermotor in seiner Raumkarte, und scheint die Sonne auf die Dachfläche, fällt ihr Licht durch das Fenster auf den Boden des Raums (mit dem Rollladen weniger).
 
 ### 4.20 Energie: Solarfelder
 
@@ -447,7 +447,7 @@ Felder lassen sich im Grundriss und in der **3D-Ansicht daneben** mit der Maus v
 | **Full Black** / **Blau** | Optik der Module: ganz schwarz (Standard) oder klassisch blau |
 | **Modulbreite** / **Modulhöhe** | Größe eines Moduls im Hochformat, Standard 1,13 × 1,72 m |
 | **Modulleistung (Wp)** | Spitzenleistung eines Moduls, Standard 400 – bestimmt die kWp des Feldes und des Strangs und wie hell die lebenden Module (Energie Pro) leuchten |
-| **Strang** | Felder, die zusammen verschaltet sind, auch auf verschiedenen Dächern: etwa 5 Module auf dem Haus und 5 auf der Garage in „Strang 1“. Der Strang hat einen Namen, einen PV-Sensor und einen Wechselrichter (unter **Geräte** angelegt) |
+| **Strang** | Felder, die zusammen verschaltet sind, auch auf verschiedenen Dächern: etwa 5 Module auf dem Haus und 5 auf der Garage in „Strang 1“. Der Strang hat einen Namen, einen PV-Sensor und ist **angeschlossen an** einen Wechselrichter – oder an einen Stromspeicher mit eigenem Solareingang (eine Powerstation wie EcoFlow); beide legst du unter **Geräte** an |
 | **PV-Leistung dieses Feldes** | Der Leistungssensor seines Strangs, für die kommende Pro-Erweiterung |
 | **Hochformat** / **Querformat** | Lage der Module (1,13 × 1,72 m) |
 | **Abstand vom Rand** / **von der Traufe** | Position des Feldes. Im Grundriss lässt es sich mit der Maus verschieben, auch auf eine andere Dachfläche; über den Rand der Fläche hinaus rutscht es nicht |
@@ -472,7 +472,24 @@ Ein **Keller** ist eine Etage mit negativer **Höhe über Boden**, etwa −2,6 m
 - **Keller in der Erde zeigen:** Etagen unter dem Gelände stecken in 3D im Erdreich. Öffnest du den Keller, siehst du ihn wie in einer Baugrube, mit den Erdwänden ringsum. Ohne Haken stehen sie frei wie bisher.
 - **Gelände zurücksetzen** stellt alles auf den Anfang.
 
-**Kellerfenster:** Im Formular eines Fensters setzt **Kellerfenster** die passende Größe – 100 × 50 cm, 25 cm unter der Decke. Liegt ein Fenster unter dem Gelände, bekommt es in 3D von selbst einen **Lichtschacht** mit Gitterrost.
+**Kellerfenster:** Im Formular eines Fensters setzt **Kellerfenster** die passende Größe – 100 × 50 cm, 25 cm unter der Decke. Liegt ein Fenster unter dem Gelände, bekommt es in 3D von selbst einen **Lichtschacht** mit Gitterrost. Im Fensterformular nimmt der Haken **Lichtschacht** ihn wieder weg (etwa wenn außen ein Weg vorbeiführt); **Rand über dem Gelände** hebt Rand und Gitter an, damit ein Kies- oder Plattenweg ums Haus sie nicht verdeckt. Liegt im Garten-Werkzeug ein Rasen, Weg oder eine Terrasse bis ans Haus über dem Schacht, steht sein Rand von selbst knapp über dieser Fläche.
+
+### 4.22 Markisen
+
+Unter **Möbel → Terrasse & Balkon** gibt es die **Markise**. Sie fährt in 3D mit ihrem Cover aus und ein – wie ein Rollladen.
+
+- **Art:** **Gelenkarm** (die Klassiker über der Terrasse), **Fallarm** (Balkon, Fenster – die Arme schwenken nach vorn und unten), **Senkrecht / ZIP** (das Tuch fährt in Seitenschienen senkrecht herunter), **Pergola / Wintergarten** (fester Rahmen mit Pfosten, das Tuch fährt oben aus) und **Seitenmarkise** (Sichtschutz, aus einem Pfosten zur Seite gezogen). Mit der Art setzt NeonPlan passende Maße, die du danach anpasst.
+- **Größe:** Breite ist die Markise entlang der Wand, Tiefe der Ausfall ganz ausgefahren (beim Fallarm die Armlänge, bei der Pergola bis zu den Pfosten). Die Rückseite des Rahmens kommt an die Hauswand; **Höhe über Boden** ist die Unterkante der Kassette (bei der Seitenmarkise die Höhe des Tuchs). **Neigung** ist das Gefälle des Tuchs.
+- **Markise (Cover):** das Cover aus Home Assistant. Meldet es seine Position auch während der Fahrt, fährt die Markise in 3D langsam mit; meldet es nur „öffnet“/„schließt“, fährt sie in der **Laufzeit ganz aus**. Ein eigener **Positionssensor** geht auch. **Richtung umkehren** hilft bei Covers, die 100 % melden, wenn die Markise eingefahren ist.
+- **Volant:** die herunterhängende Stoffkante vorne, abschaltbar.
+
+### 4.23 Mülltonnen und Briefkästen
+
+Unter **Möbel → Haushalt** stehen **Mülltonne** und **Briefkasten**.
+
+- **Mülltonne – Bauform:** Rolltonne 120 l oder 240 l, Container 1100 l, Mehrkammer-Tonne, Sack, Eimer / Caddy oder Unterflur-Container (von dem nur die Einwurfsäule aus dem Boden ragt). Mit der Bauform setzt NeonPlan die üblichen Maße.
+- **Abfallart:** Restmüll, Bio, Papier, Verpackung, Glas, Garten, Recycling oder Sonstiges. Sie gibt der Tonne die Farben, die in deinem Land üblich sind (nach dem Land in Home Assistant: in Deutschland etwa Papier blau, Bio braun, Gelbe Tonne gelb; in Australien zeigt der Deckel die Sorte). **Farbe** und **Deckel** kannst du danach frei wählen.
+- **Briefkasten – Bauform:** Wandbriefkasten (hängt auf 1 m), Briefkasten auf Pfosten mit Fähnchen, Standbriefkasten mit Zeitungsfach, Paketbox oder Briefkastenanlage.
 
 ---
 
@@ -830,6 +847,20 @@ Nicht dabei sind Kamerabilder (der Recorder speichert keine) sowie Personen und 
 
 **Voraussetzungen:** der Recorder von Home Assistant (er läuft standardmäßig) und Home Assistant nach dem Update einmal neu gestartet. Wie weit der Verlauf zurückreicht, bestimmt `purge_keep_days` des Recorders (Standard 10 Tage); die Zeitreise braucht davon 24 Stunden, für die ganze Woche mindestens 7 Tage. Wer die Woche nutzen will, lässt `purge_keep_days` also bei 7 oder mehr.
 
+### 6.8 Haushalt Pro (Beta)
+
+> **Beta, zuerst für Supporter:** Haushalt Pro testen zuerst die Supporter (mit dem [Supporter-Pass](https://mastershort.de/neonplan3d/unterstuetzer/) ist es dabei). Rückmeldungen gern auf Discord in **#beta-feedback** oder auf GitHub.
+
+Haushalt Pro zeigt im Haus, was im Haushalt ansteht – dort, wo es passiert. Die Mülltonnen und Briefkästen selbst gibt es für alle (Kapitel 4.23); Haushalt Pro bringt sie und andere Geräte zum Leben. Die Felder dazu stehen im Formular des Möbels unter **🏠 Haushalt Pro**.
+
+- **Mülltonnen:** Wähle unter **Abfallkalender oder Sensor** einen Kalender (z. B. von *Waste Collection Schedule*) oder einen Sensor. Aus einem Kalender sucht NeonPlan die Einträge nach den Wörtern der Abfallart heraus (Papier, Bio, Gelber Sack, PMD, GFT, Recycling … in vielen Sprachen); passt das nicht, trägst du ein eigenes **Stichwort** ein. Ein Sensor darf die Tage bis zur Abholung, ein Datum oder „morgen“/„in 3 Tagen“ melden. Jede Tonne mit Termin trägt ein kleines **Schildchen** auf dem Deckel – „Heute“, „Morgen“, „in 3 Tagen“ – in ihrer Farbe; heute und morgen stehen hervor. Ein Tipp auf die Tonne zeigt die nächsten Termine. **Leuchten ab / bis** legt fest, ab wann am Vortag bis wann am Abholtag eine Tonne als „dran“ gilt (für alle Tonnen).
+- **Briefkasten:** Ein **Sensor für Post** – ein Merker (z. B. ein input_boolean „Post da“ aus einer Automation) oder die Einwurfklappe – und optional der **Sensor der Entnahmetür**. Liegt Post drin, leuchtet der Briefkasten und zeigt „Post da“, bis er geleert wurde.
+- **Pflanzen:** Eine Pflanze (plant.*) oder ein Feuchtesensor; unter dem eingestellten Wert (Standard 20 %) zeigt sie „Durst“.
+- **Waschmaschine, Trockner, Spüler:** Mit einem **Restzeit-Sensor** zeigt die Markierung „noch 23 min“; danach „Fertig!“, bis die Tür aufgeht (**Tür-Sensor**) oder das Gerät wieder läuft. „Fertig“ erkennt NeonPlan am Zustand des Geräts (finished, beendet …) oder daran, dass es zu laufen aufgehört hat.
+- **Wartung und Verbrauchsteile:** An jedem elektrischen Möbel kann ein Sensor für Filter, Salz oder Klarspüler stehen – ein Binärsensor (an = fällig), eine Zahl (Prozent oder Tage übrig, fällig ab dem eingestellten Wert) oder ein Datum. Fällig leuchtet das Gerät gelb.
+- **Kühlschrank:** Steht eine Tür länger offen als eingestellt (Standard 2 Minuten), warnt NeonPlan oben im Bild. Dazu gehört der **Smart-Kühlschrank** (Side-by-Side mit beweglichen Türen) in der Möbel-Bibliothek.
+- **Heute im Haushalt:** Eine Glaskarte oben rechts listet, was gerade ansteht – Tonnen heute und morgen, Post, fertige Geräte, durstige Pflanzen, fällige Wartung, offene Kühlschranktüren. Ein Tipp öffnet das Gerät, der Kopf klappt sie ein. In der Dashboard-Karte schaltet `household_card: false` sie ab.
+
 ---
 
 ## 7. Erweiterungen, Shop und Möbel-Packs
@@ -889,7 +920,12 @@ Unten auf der Seite fasst ein **Balken** deine installierten Packs zusammen (Mö
 
 ### 7.4 Fun-Packs
 
-**Fun-Packs** sind kostenlose Extras zum Spaß – ein Dankeschön an alle, die NeonPlan 3D schon unterstützen. Du holst sie dir im Shop für **0 €** (wer mag, gibt freiwillig etwas dazu) und schaltest sie hier unter **🎈 Fun-Packs** ein und aus.
+**Fun-Packs** sind kostenlose Extras zum Spaß – für jeden mit einem Kundenkonto bei mastershort.de. Ein Kauf ist nicht nötig:
+
+- **Mit Shop-Verbindung** liegen sie schon in deinem Konto. Unter **Erweiterungen** stehen sie bei deinen Packs mit **Installieren**; Home Assistant meldet neue Fun-Packs außerdem einmal unter Benachrichtigungen.
+- **Ohne Konto** legst du dir kostenlos eins an: **🎁 Kostenloses Kundenkonto anlegen** unter **🎈 Fun-Packs** (oder im Hinweis in der 3D-Ansicht), E-Mail bestätigen, den Lizenzschlüssel aus der Mail unter **Shop-Verbindung** einfügen. Danach erscheinen die Fun-Packs zum Installieren – und künftig auch neue Packs direkt in der App.
+
+Unter **🎈 Fun-Packs** schaltest du sie danach ein und aus.
 
 **Haustiere:** Katze, Kaninchen oder Hund – als Dackel, Mops, Terrier, Labrador oder Schäferhund – leben in deinem 3D-Haus. **+ Haustier hinzufügen** legt ein Tier an: Art, Rasse (bei Hunden), Name, Fell und die Etage, auf der es startet. **Haustiere zeigen** schaltet alle auf einmal ein und aus; in der Dashboard-Karte blendet die Option **Haustiere zeigen** (YAML `pets: false`) sie für diese Karte aus, etwa am Wandtablet.
 
@@ -898,6 +934,8 @@ Unten auf der Seite fasst ein **Balken** deine installierten Packs zusammen (Mö
 - **Nachts** (die Sonne in Home Assistant ist untergegangen) schlafen sie eingerollt, mit einem kleinen „z Z“.
 - In den **Aquarien** des Packs Haustiere schwimmen bunte **Fische**.
 - Gezeichnet wird nur, solange sich ein Tier bewegt – ruhend kosten sie nichts, auch nicht auf alten Wandtablets.
+
+**Halloween:** 13 Deko-Möbel in der Möbel-Bibliothek unter **Fun-Pack: Halloween** – Kürbis mit Gesicht, kleiner Kürbis, Kürbis-Trio, Spinnennetz (für die Ecke unter der Decke), Fledermaus-Girlande, zwei Grabsteine, Skelett, Hexenkessel, Kerzenständer, orange Lichterkette, Gespenst-Figur und Hexenbesen. Kürbis, Kessel und Kerzen leuchten, wenn du ein Licht verknüpfst. Dazu schwebt ab und zu ein kleiner **Geist** durchs Haus – mitten durch die Wände, nachts öfter. **Geist schweben lassen** unter **🎈 Fun-Packs** schaltet ihn ab; in der Dashboard-Karte blendet die Option **Halloween-Geist zeigen** (YAML `ghost: false`) ihn für diese Karte aus. Auch der Geist wird nur gezeichnet, solange er unterwegs ist.
 
 ---
 
@@ -1005,6 +1043,8 @@ Unter **Sicherung** im Editor:
 - **Komplett-Backup:** **Alles sichern (Plan, Bilder, Packs)** speichert eine Datei mit dem Plan, allen Hintergrund- und Bildschirmbildern und den installierten Packs. **Komplett-Backup wiederherstellen …** spielt sie in dieselbe oder eine andere Installation zurück. Jedes Pack wird dabei erneut geprüft. Packs, die für eine andere Installation signiert sind, holst du dort über die Shop-Verbindung neu. Der Lizenzschlüssel ist nicht in der Datei.
 
 Das normale Backup von Home Assistant sichert NeonPlan 3D ebenfalls vollständig mit.
+
+**Aus anderen Programmen übernehmen:** Die **Import-Seite** (<https://neonplan3d.mastershort.de/import/>, auch unter **Sicherung → Zur Import-Seite**) macht aus Plänen anderer Programme eine NeonPlan-Datei: Sweet Home 3D (`.sh3d`), iPhone-/iPad-Scans mit LiDAR (RoomPlan-JSON), CAD-Zeichnungen (`.dxf`), 3D-Modelle aus Blender, SketchUp & Co. (`.glb`, `.gltf`, `.obj`, `.stl`), Floorplanner und Valetudo-Saugroboterkarten. Sie zeigt eine Vorschau mit Räumen, Türen, Fenstern und Möbeln, lässt Räume umbenennen und je nach Format Einheit, Layer oder Etagenhöhen einstellen; die Datei bleibt dabei auf deinem Computer. Die heruntergeladene Datei lädst du hier mit **Importieren …**. Wer sich den Plan lieber von einer KI schreiben lässt, findet die Vorlage dafür in [docs/ai-import.md](https://github.com/Mastershort/neonplan3d/blob/main/docs/ai-import.md); die Import-Seite prüft und repariert das Ergebnis.
 
 ---
 

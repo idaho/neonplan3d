@@ -86,6 +86,11 @@ export interface RoofGeometry {
   win?: { solid: GeoBuffer; glass: GeoBuffer; lines: LineBuffer };
   /** The roof windows that only show in the roof: they fade out with it (the default). */
   winRoof?: { solid: GeoBuffer; glass: GeoBuffer; lines: LineBuffer };
+  /**
+   * Floating roof windows over a room of a LOWER floor (a slope reaching down over it, #482): they belong to that
+   * floor and show with it, in its own heights (its floor at 0).
+   */
+  winBelow?: Map<string, { floor: Floor; solid: GeoBuffer; glass: GeoBuffer; lines: LineBuffer }>;
 }
 
 /** The floor the roof sits on: the highest one with rooms. */
@@ -142,14 +147,21 @@ function pushRoofWindows(b: Building, parts: RoofGeometry[], states: ReadonlyMap
     if (!face || !corners) continue;
     const part = face.section ? parts.find((p) => p.sections?.includes(face.section!)) : parts[0];
     if (!part) continue;
-    const dy = part.floor.elevation + part.base;
+    // a floating window stays over its room when the roof fades: over a room of the roof's own floor it rides with
+    // the roof's part; over a room of a lower floor (the slope reaches down over it) it belongs to that floor and
+    // shows with it – riding with the roof's floor it would hang in the air when only the lower floor shows (#482)
+    const room = w.float ? roofWindowRoom(b, face, w) : null;
+    const below = room && room.floor.id !== part.floor.id && room.floor.elevation < part.floor.elevation ? room.floor : null;
+    const dy = below ? below.elevation : part.floor.elevation + part.base;
     const L = (p: number[]): number[] => [p[0], p[1] - dy, p[2]];
     const local = corners.map(L);
     const st = states.get(w.id) ?? { open: 0, tilt: 0, cover: 0 };
-    // floating over its room only above a room of the roof's own floor: a slope reaching down over a lower floor
-    // would leave the window hanging in the air under the floor shown (#482)
-    const float = !!w.float && roofWindowRoom(b, face, w)?.floor.id === part.floor.id;
-    const win = float ? (part.win ??= { solid: new GeoBuffer(), glass: new GeoBuffer(), lines: new LineBuffer() }) : (part.winRoof ??= { solid: new GeoBuffer(), glass: new GeoBuffer(), lines: new LineBuffer() });
+    const float = !!room && (below !== null || room.floor.id === part.floor.id);
+    const win = below
+      ? ((part.winBelow ??= new Map()).get(below.id) ?? part.winBelow.set(below.id, { floor: below, solid: new GeoBuffer(), glass: new GeoBuffer(), lines: new LineBuffer() }).get(below.id)!)
+      : float
+        ? (part.win ??= { solid: new GeoBuffer(), glass: new GeoBuffer(), lines: new LineBuffer() })
+        : (part.winRoof ??= { solid: new GeoBuffer(), glass: new GeoBuffer(), lines: new LineBuffer() });
     const up = (p: number[], k: number) => [p[0] + face.n[0] * k, p[1] + face.n[1] * k, p[2] + face.n[2] * k];
     // the fixed frame in the roof; it glows warm while the window is open or tilted
     const frame = st.open > 0.02 || st.tilt > 0.02 ? WINDOW_WARM : WINDOW_FRAME;

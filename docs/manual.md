@@ -4,7 +4,7 @@
 
 NeonPlan 3D draws your home right inside Home Assistant and shows it as a 3D model in a neon look. Lights glow in their colours, blinds move, windows tilt, doors swing open, cameras look into the room and the TV shows what is playing. Everything runs locally in Home Assistant, without a cloud or external programs, and it is built for wall tablets.
 
-This manual describes every feature of the current version. What changed in which version is in the [changelog](../CHANGELOG.md) and on the [releases page](https://github.com/Mastershort/neonplan3d/releases). The pictures come from the demo with invented data. The app follows the language of your Home Assistant user (profile → language); the labels below are the English ones. German and English are built in; French, Spanish, Dutch, Italian, Hungarian, Danish, Swedish, Norwegian (Bokmål and Nynorsk), Finnish, Czech, Polish, Romanian and Slovenian are fetched when needed, so the bundles stay small for wall tablets. A text missing in a language shows in English.
+This manual describes every feature of the current version. What changed in which version is in the [changelog](../CHANGELOG.md) and on the [releases page](https://github.com/Mastershort/neonplan3d/releases). The pictures come from the demo with invented data. The app follows the language of your Home Assistant user (profile → language); the labels below are the English ones. German and English are built in; French, Spanish, Dutch, Italian, Hungarian, Danish, Swedish, Norwegian (Bokmål and Nynorsk), Finnish, Czech, Polish, Romanian, Slovenian, Portuguese and Chinese (Simplified) are fetched when needed, so the bundles stay small for wall tablets. A text missing in a language shows in English.
 
 ![The house in the 3D view](images/view-house.jpg)
 
@@ -117,7 +117,7 @@ A group's button names the tool in use, e.g. "Room: Free shape" or "Outdoor: Law
 
 **Collapsing the sidebar:** **Collapse ›** at the top of the sidebar folds it to a narrow strip – the plan gets all the room, e.g. for moving furniture. **‹** unfolds it, a glowing **⚙** in the strip opens the settings of the selection. Choosing another tool unfolds it again by itself. The browser remembers the choice.
 
-**Mouse and touch:** Two fingers pan and zoom. With a mouse, the wheel zooms and dragging an empty spot pans. **Ctrl+Z** undoes, **Ctrl+Y** or **Ctrl+Shift+Z** redoes, **Del** deletes the selection, **Esc** cancels. The **arrow keys** nudge the selection (room, corner, furniture, device, wall, outdoor area) by one grid step, with **Shift** by 10 cm, with **Alt** by 1 cm; doors and windows slide along their wall.
+**Mouse and touch:** Two fingers pan and zoom. With a mouse, the wheel zooms; drag an empty spot or anywhere with the **right or middle mouse button** to pan (a right click without dragging still opens the menu). **Ctrl+Z** undoes, **Ctrl+Y** or **Ctrl+Shift+Z** redoes, **Del** deletes the selection, **Esc** cancels. The **arrow keys** nudge the selection (room, corner, furniture, device, wall, outdoor area) by one grid step, with **Shift** by 10 cm, with **Alt** by 1 cm; doors and windows slide along their wall.
 
 **Locking the floor plan and fixing:** **Lock floor plan** in the floor settings (see [4.2](#42-floors)) or by right-clicking a room locks all rooms, walls, doors, windows and outdoor areas, newly drawn ones too; a selected room then shows "🔒 Floor plan locked", a click on it unlocks. Furniture and devices are fixed one by one once they are in place: with the lock **🔓 Fix** at the top of the form, with the key **L** or by **right-click** (long press on a tablet). The right-click menu also offers **Duplicate**, **Turn 90°** and **Delete**. Locked items can be selected and edited in their form, but not dragged, not nudged with the arrow keys and only deleted after asking; dragging then moves the view. Fixed furniture and devices also stay put in the 3D half.
 
@@ -429,7 +429,7 @@ Like wall windows, roof windows cast a warm sun patch onto the floor of the room
 
 Below the roof sections, **+ Roof window** puts a window into a roof face (78 × 118 cm by default). Drag it in the plan, also onto another roof face. Like a window it has a **Blind**, a **Contact** and a **Tilt contact**: the sash opens around the selected pivot; tilted, a little; the blind comes down over the glass from the top.
 
-Every roof window has a **name** (optional), a **blind**, a **contact** and a **tilt contact** – and a **window motor**: Velux, Roto or Fakro report the window's position as a cover, and the sash opens in 3D as far as the motor stands. Open or tilted, the frame glows warm like a wall window's. In a roof section the window cuts a hole into the slope, so the attic looks out through it. When the roof fades out as you zoom in on a floor or a room, the roof windows fade out with it. With **Show over the room without the roof** a window stays where it is over the room – open, tilted, with its blind. Every roof window belongs to the room below it: tap the room and its blind, contact and window motor are in the room card, and when the sun shines on that roof face, its light falls through the window onto the room's floor (less with the blind down).
+Every roof window has a **name** (optional), a **blind**, a **contact** and a **tilt contact** – and a **window motor**: Velux, Roto or Fakro report the window's position as a cover, and the sash opens in 3D as far as the motor stands. Open or tilted, the frame glows warm like a wall window's. In a roof section the window cuts a hole into the slope, so the attic looks out through it. When the roof fades out as you zoom in on a floor or a room, the roof windows fade out with it. With **Show over the room without the roof** a window stays where it is over the room – open, tilted, with its blind. Where the slope reaches over a room of the floor below, the window belongs to that floor and shows with it. Every roof window belongs to the room below it: tap the room and its blind, contact and window motor are in the room card, and when the sun shines on that roof face, its light falls through the window onto the room's floor (less with the blind down).
 
 ### 4.20 Energy: solar fields
 
@@ -446,7 +446,7 @@ Drag fields in the plan and in the **3D view beside it**, also onto another roof
 | **Full black** / **Blue** | Look of the modules: all black (default) or classic blue |
 | **Module width** / **Module height** | Size of one module in portrait, 1.13 × 1.72 m by default |
 | **Module power (Wp)** | Peak power of one module, 400 by default – sets the kWp of the field and its string and how bright the living modules (Energy Pro) glow |
-| **String** | Fields wired together, also on different roofs: e.g. 5 modules on the house and 5 on the garage in "String 1". A string has a name, a PV sensor and an inverter (added under **Devices**) |
+| **String** | Fields wired together, also on different roofs: e.g. 5 modules on the house and 5 on the garage in "String 1". A string has a name, a PV sensor and is **connected to** an inverter – or to a battery with a solar input of its own (a power station such as EcoFlow); add both under **Devices** |
 | **PV power of this field** | The power sensor of its string, for the coming Pro add-on |
 | **Portrait** / **Landscape** | How the modules (1.13 × 1.72 m) lie |
 | **Distance from the edge** / **from the eave** | Position of the field. Drag it in the plan, also onto another roof face; it does not slide beyond the edge of its face |
@@ -471,7 +471,24 @@ A **cellar** is a floor with a negative **elevation**, e.g. −2.6 m. Without a 
 - **Show cellars in the earth:** floors below the ground sit in the earth in 3D. Open the cellar and you see it as in a building pit, with the earth walls around it. Unticked, they stand free as before.
 - **Reset the ground** sets everything back.
 
-**Cellar window:** in a window's form, **Cellar window** sets the right size – 100 × 50 cm, 25 cm under the ceiling. A window below the ground gets a **light well** with a grate in 3D by itself.
+**Cellar window:** in a window's form, **Cellar window** sets the right size – 100 × 50 cm, 25 cm under the ceiling. A window below the ground gets a **light well** with a grate in 3D by itself. In the window form, the tick **Light well** takes it away again (e.g. where a path runs past outside); **Rim above the ground** raises the rim and grate so a gravel or paved path around the house does not cover them. Where a lawn, path or terrace of the garden tool reaches over the well up to the house, its rim stands just above that surface by itself.
+
+### 4.22 Awnings
+
+Under **Furniture → Terrace & balcony** there is the **Awning**. In 3D it runs out and in with its cover – like a blind.
+
+- **Kind:** **Folding-arm** (the classic over a terrace), **Drop-arm** (balcony, window – the arms swing out and down), **Vertical / ZIP** (the fabric runs straight down in side rails), **Pergola / conservatory** (a fixed frame with posts, the fabric runs out on top) and **Side awning** (a privacy screen pulled out sideways from a post). Choosing a kind sets its usual sizes, which you then adjust.
+- **Size:** width is the awning along the wall, depth its projection fully out (for a drop-arm the arm length, for a pergola up to the posts). The back of the frame goes against the house wall; **Height above the floor** is the cassette's underside (for a side awning the fabric's height). **Fall** is the fabric's slope.
+- **Awning (cover):** the cover from Home Assistant. If it reports its position while it runs, the awning runs out slowly in 3D; if it only says opening/closing, it moves at its **Run time fully out**. A separate **Position sensor** works too. **Reverse direction** helps with covers that report 100 % while the awning is in.
+- **Valance:** the fabric edge hanging at the front, can be switched off.
+
+### 4.23 Waste bins and mailboxes
+
+Under **Furniture → Household** you find the **waste bin** and the **mailbox**.
+
+- **Waste bin – shape:** wheelie bin 120 l or 240 l, 1100 l container, multi-compartment bin, bag, caddy / pail or underground container (only its column stands out of the ground). The shape sets the usual size.
+- **Waste:** general, food / organic, paper, packaging, glass, garden, recycling or other. It gives the bin the colours usual in your country (by the country set in Home Assistant: in Germany paper is blue and food waste brown, in the US recycling is blue; in Australia the lid tells the kind). **Colour** and **lid** can be changed freely afterwards.
+- **Mailbox – shape:** wall mailbox (hanging at 1 m), mailbox on a post with a flag, post box with a newspaper holder, parcel box or mailbox bank.
 
 ---
 
@@ -829,6 +846,20 @@ Not included are camera pictures (the recorder keeps none) and people and their 
 
 **Requirements:** Home Assistant's recorder (it runs by default) and Home Assistant restarted once after the update. How far back the history reaches is set by the recorder's `purge_keep_days` (default 10 days); time travel needs 24 hours of it, the whole week at least 7 days. If you want the week, keep `purge_keep_days` at 7 or more.
 
+### 6.8 Household Pro (beta)
+
+> **Beta, first for supporters:** Household Pro is tested by supporters first (it comes with the [Supporter Pass](https://mastershort.de/en/neonplan3d/supporters/)). Feedback is welcome on Discord in **#beta-feedback** or on GitHub.
+
+Household Pro shows what is due in the household, right where it happens. The waste bins and mailboxes themselves are for everyone (chapter 4.23); Household Pro brings them and other appliances to life. Its fields are in the item's form under **🏠 Household Pro**.
+
+- **Waste bins:** under **Waste calendar or sensor** pick a calendar (e.g. from *Waste Collection Schedule*) or a sensor. In a calendar NeonPlan finds the entries by the words of the bin's waste (paper, food, packaging, PMD, recycling … in many languages); if that does not fit, enter a **word** of your own. A sensor may report the days to the pickup, a date or "tomorrow"/"in 3 days". Every bin with a pickup wears a small **tag** on its lid – "Today", "Tomorrow", "in 3 days" – in its colour; today and tomorrow stand out. A tap on the bin shows its next pickups. **Glow from / until** sets from when the day before until when on pickup day a bin counts as due (for all bins).
+- **Mailbox:** a **post sensor** – a flag (e.g. an input_boolean "post" set by an automation) or the letter flap – and optionally the **sensor of the emptying door**. While post is in it, the mailbox glows and shows "Post" until it is emptied.
+- **Plants:** a plant (plant.*) or a moisture sensor; below the set value (default 20 %) it shows "Thirsty".
+- **Washer, dryer, dishwasher:** with a **time-left sensor** the pin shows "23 min left"; afterwards "Done!" until the door opens (**door sensor**) or it runs again. NeonPlan tells "done" from the appliance's state (finished, done …) or from it having stopped running.
+- **Service and consumables:** any electric item can have a sensor for a filter, salt or rinse aid – a binary sensor (on = due), a number (percent or days left, due at the set value) or a date. When due the item glows yellow.
+- **Fridge:** when a door stands open longer than set (default 2 minutes), NeonPlan warns at the top of the view. The **smart fridge** (side-by-side with moving doors) in the furniture library comes with it.
+- **Today in the household:** a glass card at the top right lists what is due – bins today and tomorrow, post, finished appliances, thirsty plants, services due, open fridge doors. A tap opens the device, its header folds it. In the dashboard card `household_card: false` switches it off.
+
 ---
 
 ## 7. Extensions, shop and furniture packs
@@ -888,7 +919,12 @@ At the bottom of the page a **bar** sums up your installed packs (furniture pack
 
 ### 7.4 Fun packs
 
-**Fun packs** are free extras just for fun – a thank-you to everyone who already supports NeonPlan 3D. Get them in the shop for **0 €** (give something if you like) and switch them on and off here under **🎈 Fun packs**.
+**Fun packs** are free extras just for fun – for everyone with a customer account at mastershort.de. No purchase is needed:
+
+- **With a shop connection** they are already in your account. Under **Extensions** they are among your packs with **Install**; Home Assistant also announces new fun packs once under Notifications.
+- **Without an account** you create one for free: **🎁 Create a free customer account** under **🎈 Fun packs** (or in the notice in the 3D view), confirm your e-mail, paste the licence key from the mail under **Shop connection**. Then the fun packs show up to install – and from then on new packs too, right in the app.
+
+Switch them on and off under **🎈 Fun packs** afterwards.
 
 **Pets:** a cat, a rabbit or a dog – as a dachshund, pug, terrier, labrador or shepherd – lives in your 3D house. **+ Add a pet** sets one up: kind, breed (for dogs), name, fur and the floor it starts on. **Show the pets** switches all of them on and off; in the dashboard card the option **Show the pets** (YAML `pets: false`) leaves them out of that card, e.g. on the wall tablet.
 
@@ -897,6 +933,8 @@ At the bottom of the page a **bar** sums up your installed packs (furniture pack
 - **At night** (the sun in Home Assistant has set) they sleep curled up, with a little "z Z".
 - Colourful **fish** swim in the Pets pack's **aquariums**.
 - They are only drawn while one moves – resting, they cost nothing, even on old wall tablets.
+
+**Halloween:** 13 decorations in the furniture library under **Fun pack: Halloween** – a jack-o'-lantern, a small pumpkin, a pumpkin trio, a cobweb (for the corner under the ceiling), a bat garland, two gravestones, a skeleton, a witch's cauldron, a candelabra, orange string lights, a ghost figure and a witch's broom. Pumpkin, cauldron and candles glow when you link a light. A little **ghost** floats through the house now and then – right through the walls, more often at night. **Let the ghost float** under **🎈 Fun packs** switches it off; in the dashboard card the option **Show the Halloween ghost** (YAML `ghost: false`) leaves it out of that card. The ghost, too, is only drawn while it is on its way.
 
 ---
 
@@ -1004,6 +1042,8 @@ Under **Backup** in the editor:
 - **Full backup:** **Back up everything (plan, pictures, packs)** saves one file with the plan, every background and screen picture and the installed packs. **Restore a full backup …** brings it back into the same or another installation. Every pack is checked again. Packs signed for another installation are fetched there again through the shop connection. The licence key is not in the file.
 
 Home Assistant's own backup includes NeonPlan 3D completely as well.
+
+**From other programs:** the **import page** (<https://neonplan3d.mastershort.de/import/>, also under **Backup → To the import page**) turns plans of other programs into a NeonPlan file: Sweet Home 3D (`.sh3d`), iPhone/iPad LiDAR scans (RoomPlan JSON), CAD drawings (`.dxf`), 3D models from Blender, SketchUp & co. (`.glb`, `.gltf`, `.obj`, `.stl`), Floorplanner and Valetudo robot vacuum maps. It shows a preview with rooms, doors, windows and furniture, lets you rename rooms and, depending on the format, set the unit, the layers or the floor levels; the file stays on your computer. Load the downloaded file here with **Import …**. If you would rather let an AI write the plan, the template is in [docs/ai-import.md](https://github.com/Mastershort/neonplan3d/blob/main/docs/ai-import.md); the import page checks and repairs the result.
 
 ---
 

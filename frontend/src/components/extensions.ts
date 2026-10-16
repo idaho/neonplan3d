@@ -160,8 +160,8 @@ export class Extensions extends LitElement {
   }
 
   /**
-   * Fun packs: free extras picked up in the shop (0 €, give what you like), switched on and off here – the pets with
-   * their names, kinds and fur.
+   * Fun packs: free extras for every customer account – with a connected key they wait among the packs to install;
+   * without one a free account brings them. Switched on and off here, the pets with their names, kinds and fur.
    */
   private renderFun(unlocked: Set<string>) {
     // unlocked by an installed pack (this page's own list), or shown to test with the lab switch
@@ -227,31 +227,31 @@ export class Extensions extends LitElement {
                       : nothing}`
                 : nothing}
             </div>`
-          : html`<div class="fp3d-ext-feature">
-              <b>🔒 ${this.t("fun_name_pets")}</b>
-              <span class="fp3d-sub">${this.t("fun_feature_pets")}</span>
-              <span class="fp3d-ext-links"><a class="fp3d-ext-link" href=${shopUrl(this.hass?.language)} target="_blank" rel="noopener">${this.t("fun_get")}</a></span>
-            </div>`,
+          : this.renderFunLocked("🐾", this.t("fun_name_pets"), this.t("fun_feature_pets")),
       )}
     </section>`;
+  }
+
+  /**
+   * A fun pack not installed yet: connected, it is already in the customer account and waits among the packs above;
+   * not connected, a free customer account brings it (key by e-mail after the address is confirmed).
+   */
+  private renderFunLocked(icon: string, name: string, feature: string) {
+    const connected = !!this._license?.active;
+    return html`<div class="fp3d-ext-feature">
+      <b>${icon} ${name}</b>
+      <span class="fp3d-sub">${feature}</span>
+      ${connected
+        ? html`<span class="fp3d-sub"><b>${this.t("fun_in_account")}</b></span>`
+        : html`<span class="fp3d-sub">${this.t("fun_register_steps")}</span>
+            <span class="fp3d-ext-links"><a class="fp3d-ext-link" href=${registerUrl(this.hass?.language)} target="_blank" rel="noopener">${this.t("fun_register")}</a></span>`}
+    </div>`;
   }
 
   /** Fun pack "Halloween": decorations in the furniture library, and the ghost to switch on and off. */
   private renderHalloween(unlocked: boolean) {
     const ghost = this.building?.settings.halloween?.ghost !== false;
-    if (!unlocked) {
-      // without a shop connection: a free customer account brings it (and keeps the app connected)
-      const connected = !!this._license?.active;
-      return html`<div class="fp3d-ext-feature">
-        <b>🎃 ${this.t("fun_name_halloween")}</b>
-        <span class="fp3d-sub">${this.t("fun_feature_halloween")}</span>
-        <span class="fp3d-ext-links"
-          ><a class="fp3d-ext-link" href=${connected ? shopUrl(this.hass?.language) : registerUrl(this.hass?.language)} target="_blank" rel="noopener"
-            >${this.t(connected ? "fun_halloween_shop" : "fun_halloween_register")}</a
-          ></span
-        >
-      </div>`;
-    }
+    if (!unlocked) return this.renderFunLocked("🎃", this.t("fun_name_halloween"), this.t("fun_feature_halloween"));
     return html`<div class="fp3d-ext-feature fp3d-ext-on">
       <b>✓ 🎃 ${this.t("fun_name_halloween")}</b>
       <span class="fp3d-sub">${this.t("fun_feature_halloween")}</span>

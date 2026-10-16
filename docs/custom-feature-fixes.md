@@ -172,6 +172,14 @@ Vorheriger vollständig geprüfter Laufzeitstand: `62bc3a2` auf `feature/custom-
 - HA-Abbildung explizit testen: Rollladen 100 % = eingezogen/keine Beschattung, 0 % = voll beschattet. HA-Geräteklasse `awning` umgekehrt: 0 %/`closed` = eingefahren/keine Beschattung, 100 %/`open` = ausgefahren. Fehlende Geräteklasse darf bei gewählter Markisendarstellung auf Markisensemantik zurückfallen; eine ausdrücklich gemeldete Shutter-Klasse nicht aufgrund der Optik invertieren. Ungültige/unverfügbare Positionen erzeugen kein NaN. Unabhängige Fenstermotor-Entität ebenfalls beobachten, damit deren Positionsänderung allein den Viewer aktualisiert.
 - Regressionen: `frontend/src/roof-window-state.test.ts`, Glas-/Rollo-Buffer- und Materialtests, Browser `view-roof-rollo-{100,50,0}-{inside,outside}`. Im selben Browser ohne Reload HA-Positionen 100 → 0 → 50 → 100 durchlaufen und Änderungen der tatsächlichen Beschattungsgeometrie prüfen. Optionale private Testkopie mit `ROOF_PLAN` nur lokal zum Nachstellen, niemals reale Rollos für die Prüfung fahren. Kein Plan-/Pack-Umbau erforderlich, aber aktualisierte Anwendung notwendig; alte installierte Bundles sind nicht durch einen Pack-Import korrigiert.
 
+## Original-Abgleich 16.10.2026 (1.19.0)
+
+- Original-main `bd56e85061a456bd93bdf75264143aa4a0220c0c` mit allen 16 Custom-Verträgen zusammenführen. Neue Haushaltsfunktionen, fünf Markisenarten, Importwerkzeug, Sprachen und Original-Korrekturen nicht durch ältere Custom-Dateien ersetzen. Berechtigungen der neuen Original-Funktionen beibehalten.
+- Dachfenster dürfen nun über tieferen Etagen schweben. Dabei müssen auch deren separate transparente Glas-Buffer erhalten bleiben; nicht nur Rahmen und Rollo in die untere Etage übernehmen. Beschattung bleibt ohne Reload aktualisierbar.
+- Neues diffuses Tageslicht unter Dachfenstern unabhängig von der direkten Sonnenrichtung erhalten. Auf den fertigen Raumboden projizieren; echte Fensterkontur, teilweise Beschattung, Zielraum und Bodenlöcher ausschneiden. Direkte warme Sonnenprojektion bleibt zusätzlich bestehen. Abnahme: `roof-sun.test.ts`, `roof.test.ts` und Rollo-Browserfälle.
+- Neue dynamische Markisen müssen dieselbe zusätzliche X-/Z-Rotation wie übrige Möbel behalten, auch während des Ausfahrens. Abnahme: alle fünf Varianten bei 0/50/100 % in `furniture-rotation.test.ts`.
+- Keine Plan-/Pack-Migration für diesen Abgleich. Generierte Frontend-Bundles vollständig neu bauen. Gemessener gemeinsamer Build statt alter Einzelzweig-Budgets: Hauptbundle ca. 604 KB, 3D 841 KB, Editor 856 KB, Karteneditor 241 KB; kleine explizite Budgetreserven beibehalten.
+
 ## Wiederaufbau- und Pflegecheckliste
 
 1. Spezifikation, diesen Katalog, `docs/custom-features.json` und vorhandene private Pack-Daten lesen. Originalstand sowie lokale Features/Fixes getrennt inventarisieren; erhaltene Daten und tatsächlich fehlende Ressourcen nennen.

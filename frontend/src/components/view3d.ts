@@ -15,7 +15,7 @@ import { carState, type CarState, roomClimateValue,
   openingState,
   TOGGLE_KINDS,
   type FurnitureLinks,
-  type OpeningEntities, confirmEntities, fridgeDoors, hasScreen, pictureRuleMatches,
+  type OpeningEntities, awningStates, confirmEntities, fridgeDoors, hasScreen, pictureRuleMatches,
   fromCelsius,
   tempUnit,
   robotRoom,
@@ -33,6 +33,7 @@ import { carState, type CarState, roomClimateValue,
 } from "../devices.ts";
 import { alertColor, alertEntities, alertSources, alertText, findAlerts, isOutage, type Alert, type AlertSources } from "../alerts.ts";
 import { iconPath, iconSvg, mdiIcon } from "../icons.ts";
+import { binColors, binDue, binNext, doorsOf, fetchPickups, FinishedMemory, fridgeOpenTooLong, hassCountry, isFinishedState, mailboxPost, nextFridgeCheck, plantThirsty, remainingMinutes, remainingText, serviceDue, setHouseholdCountry, wasteCalendars, isPackPlant, type HouseholdItem, type Pickup } from "../household.ts";
 import { deviceSensors, energySummary, fetchSolarRows, fetchTodayChange, fieldLevels, fieldPowers, findConsumers, flowColor, flowSegments, gridPoint, powerSensorFor, readPower, solarCurvePath, solarDayFromStats, type Consumer, type EnergySummary, type StatRow } from "../energy.ts";
 import { fieldFace, fieldSize } from "../solar.ts";
 import { type CustomButton, type EntityRef, DEFAULT_HOLOGRAM, type PoolPipe, type SolarField, POOL_DEVICES } from "../model.ts";
@@ -50,7 +51,9 @@ function waterText(hass: HomeAssistant, v: number, unit: string): string {
 }
 
 interface HoloCard {
-  kind: "main" | "plant" | "device" | "media" | "car" | "pool";
+  kind: "main" | "plant" | "device" | "media" | "car" | "pool" | "bin";
+  /** Haushalt Pro: a waste bin that goes out – its colour and when ("Tomorrow"). */
+  bin?: { color: string; when: string; soon: boolean };
   /** Pool Pro: the pool and what its entities report. */
   pool?: { area: string; state: PoolState };
   name: string;
@@ -99,7 +102,7 @@ import { load3d } from "../load3d.ts";
 import { loadFun } from "../load-fun.ts";
 import { detectionKind, scaleGlow, buildMarkers, cameraMotionSensors, openMoreInfo, stateText, toggleEntity } from "../markers.ts";
 import { roofUnderAt, sectionCutsBelow } from "../roof-sections.ts";
-import { roomCeilingAt, roomLevelAt, setTerrain, centroid, furnitureFootprint, isLamp, poolFloorY, LAMP_MODEL, LIFT_SPOTS, outdoorGround, pointInPolygon, poolWaterY, spotDepth, surfaceHeight, type Building, type Furniture, type Pet, type StartView } from "../model.ts";
+import { roomCeilingAt, roomLevelAt, setTerrain, centroid, furnitureFootprint, isLamp, poolFloorY, LAMP_MODEL, LIFT_SPOTS, outdoorGround, pointInPolygon, poolWaterY, spotDepth, surfaceHeight, type Building, type Floor, type Furniture, type Pet, type StartView } from "../model.ts";
 import { poolAreas, poolLinksWithDevices, poolState, poolWaterGlow, type PoolState } from "../pool.ts";
 import { pipePieces, poolFlow, waterColor, type PipePiece, type PoolDeviceType } from "../pool-flow.ts";
 import { pathLength, pipePath, pointAlong, type P3 } from "../geometry/runs.ts";
@@ -132,6 +135,23 @@ function roomAt(floor: { rooms: readonly { id: string; points: [number, number][
 function ownButtonOn(hass: HomeAssistant, btn: CustomButton): boolean {
   const target = btn.action === "more_info" ? btn.target : btn.data?.entity_id;
   return typeof target === "string" && isActive(hass.states[target]);
+}
+
+/** A remembered switch of this browser (storage may be blocked: then off). */
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeFlag(key: string, on: boolean): void {
+  try {
+    localStorage.setItem(key, on ? "1" : "0");
+  } catch {
+    /* the switch is only not remembered */
+  }
 }
 
 export class Fp3dView3d extends LitElement {
@@ -212,6 +232,10 @@ export class Fp3dView3d extends LitElement {
     _low: { state: true },
     _narrowStage: { state: true },
     _alerts: { state: true },
+    _household: { state: true },
+    _hhFolded: { state: true },
+    _binInfo: { state: true },
+    householdCard: { attribute: false },
     _sceneFired: { state: true },
     replay: { attribute: false },
     productColors: { attribute: false },
@@ -327,6 +351,9 @@ export class Fp3dView3d extends LitElement {
   private poolTarget = new Map<string, { v: number; at: number }>();
   private volumeSent = 0;
   private holoIds = "";
+  /** When the day curves were last fetched, and a fetch for when the page shows again. */
+  private holoFetched = 0;
+  private holoRefetch: (() => void) | null = null;
   /** The start view last handed to the viewer (JSON), to notice a new one. */
   private shownStartView: string | undefined;
   /** A running swipe on a lamp or blind: the value shown next to the finger. */
@@ -369,6 +396,14 @@ export class Fp3dView3d extends LitElement {
   declare alerts: boolean;
   declare alertJump: boolean;
   private declare _alerts: Alert[];
+  /** Haushalt Pro: what is due in the household now (the glass card "Today in the household"). */
+  private declare _household: HouseholdItem[];
+  private declare _hhFolded: boolean;
+  /** Haushalt Pro: the bin tapped – its next pickups in a small pop-up. */
+  private declare _binInfo: { furnitureId: string; x: number; y: number } | null;
+  private binInfoTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The glass card "Today in the household" (Haushalt Pro; the dashboard card can switch it off). */
+  declare householdCard: boolean;
   private alertSrc: AlertSources | null = null;
   private alertTimer: ReturnType<typeof setInterval> | undefined;
   private seenAlerts = new Set<string>();
@@ -438,6 +473,16 @@ export class Fp3dView3d extends LitElement {
   private linkedRegistry: HomeAssistant["entities"] | undefined;
   /** Entities of electric furniture (TV, fridge, …). */
   private furnitureLinks = new Map<string, FurnitureLinks>();
+  /** Haushalt Pro: the pickups of the waste calendars (fetched every 10 minutes while bins read one). */
+  private pickups = new Map<string, Pickup[]>();
+  private pickupKey = "";
+  private householdTimer: ReturnType<typeof setInterval> | undefined;
+  /** Haushalt Pro: small holograms – bins that go out today or tomorrow, post, a thirsty plant (set by the furniture pass). */
+  private binHolos: { floorId: string; x: number; z: number; y: number; name: string; color: string; when: string; soon?: boolean }[] = [];
+  /** Haushalt Pro: appliances that ended their program while the page is open ("finished" until the door opens). */
+  private finished = new FinishedMemory();
+  /** Haushalt Pro: looks again when an open fridge door reaches its limit. */
+  private fridgeTimer: ReturnType<typeof setTimeout> | undefined;
   /** Room values of the current heatmap (for the legend). */
   private heatValues = new Map<string, number>();
   /** Entities whose state changes redraw markers, cables, people and floor labels. */
@@ -522,6 +567,10 @@ export class Fp3dView3d extends LitElement {
     this.alerts = true;
     this.alertJump = false;
     this._alerts = [];
+    this._household = [];
+    this._hhFolded = readFlag("neonplan3d.hhFolded");
+    this._binInfo = null;
+    this.householdCard = true;
     this.scenes = true;
     this._sceneFired = null;
     this.dimmed = false;
@@ -546,11 +595,20 @@ export class Fp3dView3d extends LitElement {
     if (this.hasUpdated) {
       this.observeStage();
       if (!this.viewer) void this.start();
+      // back in the page: the trail's history is fetched again (its timer stopped while away)
+      this.watchTrail();
     }
+    document.addEventListener("visibilitychange", this.onVisible);
   }
+
+  /** A wall tablet's screen on again: stale day curves are fetched at once. */
+  private onVisible = (): void => {
+    if (!document.hidden) this.holoRefetch?.();
+  };
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    document.removeEventListener("visibilitychange", this.onVisible);
     this.stopWalk();
     this.pets?.dispose();
     this.pets = null;
@@ -572,6 +630,12 @@ export class Fp3dView3d extends LitElement {
     this.trailTimer = undefined;
     clearInterval(this.holoTimer);
     this.holoTimer = undefined;
+    clearInterval(this.householdTimer);
+    this.householdTimer = undefined;
+    clearTimeout(this.fridgeTimer);
+    this.pickupKey = "";
+    // back in the page (another dashboard view and back), the day curves are fetched and kept fresh again (#527)
+    this.holoIds = "";
     clearTimeout(this.flashTimer);
     this.flashTimer = undefined;
     clearTimeout(this.infoTimer);
@@ -682,6 +746,8 @@ export class Fp3dView3d extends LitElement {
   protected willUpdate(changed: PropertyValues): void {
     // this bundle's own copy of the ground: lamps and markers on a sloped lawn sit on it
     if (changed.has("building")) setTerrain(this.building ?? null);
+    // waste bins start from the colours usual in the Home Assistant's country
+    if (changed.has("hass") && this.hass) setHouseholdCountry(hassCountry(this.hass));
   }
 
   protected updated(changed: PropertyValues): void {
@@ -779,6 +845,7 @@ export class Fp3dView3d extends LitElement {
       this.linkedRegistry = hass.entities;
       this.findIndex = null;
       this.alertSrc = this.alerts ? alertSources(hass, b, this.weatherEntityId) : null;
+      this.watchHousehold(hass, b);
       this.watched = watchedEntities(hass, b, {
         openings: this.openingLinks,
         furniture: this.furnitureLinks,
@@ -851,6 +918,7 @@ export class Fp3dView3d extends LitElement {
     v.setPickTargets(furniture.targets, this.openingTargets());
     v.setScreens(furniture.screens);
     v.setFridgeDoors(fridgeDoors(hass, b.floors));
+    v.setAwnings(awningStates(hass, b.floors));
     v.setRobots(this.robotInfos(hass, b));
     // roof windows: sash and blind follow their contact and cover like windows do
     const roofWindows = new Map<string, { open: number; tilt: number; cover: number }>();
@@ -863,6 +931,10 @@ export class Fp3dView3d extends LitElement {
     const openingStates = new Map([...this.openingLinks!].map(([id, e]) => [id, openingState(hass, e, types.get(id))]));
     v.setOpeningStates(openingStates, jump);
     this.setAlerts(this.alertSrc ? findAlerts(hass, b, this.alertSrc, this.openingLinks!) : []);
+    // Haushalt Pro: an open fridge door warns once it stood open too long – look again at that moment
+    clearTimeout(this.fridgeTimer);
+    const fridgeWait = hasFeature("household") && !this.replay ? nextFridgeCheck(b.floors.flatMap((f) => f.furniture), hass) : null;
+    if (fridgeWait !== null) this.fridgeTimer = setTimeout(() => this.syncDevices(true), fridgeWait + 500);
     // the floor pictures follow lamps and blinds (not sensors), at most every few seconds
     const lampSig = [...deviceMarkers, ...furniture.markers].map((m) => `${m.id}:${m.glow ? `${m.glow.level.toFixed(1)}/${m.glow.color.map((c) => c.toFixed(1)).join("/")}` : 0}`).join(";") + "|" + [...openingStates].map(([id, o]) => `${id}:${o.open}:${o.cover === null ? "-" : o.cover.toFixed(1)}`).join(";");
     if (lampSig !== this.thumbSig) {
@@ -893,7 +965,7 @@ export class Fp3dView3d extends LitElement {
       const floorId = face.wall?.floorId ?? (face.unbounded ? (b.floors.find((f) => f.elevation === Math.min(...b.floors.map((x) => x.elevation)))?.id ?? b.floors[0].id) : [...b.floors].sort((p, q) => q.elevation - p.elevation)[0].id);
       return { p: [c[0] + face.n[0] * 0.05, c[1] + face.n[1] * 0.05, c[2] + face.n[2] * 0.05] as [number, number, number], n: [face.n[0], face.n[1], face.n[2]] as [number, number, number], floorId, size, roof: true, views: plantViews };
     };
-    const anchors: { p: [number, number, number]; n: [number, number, number]; floorId: string; size: number; roof: boolean; views: "house" | "all" | "floor"; room?: string | null }[] = [];
+    const anchors: { p: [number, number, number]; n: [number, number, number]; floorId: string; size: number; roof: boolean; views: "house" | "all" | "floor"; room?: string | null; near?: number }[] = [];
     const cards: HoloCard[] = [];
     const anyEnergy = summary.grid !== null || summary.battery !== null || summary.solar !== null;
     const free = holo.place === "free" && Number.isFinite(holo.x) && Number.isFinite(holo.z);
@@ -1154,6 +1226,17 @@ export class Fp3dView3d extends LitElement {
       }
       v.setPools(pieces);
     } else v.setPools([]);
+    // Haushalt Pro: a small tag on every bin that goes out today or tomorrow (and on a mailbox with post, a thirsty plant)
+    if (hasFeature("household")) {
+      const holoSize = (b.settings.roof.hologram ?? DEFAULT_HOLOGRAM).size;
+      for (const bh of this.binHolos) {
+        const floor = b.floors.find((f) => f.id === bh.floorId);
+        if (!floor) continue;
+        // a small tag sitting on the lid, always there: tiny from afar, a little larger close up
+        anchors.push({ p: [bh.x, floor.elevation + bh.y + 0.04, bh.z], n: [0, 1, 0], floorId: bh.floorId, size: holoSize * 0.75, roof: false, views: "all" });
+        cards.push({ kind: "bin", name: bh.name, w: null, dayIds: [], battery: null, bin: { color: bh.color, when: bh.when, soon: !!bh.soon } });
+      }
+    }
     v.setSound(sound);
     // walking: only the glass cards of the room one stands in (the others would float through the walls)
     const room = this._walk ? this.walkRoomPts : null;
@@ -1542,11 +1625,16 @@ export class Fp3dView3d extends LitElement {
     }
     const fetch = async () => {
       if (!this.hass || document.hidden) return;
+      this.holoFetched = Date.now();
       const rows = await fetchSolarRows(this.hass, ids);
       if (this.holoIds === key) this._rows = rows;
     };
     void fetch();
+    // every five minutes, and at once when a wall tablet's screen comes back on after a longer pause
     this.holoTimer = setInterval(() => void fetch(), 300000);
+    this.holoRefetch = () => {
+      if (Date.now() - this.holoFetched > 300000) void fetch();
+    };
   }
 
   /**
@@ -1577,6 +1665,13 @@ export class Fp3dView3d extends LitElement {
     if (el.hidden !== hidden) el.hidden = hidden;
     if (link && link.hasAttribute("hidden") !== hidden) link.toggleAttribute("hidden", hidden);
     if (!on) return;
+    if (card?.kind === "bin") {
+      // a tag: centred on its point (the lid), standing on it, no link line
+      const t = scale * 0.8;
+      el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${t.toFixed(3)}) translate(-50%, -100%)`;
+      if (link && !link.hasAttribute("hidden")) link.toggleAttribute("hidden", true);
+      return;
+    }
     const s = scale * 0.8;
     const dx = 34 * s;
     const dy = 46 * s;
@@ -1626,12 +1721,22 @@ export class Fp3dView3d extends LitElement {
    */
   private renderHologram() {
     const e = this._energy;
+    // Haushalt Pro's tags (bins, post, a thirsty plant) are no energy holograms: they show on their own
+    const tagsOnly = () => this._holos.map((card, i) => (card.kind === "bin" ? this.renderBinCard(card, i) : nothing));
     // the editor keeps the energy bar off but asks for the holograms in its energy tool
-    if (!(hasFeature("energy_pro") || hasFeature("sound") || hasFeature("auto_pro") || hasFeature("pool")) || (this.roomId && !(this.building?.settings.roof.hologram ?? DEFAULT_HOLOGRAM).device_room) || !(this.showEnergy || this.holograms) || !this.holoVisible()) return nothing;
+    if (!(hasFeature("energy_pro") || hasFeature("sound") || hasFeature("auto_pro") || hasFeature("pool") || hasFeature("household")) || (this.roomId && !(this.building?.settings.roof.hologram ?? DEFAULT_HOLOGRAM).device_room) || !(this.showEnergy || this.holograms) || !this.holoVisible()) return hasFeature("household") ? tagsOnly() : nothing;
     // the plants' cards belong to the house view – with a single floor that floor is the house view (#255)
     const house = this.floorId === null || (this.building?.floors.length ?? 0) <= 1;
     const plants = !!e && (e.solar !== null || e.grid !== null || e.battery !== null) && house;
-    return this._holos.map((card, i) => (card.kind === "pool" ? this.renderPoolCard(card, i) : card.kind === "car" ? this.renderCarCard(card, i) : card.kind === "media" ? this.renderMediaCard(card, i) : card.kind === "device" ? this.renderDeviceCard(card, i) : plants ? this.renderHoloCard(card, i, e!) : nothing));
+    return this._holos.map((card, i) => (card.kind === "pool" ? this.renderPoolCard(card, i) : card.kind === "bin" ? this.renderBinCard(card, i) : card.kind === "car" ? this.renderCarCard(card, i) : card.kind === "media" ? this.renderMediaCard(card, i) : card.kind === "device" ? this.renderDeviceCard(card, i) : plants ? this.renderHoloCard(card, i, e!) : nothing));
+  }
+
+  /** Haushalt Pro: a waste bin's small hologram – when it goes out, in the bin's colour. */
+  private renderBinCard(card: HoloCard, index: number) {
+    const b = card.bin!;
+    return html`<div class="fp3d-holo fp3d-holo-bin ${b.soon ? "" : "fp3d-holo-later"} ${this._low ? "fp3d-holo-plain" : ""}" data-holo=${index} hidden role="note" aria-label=${`${card.name}: ${b.when}`} style="--bin:${b.color}">
+      <div class="fp3d-holo-body"><b>${b.when}</b><span>${card.name}</span></div>
+    </div>`;
   }
 
   /** Auto Pro: the car's card – charge as a bar in its colour, range, charging power, lock and climate buttons. */
@@ -2181,6 +2286,10 @@ export class Fp3dView3d extends LitElement {
     const consumers: Consumer[] = [];
     const screens = new Map<string, ScreenState>();
     const targets = new Map<string, string>();
+    // Haushalt Pro: what is due now, for the glass card
+    const household = hasFeature("household");
+    const today: HouseholdItem[] = [];
+    this.binHolos = [];
     // Pool Pro: what the (first) pool reports, for the devices of its technical room
     const poolFirst = hasFeature("pool") ? poolAreas(b.floors)[0] : undefined;
     const poolLive = poolFirst && this.building ? poolState(hass, poolLinksWithDevices(poolFirst.area.pool, this.building.floors)) : poolFirst ? poolState(hass, poolFirst.area.pool) : null;
@@ -2208,9 +2317,36 @@ export class Fp3dView3d extends LitElement {
             screens.set(f.id, v === "closed" ? { color: [1, 0.3, 0.25], level: 0.6 } : v === "filter" || v === "recirculate" ? { color: [0.3, 1, 0.6], level: poolLive.pump?.on ? 0.8 : 0.3 } : { color: [1, 0.62, 0.2], level: 0.85 });
           else if (f.type === "pool_dosing" && poolLive.pump?.on) screens.set(f.id, { color: [0.6, 0.9, 1], level: 0.5 });
         }
+        // Haushalt Pro: a bin glows the evening before its pickup, a mailbox while post lies in it, a plant while it
+        // is thirsty
+        const plant = (f.type === "plant" || isPackPlant(f.type)) && !!f.moisture && f.moisture !== "none";
+        if (f.type === "waste_bin" || f.type === "mailbox" || plant) {
+          const hh = household ? this.householdState(hass, floor, f) : null;
+          if (hh?.screen) screens.set(f.id, hh.screen);
+          if (hh?.marker) markers.push(hh.marker);
+          // a tap on the bin itself shows its next pickups (on the mailbox or the plant: their sensor)
+          const src = f.type === "waste_bin" ? f.bin_source : f.type === "mailbox" ? f.entity : f.moisture;
+          if (household && typeof src === "string" && src !== "none") targets.set(f.id, `hh:${src}#${f.id}`);
+          if (hh?.item) today.push(hh.item);
+          if (!plant) continue;
+        }
+        if (household) {
+          // a consumable or service due (a filter, salt): a yellow glow on the item
+          if (f.service && f.service !== "none" && serviceDue(f, hass)) {
+            if (!screens.has(f.id)) screens.set(f.id, { color: [1, 0.8, 0.2], level: 0.8, faces: [{ part: "top", color: [1, 0.8, 0.2], level: 0.8 }] });
+            today.push({ icon: "wrench-outline", text: translate(hass, "hh_service", { name: f.name || furnitureName(hass, f.type) }), entity: f.service });
+          }
+          // a fridge door standing open too long: the fridge glows icy blue (the warning shows at the top)
+          if ((f.type === "fridge" || f.type === "fridge_smart") && fridgeOpenTooLong(f, hass)) {
+            screens.set(f.id, { color: [0.45, 0.85, 1], level: 1, faces: [{ part: "band", color: [0.45, 0.85, 1], level: 1 }] });
+            today.push({ icon: "fridge-alert-outline", text: translate(hass, "hh_fridge_open", { name: f.name || furnitureName(hass, f.type) }), entity: doorsOf(f)[0] ?? null });
+          }
+        }
         const autoPro = f.type === "parking" && hasFeature("auto_pro") && !!f.car;
         const car = autoPro ? carState(hass, f) : null;
-        const extraRef = f.type === "home_battery" ? f.soc : f.type === "wallbox" ? f.status : f.type === "parking" && car ? (f.car?.device ?? car.entities.soc) : null;
+        // Haushalt Pro: a washer with only its time left still gets its pin
+        const appliance = f.type === "washer" || f.type === "dryer" || f.type === "dishwasher";
+        const extraRef = f.type === "home_battery" ? f.soc : f.type === "wallbox" ? f.status : f.type === "parking" && car ? (f.car?.device ?? car.entities.soc) : household && appliance ? (f.remaining ?? null) : null;
         const extra = extraRef && extraRef !== "none" ? extraRef : null;
         const link = linked ?? (extra ? { entity: null, power: null } : undefined);
         if (!link) continue;
@@ -2232,6 +2368,31 @@ export class Fp3dView3d extends LitElement {
         // an own threshold for appliances behind a smart plug that draw a few watts on standby (null: 10 W)
         const runW = typeof f.run_w === "number" && f.run_w > 0 ? f.run_w : 10;
         const running = (power ?? 0) > runW || st?.state === "on" || st?.state === "running" || (isStatusSensor(st) && isActive(st));
+        // Haushalt Pro: a washer, dryer or dishwasher tells the time left while it runs and "finished" afterwards –
+        // until its door opens (or it runs again); from its own state, or remembered from the moment it stopped
+        let hhText: string | null = null;
+        if (household && appliance) {
+          const left = f.remaining && f.remaining !== "none" ? hass.states[f.remaining] : undefined;
+          const min = remainingMinutes(left);
+          // without a power sensor it runs while time is left
+          const busy = running || (!link.power && !link.entity && (min ?? 0) > 0);
+          const doors = doorsOf(f);
+          const opened = (t: number) => doors.some((d) => { const ds = hass.states[d]; return !!ds?.last_changed && Date.parse(ds.last_changed) > t; });
+          const remembered = this.finished.update(f.id, busy, opened);
+          const name = f.name || (link.entity ? entityName(hass, link.entity) : furnitureName(hass, f.type));
+          if (busy) {
+            // running by its time left alone: it glows like one that draws power
+            if (!running) screens.set(f.id, { color: [0.3, 0.85, 1], level: 0.8 });
+            if (min !== null) {
+              hhText = translate(hass, "hh_left", { t: remainingText(min) });
+              today.push({ icon: "timer-outline", text: `${name}: ${hhText}`, entity: f.remaining ?? link.entity });
+            }
+          } else if (isFinishedState(st) || isFinishedState(left) || remembered) {
+            hhText = translate(hass, "hh_done");
+            screens.set(f.id, { color: [0.35, 1, 0.55], level: 0.9, faces: [{ part: "top", color: [0.35, 1, 0.55], level: 0.9 }] });
+            today.push({ icon: "check-circle-outline", text: translate(hass, "hh_finished", { name }), entity: link.entity ?? link.power });
+          }
+        }
         // Auto Pro: the vehicle in the spot wears a light band in the colour of its charge (brighter while
         // charging) and a warm glow on top while the climate runs; the spot's pin tells charge and range
         if (car && parkedVehicle(hass, f)) {
@@ -2302,8 +2463,8 @@ export class Fp3dView3d extends LitElement {
           name: f.name || (link.entity ? entityName(hass, link.entity) : furnitureName(hass, f.type)),
           ownName: f.name || undefined,
           showName: !!f.show_name,
-          text:
-            car
+          text: hhText ??
+            (car
               ? this.carText(hass, car, !!st && !PRESENT_STATES.has(st.state.toLowerCase()))
               : f.type === "home_battery"
               ? this.batteryText(hass, extra, power)
@@ -2315,8 +2476,8 @@ export class Fp3dView3d extends LitElement {
                     ? stateText(hass, st)
                     : power !== null
                       ? formatPower(hass, Math.max(0, power))
-                      : "",
-          active: car ? car.charging : st ? isActive(st) : (power ?? 0) > (typeof f.run_w === "number" && f.run_w > 0 ? f.run_w : 5),
+                      : ""),
+          active: hhText ? true : car ? car.charging : st ? isActive(st) : (power ?? 0) > (typeof f.run_w === "number" && f.run_w > 0 ? f.run_w : 5),
           unavailable: st ? isUnavailable(st) : false,
           glow: null,
           // its pin grabs the item when furnishing
@@ -2324,11 +2485,13 @@ export class Fp3dView3d extends LitElement {
           // inverter, battery, wallbox: their own text (watts, charge, status) is always worth a pin
           energyDevice: f.type === "inverter" || f.type === "home_battery" || f.type === "wallbox" || f.type === "meter" || !!car,
           // Auto Pro: the car's charge and range are the point of the pin – shown in full by default
-          show: f.marker ?? (car ? "always" : undefined),
+          show: f.marker ?? (car || hhText ? "always" : undefined),
           fromFurniture: true,
         });
       }
     }
+    // two bins of the same kind out on the same day are one line
+    this._household = today.filter((it, i) => today.findIndex((x) => x.text === it.text) === i);
     // picture rules: the first rule whose entity is in its state puts its picture on the screen (a Pro feature)
     this.cameraScreens = 0;
     const fridges = fridgeDoors(hass, b.floors);
@@ -2347,6 +2510,84 @@ export class Fp3dView3d extends LitElement {
     }
     this.watchCameras(this.cameraScreens > 0 || !!this._through || this.cameraWall);
     return { markers, consumers, screens, targets };
+  }
+
+  /**
+   * Haushalt Pro: fetch the waste calendars' pickups now and every 10 minutes while bins read a calendar; the
+   * timer also lets the bins start and stop glowing at their hours (14:00 the day before, noon on the day).
+   */
+  private watchHousehold(hass: HomeAssistant, b: Building): void {
+    const items = b.floors.flatMap((f) => f.furniture).filter((f) => f.type === "waste_bin" || f.type === "mailbox");
+    const on = hasFeature("household") && items.length > 0 && !this.replay;
+    const calendars = on ? wasteCalendars(b.floors) : [];
+    const key = calendars.join(",");
+    if (!on) {
+      clearInterval(this.householdTimer);
+      this.householdTimer = undefined;
+      this.pickupKey = "";
+      return;
+    }
+    const fetch = async () => {
+      if (calendars.length) this.pickups = await fetchPickups(this.hass ?? hass, calendars);
+      this.syncDevices(true);
+    };
+    if (key !== this.pickupKey || !this.householdTimer) {
+      this.pickupKey = key;
+      clearInterval(this.householdTimer);
+      this.householdTimer = setInterval(() => !document.hidden && void fetch(), 600_000);
+      if (calendars.length) void fetchPickups(hass, calendars).then((p) => {
+        this.pickups = p;
+        this.syncDevices(true);
+      });
+    }
+  }
+
+  /** Haushalt Pro: how a bin or a mailbox shows now – its glow and its pin (with the days to the pickup, "post"). */
+  private householdState(hass: HomeAssistant, floor: Floor, f: Furniture): { screen?: ScreenState; marker?: DeviceMarker & { fromFurniture: boolean }; item?: HouseholdItem } | null {
+    const rgb = (hex: string): [number, number, number] => {
+      const n = parseInt(hex.slice(1), 16);
+      return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+    };
+    if (f.type === "waste_bin") {
+      const src = typeof f.bin_source === "string" && f.bin_source !== "none" ? f.bin_source : null;
+      if (!src) return null;
+      const due = binDue(f, hass, this.pickups, new Date(), { from: this.building?.settings.household?.bin_from, until: this.building?.settings.household?.bin_until });
+      if (!due) return null;
+      const text = due.days === 0 ? translate(hass, "bin_today") : due.days === 1 ? translate(hass, "bin_tomorrow") : translate(hass, "bin_in_days", { n: due.days });
+      // the lid's colour at full strength in its own hue (the paper bin glows blue, the bio bin amber); a grey or
+      // black lid glows white
+      const lid = rgb(binColors(f)[1]);
+      const top = Math.max(...lid);
+      const grey = top - Math.min(...lid) < 0.12;
+      const col = (grey ? [0.92, 0.95, 1] : lid.map((v) => Math.min(1, (v / Math.max(0.001, top)) * 1.05))) as [number, number, number];
+      const label = f.name || translate(hass, `bin_kind_${f.bin_kind ?? "rest"}` as Parameters<typeof translate>[1]);
+      // a tag on the bin in its colour: when it goes out ("Tomorrow", "in 3 days"); today and tomorrow stand out
+      const hex = `#${col.map((v) => Math.round(v * 255).toString(16).padStart(2, "0")).join("")}`;
+      this.binHolos.push({ floorId: floor.id, x: f.x, z: f.z, y: mountBase(floor, f) + f.h, name: label, color: hex, when: text, soon: due.days <= 1 });
+      return { item: due.days <= 1 ? { icon: "trash-can-outline", text: `${label}: ${text}`, entity: src, hot: due.glow } : undefined };
+    }
+    if (f.type !== "mailbox") {
+      // a plant: thirsty – an orange band and a small hologram asking for water
+      const thirsty = plantThirsty(f, hass);
+      const orange: [number, number, number] = [1, 0.55, 0.12];
+      const name = f.name || furnitureName(hass, f.type);
+      if (!thirsty) return null;
+      this.binHolos.push({ floorId: floor.id, x: f.x, z: f.z, y: mountBase(floor, f) + f.h, name, color: "#ff8c1f", when: translate(hass, "hh_thirsty"), soon: true });
+      return {
+        screen: { color: orange, level: 0.9, faces: [{ part: "band", color: orange, level: 0.9 }] },
+        item: { icon: "watering-can-outline", text: translate(hass, "hh_plant", { name }), entity: (f.moisture as string) ?? null, hot: true },
+      };
+    }
+    const flag = typeof f.entity === "string" && f.entity !== "none" ? f.entity : null;
+    if (!flag) return null;
+    const post = mailboxPost(f, hass);
+    const amber: [number, number, number] = [1, 0.62, 0.15];
+    // post: the box glows and a small hologram says so
+    if (post) this.binHolos.push({ floorId: floor.id, x: f.x, z: f.z, y: mountBase(floor, f) + f.h, name: f.name || furnitureName(hass, f.type), color: "#ffb547", when: translate(hass, "mailbox_post"), soon: true });
+    return {
+      screen: post ? { color: amber, level: 1, faces: [{ part: "top", color: amber, level: 1 }, { part: "band", color: amber, level: 0.8 }] } : undefined,
+      item: post ? { icon: "email-alert-outline", text: f.name ? `${f.name}: ${translate(hass, "mailbox_post")}` : translate(hass, "mailbox_post"), entity: flag, hot: true } : undefined,
+    };
   }
 
   /** Time travel: each running robot's way through the rooms it cleaned so far (their centres, in order). */
@@ -2835,6 +3076,47 @@ export class Fp3dView3d extends LitElement {
     if (this.floorId !== item.floorId) this.fire("floor-tap", { floorId: item.floorId });
     // after the host has switched the floor (its own camera flight starts first)
     setTimeout(() => this.viewer?.focus(item.floorId, item.x, item.z, item.y, item.entity), 120);
+  }
+
+  /** Haushalt Pro: the bin tapped – its kind and its next pickups ("Tomorrow", "Thu 23.10."). */
+  private renderBinInfo() {
+    const i = this._binInfo;
+    const hass = this.hass;
+    const f = i && this.building?.floors.flatMap((x) => x.furniture).find((m) => m.id === i.furnitureId);
+    if (!i || !hass || !f) return nothing;
+    const next = binNext(f, hass, this.pickups);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const when = (d: Date) => {
+      const days = Math.round((d.getTime() - today.getTime()) / 86400_000);
+      return days === 0 ? translate(hass, "bin_today") : days === 1 ? translate(hass, "bin_tomorrow") : d.toLocaleDateString(hass.language || undefined, { weekday: "short", day: "numeric", month: "numeric" });
+    };
+    const label = f.name || translate(hass, `bin_kind_${f.bin_kind ?? "rest"}` as Parameters<typeof translate>[1]);
+    return html`<div class="fp3d-swipe fp3d-info fp3d-bin-info" style="left:${i.x}px;top:${i.y}px" @click=${() => (this._binInfo = null)}>
+      <span>🗑 ${label}</span>
+      ${next.length
+        ? next.map((p) => html`<b>${when(p.day)}${p.summary && p.summary !== label ? html` <small>· ${p.summary}</small>` : nothing}</b>`)
+        : html`<b>${translate(hass, "bin_none")}</b>`}
+    </div>`;
+  }
+
+  /** Haushalt Pro: the glass card "Today in the household" – what is due, tapped it opens the entity. */
+  private renderHousehold() {
+    if (!this._household.length || !this.householdCard || !hasFeature("household") || this.panelOpen) return nothing;
+    const fold = () => {
+      this._hhFolded = !this._hhFolded;
+      writeFlag("neonplan3d.hhFolded", this._hhFolded);
+    };
+    return html`<div class="fp3d-hh ${this._hhFolded ? "fp3d-hh-folded" : ""}">
+      <button class="fp3d-hh-head" aria-expanded=${!this._hhFolded} @click=${fold}>🏠 ${translate(this.hass, "hh_title")} <b>${this._household.length}</b></button>
+      ${this._hhFolded
+        ? nothing
+        : this._household.map(
+            (it) => html`<button class="fp3d-hh-row ${it.hot ? "fp3d-hh-hot" : ""}" ?disabled=${!it.entity} @click=${() => it.entity && (this.ro ? this.showInfo(it.entity, 0, 0) : openMoreInfo(this, it.entity))}>
+              <span class="fp3d-hh-icon"><ha-icon icon=${`mdi:${it.icon}`} style="--mdc-icon-size:18px"></ha-icon></span><span>${it.text}</span>
+            </button>`,
+          )}
+    </div>`;
   }
 
   private renderAlerts() {
@@ -3444,6 +3726,18 @@ export class Fp3dView3d extends LitElement {
   private onDeviceTap(entityId: string, x = 0, y = 0): void {
     // trail pins and lamps without a light are drawn, but nothing of Home Assistant stands behind them
     if (entityId.startsWith("trail:") || entityId.startsWith("lamp:")) return;
+    // Haushalt Pro: a bin shows its next pickups; a mailbox's or a plant's pin opens its sensor
+    if (entityId.startsWith("hh:")) {
+      const [id, furnitureId] = entityId.slice(3).split("#");
+      const bin = this.building?.floors.flatMap((f) => f.furniture).find((f) => f.id === furnitureId && f.type === "waste_bin");
+      if (bin) {
+        this._binInfo = { furnitureId, x, y };
+        clearTimeout(this.binInfoTimer);
+        this.binInfoTimer = setTimeout(() => (this._binInfo = null), 6000);
+      } else if (this.ro) this.showInfo(id, x, y);
+      else openMoreInfo(this, id);
+      return;
+    }
     if (this.ro) {
       const b = this.building;
       const grid = b ? (b.energy.grid ?? deviceSensors(b, (f) => this.furnitureLinks?.get(f.id)?.power ?? null).grid) : null;
@@ -3603,7 +3897,7 @@ export class Fp3dView3d extends LitElement {
       style=${style}
     >
       ${this._error ? html`<p class="fp3d-error">${this._error}</p>` : nothing} ${this.clean ? nothing : this.renderEnergy()} ${this.renderHologram()} ${this.clean ? nothing : this.renderLegend()}
-      ${this.renderAlerts()} ${this.clean || this._walk ? nothing : html`${this.renderThumbs()} ${this.renderScenes()} ${this.renderFind()} ${this.renderCentral()}`} ${this.clean ? nothing : this.renderWalk()} ${this.renderSwipe()} ${this.renderInfo()} ${this.renderThrough()} ${this.renderCameraWall()}
+      ${this.renderAlerts()} ${this.clean || this._walk ? nothing : html`${this.renderHousehold()} ${this.renderThumbs()} ${this.renderScenes()} ${this.renderFind()} ${this.renderCentral()}`} ${this.clean ? nothing : this.renderWalk()} ${this.renderSwipe()} ${this.renderInfo()} ${this.renderBinInfo()} ${this.renderThrough()} ${this.renderCameraWall()}
       ${this.clean ? nothing : this.renderProHint()} ${this.renderMenu()} ${this.renderEye()}
       ${this.showStats && this._stats
         ? html`<span class="fp3d-stats"
@@ -3624,6 +3918,115 @@ export class Fp3dView3d extends LitElement {
         display: block;
         position: relative;
         min-height: 200px;
+      }
+      .fp3d-holo.fp3d-holo-bin {
+        border-color: color-mix(in srgb, var(--bin) 70%, transparent);
+        box-shadow: 0 0 18px color-mix(in srgb, var(--bin) 45%, transparent), inset 0 0 12px color-mix(in srgb, var(--bin) 25%, transparent);
+        background: color-mix(in srgb, var(--bin) 14%, rgba(8, 14, 28, 0.72));
+        min-width: 0;
+        width: auto;
+      }
+      .fp3d-holo.fp3d-holo-bin {
+        border-radius: 8px;
+        pointer-events: none;
+      }
+      .fp3d-holo-bin .fp3d-holo-body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0;
+        padding: 3px 8px;
+        white-space: nowrap;
+      }
+      .fp3d-holo.fp3d-holo-later {
+        opacity: 0.72;
+        box-shadow: none;
+        background: rgba(8, 14, 28, 0.7);
+      }
+      .fp3d-holo-later b {
+        text-shadow: none;
+      }
+      .fp3d-holo-bin b {
+        font-size: 17px;
+        color: var(--bin);
+        text-shadow: 0 0 8px color-mix(in srgb, var(--bin) 60%, transparent);
+      }
+      .fp3d-holo-bin span {
+        font-size: 12px;
+        opacity: 0.8;
+      }
+      .fp3d-holo-link[style*="--bin"] line,
+      .fp3d-holo-link[style*="--bin"] circle {
+        stroke: var(--bin);
+      }
+      .fp3d-bin-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        cursor: pointer;
+      }
+      .fp3d-bin-info small {
+        opacity: 0.7;
+        font-weight: 400;
+      }
+      .fp3d-hh {
+        position: absolute;
+        right: 12px;
+        top: 58px;
+        z-index: 3;
+        width: min(250px, calc(100% - 24px));
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        padding: 6px;
+        border-radius: 14px;
+        background: rgba(10, 18, 34, 0.72);
+        border: 1px solid rgba(110, 220, 255, 0.28);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+      }
+      .fp3d-hh-folded {
+        width: auto;
+      }
+      .fp3d-hh button {
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 0;
+        text-align: left;
+        cursor: pointer;
+        border-radius: 9px;
+      }
+      .fp3d-hh-head {
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 6px;
+        opacity: 0.9;
+      }
+      .fp3d-hh-head b {
+        margin-left: 4px;
+        color: var(--fp3d-accent, #37e0ff);
+      }
+      .fp3d-hh-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        padding: 5px 6px;
+      }
+      .fp3d-hh-row:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .fp3d-hh-row:disabled {
+        cursor: default;
+      }
+      .fp3d-hh-hot .fp3d-hh-icon {
+        color: #ffb547;
+      }
+      .fp3d-hh-icon {
+        flex: none;
+        display: inline-flex;
+        color: var(--fp3d-accent, #37e0ff);
       }
       .fp3d-alert-banner {
         position: absolute;

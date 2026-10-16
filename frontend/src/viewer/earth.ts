@@ -3,7 +3,7 @@
 
 import { Color } from "three";
 import type { Building, Floor, Vec2 } from "../model.ts";
-import { pointInPolygon, terrainAt } from "../model.ts";
+import { areaGround, OUTDOOR_TOP, outdoorStanding, pointInPolygon, terrainAt } from "../model.ts";
 import { floorOutline } from "../roof-sections.ts";
 import { SLAB, type OpeningInfo } from "./build.ts";
 import { GeoBuffer, LineBuffer } from "./geo.ts";
@@ -37,6 +37,8 @@ interface Well {
   s0: number;
   s1: number;
   bottom: number;
+  /** Rim and grate above the ground (m). */
+  rim: number;
 }
 
 /** Whether a floor reaches below the ground somewhere along its outer walls (and so gets earth). */
@@ -49,6 +51,20 @@ export function inGround(b: Building, floor: Floor): boolean {
 function outlineOf(b: Building, floor: Floor): Vec2[] | null {
   if (!floor.rooms.some((r) => r.points.length >= 3)) return null;
   return floorOutline(floor.rooms, floor.walls ?? [], b.settings.wall_exterior, b.settings.wall_interior);
+}
+
+/**
+ * How far an outdoor area lying over point `p` (lawn, path, terrace, gravel …) stands above `ground` there, in the
+ * heights of `floor`; 0 without one. A light well under such an area would vanish below its surface (#524).
+ */
+function coverAbove(b: Building, floor: Floor, p: Vec2, ground: number): number {
+  let top = -Infinity;
+  for (const f of b.floors)
+    for (const a of f.outdoor ?? []) {
+      if (a.points.length < 3 || a.type === "pool" || outdoorStanding(a.type) || !pointInPolygon(p, a.points)) continue;
+      top = Math.max(top, f.elevation + areaGround(f, a) + OUTDOOR_TOP[a.type] - floor.elevation);
+    }
+  return top > ground ? top - ground : 0;
 }
 
 /**
@@ -96,14 +112,14 @@ export function buildEarth(b: Building, floor: Floor, openings: readonly Opening
     // the windows in this stretch of wall that lie below the ground get a light well
     const holes: Well[] = [];
     for (const o of openings) {
-      if (o.opening.type !== "window" || !o.exterior) continue;
+      if (o.opening.type !== "window" || !o.exterior || o.opening.well === false) continue;
       const cx = o.start[0] + o.axis[0] * (o.width / 2) - o.toRoom[0] * o.faceOut;
       const cz = o.start[1] + o.axis[1] * (o.width / 2) - o.toRoom[1] * o.faceOut;
       const s = (cx - a[0]) * ax[0] + (cz - a[1]) * ax[1];
       const d = Math.abs((cx - a[0]) * n[0] + (cz - a[1]) * n[1]);
       if (d > 0.08 || s < -0.05 || s > len + 0.05) continue;
       if (o.sill >= ground(cx, cz) - 0.05) continue;
-      holes.push({ s0: Math.max(0, s - o.width / 2 - WELL_SIDE), s1: Math.min(len, s + o.width / 2 + WELL_SIDE), bottom: Math.max(bottom + 0.05, o.sill - WELL_BELOW) });
+      holes.push({ s0: Math.max(0, s - o.width / 2 - WELL_SIDE), s1: Math.min(len, s + o.width / 2 + WELL_SIDE), bottom: Math.max(bottom + 0.05, o.sill - WELL_BELOW), rim: o.opening.well_rim ?? 0 });
     }
     // the earth in pieces of at most half a metre, lower where a light well is
     const cuts = new Set<number>([0, len]);
@@ -152,7 +168,12 @@ export function buildEarth(b: Building, floor: Floor, openings: readonly Opening
       const w1 = at(h.s1, 0);
       const f0: Vec2 = [w0[0] + n[0] * WELL_DEPTH, w0[1] + n[1] * WELL_DEPTH];
       const f1: Vec2 = [w1[0] + n[0] * WELL_DEPTH, w1[1] + n[1] * WELL_DEPTH];
-      const g = (p: Vec2) => ground(p[0], p[1]);
+      // the rim may stand above the ground (above gravel or a path laid around the house); under a lawn, a path or
+      // a terrace drawn over the well it stands just above that surface by itself, or the area would cover it
+      const mid: Vec2 = [(w0[0] + w1[0] + f0[0] + f1[0]) / 4, (w0[1] + w1[1] + f0[1] + f1[1]) / 4];
+      const cover = coverAbove(b, floor, mid, ground(mid[0], mid[1]));
+      const rim = Math.max(h.rim, cover > 0 ? cover + 0.02 : 0);
+      const g = (p: Vec2) => ground(p[0], p[1]) + rim;
       const y = h.bottom;
       const P = (p: Vec2, yy: number) => [p[0], yy, p[1]];
       wells.tri(P(w0, y), P(w1, y), P(f1, y), WELL_LOW);

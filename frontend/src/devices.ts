@@ -792,6 +792,7 @@ const FURNITURE_NAMES: Record<string, RegExp> = {
   sink: /(spülmaschine|geschirrspül|dishwasher)/i,
   radiator: /(heiz|radiator|thermostat|climate|hk|trv)/i,
   ac_unit: /(klima|air ?con|aircon|airco|split|\bac\b|clim)/i,
+  awning: /(markise|awning|sonnensegel|beschattung|store|zonnescherm)/i,
 };
 const MEDIA_FURNITURE = new Set(["tv_board", "tv_wall"]);
 
@@ -832,6 +833,43 @@ export function confirmEntities(hass: HomeAssistant, floors: readonly Floor[]): 
       if (e && e !== "none") out.add(e);
     }
   }
+  return out;
+}
+
+/** An awning's cover right now: how far it is out (0 … 1, when known) and whether it is running out or in. */
+export interface AwningState {
+  /** Position 0 (in) … 1 (fully out); null while only "opening"/"closing" is known. */
+  out: number | null;
+  /** Running: +1 out, -1 in, 0 standing. */
+  moving: -1 | 0 | 1;
+  /** Seconds for a full run (to move along while no position is reported). */
+  time: number;
+}
+
+/**
+ * Awnings: their cover's position (or that of a separate position sensor), and whether they run. A cover that only
+ * reports open/closed and opening/closing moves along in 3D at its set run time.
+ */
+export function awningStates(hass: HomeAssistant, floors: readonly Floor[]): Map<string, AwningState> {
+  const out = new Map<string, AwningState>();
+  for (const floor of floors)
+    for (const f of floor.furniture) {
+      if (f.type !== "awning") continue;
+      const id = f.entity && f.entity !== "none" ? f.entity : null;
+      const st = id ? hass.states[id] : undefined;
+      const sensor = f.awning_position && f.awning_position !== "none" ? hass.states[f.awning_position] : undefined;
+      const time = f.awning_time ?? 20;
+      if (!st || isUnavailable(st)) {
+        out.set(f.id, { out: 0, moving: 0, time });
+        continue;
+      }
+      const flip = (v: number) => (f.awning_invert ? 1 - v : v);
+      const raw = sensor && Number.isFinite(Number(sensor.state)) ? Number(sensor.state) : st.attributes.current_position;
+      const moving: -1 | 0 | 1 = st.state === "opening" ? (f.awning_invert ? -1 : 1) : st.state === "closing" ? (f.awning_invert ? 1 : -1) : 0;
+      if (typeof raw === "number" && Number.isFinite(raw)) out.set(f.id, { out: flip(Math.min(1, Math.max(0, raw / 100))), moving: 0, time });
+      else if (moving) out.set(f.id, { out: null, moving, time });
+      else out.set(f.id, { out: flip(st.state === "open" ? 1 : 0), moving: 0, time });
+    }
   return out;
 }
 

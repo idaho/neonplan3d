@@ -310,6 +310,7 @@ KNOWN_FEATURES = [
     "auto_pro",
     "time_travel",
     "pool",
+    "household",
     # fun packs: free extras one picks up in the shop (pets, later seasonal ones)
     "fun_pets",
     "fun_halloween",

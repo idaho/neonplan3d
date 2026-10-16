@@ -666,8 +666,9 @@ export class Floorplan3dPanel extends LitElement {
    * it is waiting under Extensions; not connected, a free customer account brings it (and connects the app).
    */
   private renderGift() {
-    const id = "fun_halloween_2026";
-    if (!this.isAdmin || this._giftLater || this._shopConnected === null || UNRELEASED.includes("fun_halloween") || hasFeature("fun_halloween")) return nothing;
+    const id = "fun_gifts_2026";
+    // only once the installed packs are known, so it never flashes up for whoever has both
+    if (!this.isAdmin || this._giftLater || this._shopConnected === null || !this.data.packsLoaded || UNRELEASED.includes("fun_halloween") || (hasFeature("fun_halloween") && hasFeature("fun_pets"))) return nothing;
     try {
       if (localStorage.getItem(`neonplan3d.news.${id}`) === "never") return nothing;
     } catch {
@@ -684,7 +685,7 @@ export class Floorplan3dPanel extends LitElement {
     const connected = this._shopConnected;
     return html`<div class="fp3d-gift-veil" @click=${(e: Event) => e.target === e.currentTarget && (this._giftLater = true)}>
       <div class="fp3d-gift" role="dialog" aria-label=${this.t(connected ? "gift_title" : "gift_title_free")}>
-        <div class="fp3d-gift-pic">🎃 👻 🦇</div>
+        <div class="fp3d-gift-pic">🎃 👻 🐱 🐶</div>
         <h3>${this.t(connected ? "gift_title" : "gift_title_free")}</h3>
         <p>${this.t(connected ? "gift_text" : "gift_text_free")}</p>
         <div class="fp3d-gift-actions">
@@ -1097,9 +1098,11 @@ export class Floorplan3dPanel extends LitElement {
       }
       :host {
         display: block;
-        /* HA gives the custom panel's parent no explicit height, so 100% collapses. */
-        height: 100vh;
-        height: 100dvh;
+        /* HA gives the custom panel's parent no explicit height, so 100% collapses. The parent may pad itself by the
+           screen's safe areas (notches; some themes set them on every screen): those are taken off, or the panel is
+           taller than the window and its bottom is cut off (#529). */
+        height: calc(100vh - var(--safe-area-inset-top, 0px) - var(--safe-area-inset-bottom, 0px));
+        height: calc(100dvh - var(--safe-area-inset-top, 0px) - var(--safe-area-inset-bottom, 0px));
         background: var(--fp3d-bg);
       }
       .fp3d-app {

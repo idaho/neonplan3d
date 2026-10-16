@@ -209,6 +209,12 @@ const DEVICES = [
   entity("switch.pool_filterpumpe", null, "on", { friendly_name: "Pool Filterpumpe" }),
   entity("sensor.pool_ph", null, "7.32", { friendly_name: "Pool pH" }),
   entity("sensor.pool_redox", null, "712", { friendly_name: "Pool Redox", unit_of_measurement: "mV" }),
+  // Haushalt Pro: an invented waste calendar and a "post" flag set by an automation
+  entity("calendar.abfallkalender", null, "off", { friendly_name: "Abfallkalender", message: "Papier", all_day: true }),
+  entity("input_boolean.post_da", null, "on", { friendly_name: "Post da" }),
+  entity("sensor.monstera_feuchte", null, "14", { friendly_name: "Monstera Feuchte", device_class: "moisture", unit_of_measurement: "%" }),
+  entity("sensor.waschmaschine_restzeit", null, "23", { friendly_name: "Waschmaschine Restzeit", unit_of_measurement: "min" }),
+  entity("binary_sensor.kuehlschrank_filter", null, "on", { friendly_name: "Kühlschrank Wasserfilter", device_class: "problem" }),
   entity("cover.pool_abdeckung", null, "open", { friendly_name: "Pool Abdeckung", current_position: 70, supported_features: 15 }),
   entity("binary_sensor.wohnzimmer_terrasse", "wohnzimmer", "on", { friendly_name: "Terrassentür", device_class: "opening" }),
   entity("vacuum.saugi", "wohnzimmer", "cleaning", { friendly_name: "Saugi", battery_level: 64 }),

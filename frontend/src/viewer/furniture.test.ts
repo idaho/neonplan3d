@@ -80,6 +80,23 @@ test("the mount height is absolute: a wall cabinet hangs at 1.45 m and can go lo
   assert.ok(Math.abs(minY({ ...cab, mount_y: 1.0 }) - 1.0) < 1e-6);
 });
 
+test("every mailbox shape is drawn where its box is: a wall mailbox at 1 m, a bank at 0.75 m, the others on the floor", () => {
+  const floor = newFloor("eg", "EG", 0);
+  for (const [variant, bottom] of [[null, 1], ["bank", 0.75], ["pole", 0], ["pillar", 0], ["parcel", 0]] as const) {
+    const f = { id: "m", type: "mailbox", x: 0, z: 0, w: 0.38, d: 0.14, h: 0.34, rotation: 0, variant } as Furniture;
+    const buf = new GeoBuffer();
+    pushFurniture(buf, new LineBuffer(), new GeoBuffer(), f, mountBase(floor, f));
+    const ys = buf.p.filter((_, i) => i % 3 === 1);
+    assert.equal(mountBase(floor, f), bottom);
+    assert.ok(Math.abs(Math.min(...ys) - bottom) < 1e-6, `${variant}: ${Math.min(...ys)}`);
+    // a mount height of its own moves it along
+    const low = { ...f, mount_y: 0.5 };
+    const b2 = new GeoBuffer();
+    pushFurniture(b2, new LineBuffer(), new GeoBuffer(), low, mountBase(floor, low));
+    assert.ok(Math.abs(Math.min(...b2.p.filter((_, i) => i % 3 === 1)) - 0.5) < 1e-6, `${variant} at 0.5`);
+  }
+});
+
 /** Signed volume of a closed-ish mesh: positive when its triangles face outwards. */
 function orientation(buf: GeoBuffer): number {
   let v = 0;

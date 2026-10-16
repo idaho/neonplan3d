@@ -100,6 +100,32 @@ const ROOF_FREEFORM_SCRIPT = `
   e.setDoc(b); e._floorId = f.id; e._tool = 'roof'; e._roofWinId = 'free'; e._roofId = null; e.fit();
 `;
 
+// household: every bin and mailbox shape in and around the garage, the bins on the invented waste calendar, the
+// wall mailbox with "post" (Haushalt Pro, unlocked on a local preview only)
+const HOUSEHOLD_SCRIPT = `
+  const f = e._doc.floors[0];
+  e._floorId = f.id;
+  const put = (type, x, z, rotation, extra) => { e.addFurniture(type); Object.assign(e._doc.floors[0].furniture.at(-1), { x, z, rotation }, extra); };
+  const S = { bin120: [0.48, 0.55, 0.93], bin240: [0.58, 0.73, 1.07], bin1100: [1.37, 1.07, 1.45], multi: [0.6, 0.75, 1.07], bag: [0.42, 0.32, 0.62], caddy: [0.3, 0.26, 0.32], underground: [1, 1, 1.15] };
+  const bin = (v, kind, x, z) => put('waste_bin', x, z, 180, { variant: v === 'bin240' ? null : v, w: S[v][0], d: S[v][1], h: S[v][2], bin_kind: kind, bin_source: 'calendar.abfallkalender' });
+  bin('bin240', 'rest', 10.5, 6.2); bin('bin240', 'paper', 11.2, 6.2); bin('bin120', 'bio', 11.85, 6.25); bin('multi', 'plastic', 12.5, 6.2); bin('bag', 'plastic', 13.1, 6.3); bin('caddy', 'bio', 13.5, 6.3);
+  bin('bin1100', 'rest', 11.0, 8.0); bin('underground', 'glass', 12.8, 8.0);
+  put('mailbox', 13.5, 4.4, 270, { entity: 'input_boolean.post_da' });
+  put('mailbox', 10.4, 9.6, 180, { variant: 'pole', w: 0.24, d: 0.5, h: 1.15 });
+  put('mailbox', 11.4, 9.6, 180, { variant: 'pillar', w: 0.42, d: 0.36, h: 1.3 });
+  put('mailbox', 12.4, 9.6, 180, { variant: 'parcel', w: 0.6, d: 0.55, h: 1.1 });
+  put('mailbox', 13.5, 9.6, 180, { variant: 'bank', w: 0.95, d: 0.3, h: 0.7 });
+  // the plant is thirsty, the washer tells its time left, the fridge's water filter is due
+  for (const m of e._doc.floors.flatMap((x) => x.furniture)) {
+    if (m.type === 'plant') m.moisture = 'sensor.monstera_feuchte';
+    if (m.type === 'washer') m.remaining = 'sensor.waschmaschine_restzeit';
+    if (m.type === 'fridge') m.service = 'binary_sensor.kuehlschrank_filter';
+  }
+  // tomorrow's bins glow all day (whatever time the shot is taken)
+  e._doc.settings.household = { bin_from: 0, bin_until: 12 };
+  e.setDoc(structuredClone(e._doc));
+`;
+
 const shots = [
   { name: "editor-roof-freeform", query: "", width: 1440, height: 1100, editor: true, mockPrivatePacks: true, editorScript: ROOF_FREEFORM_SCRIPT, roofWindowExercise: true },
   { name: "editor-roof-freeform-tablet", query: "", width: 1000, height: 1100, editor: true, mockPrivatePacks: true, editorScript: ROOF_FREEFORM_SCRIPT, roofWindowExercise: true },
@@ -377,6 +403,9 @@ const shots = [
   { name: "empty", query: "?empty", width: 1280, height: 800 },
   { name: "site-demo", query: "?site&lang=en", width: 1280, height: 800 },
   { name: "site-demo-phone", query: "?site&lang=de", width: 390, height: 844 },
+  { name: "view-household", query: "", width: 1600, height: 1000, editor: true, editorScript: HOUSEHOLD_SCRIPT, then3d: "Erdgeschoss", camera: { target: { x: 12, y: 0.6, z: 7.8 }, radius: 7, phi: 0.95 }, afterWait: 1500 },
+  { name: "view-household-card", query: "", width: 1280, height: 800, editor: true, editorScript: HOUSEHOLD_SCRIPT, then3d: "Erdgeschoss", afterWait: 1500 },
+  { name: "editor-household-bin", query: "", width: 1280, height: 1100, editor: true, editorScript: HOUSEHOLD_SCRIPT + " setTimeout(() => { e._roomId = 'garage'; e._furnitureId = e._doc.floors[0].furniture.find((m) => m.type === 'waste_bin' && m.bin_kind === 'paper').id; }, 500);", scrollSide: true, afterWait: 900 },
 ];
 
 const FREEFORM_SCRIPT = `

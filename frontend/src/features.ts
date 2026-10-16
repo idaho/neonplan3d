@@ -4,10 +4,10 @@
  */
 import { getPacks } from "./packs.ts";
 
-export type Feature = "camera_cockpit" | "weather" | "screens" | "energy_pro" | "sound" | "auto_pro" | "time_travel" | "pool" | "fridge_smart" | "fun_pets" | "fun_halloween";
+export type Feature = "camera_cockpit" | "weather" | "screens" | "energy_pro" | "sound" | "auto_pro" | "time_travel" | "pool" | "household" | "fridge_smart" | "fun_pets" | "fun_halloween";
 
 /** The add-ons shown on the extensions page (sold in the shop). */
-export const FEATURES: readonly Feature[] = ["camera_cockpit", "weather", "screens", "energy_pro", "sound", "auto_pro", "time_travel", "pool"];
+export const FEATURES: readonly Feature[] = ["camera_cockpit", "weather", "screens", "energy_pro", "sound", "auto_pro", "time_travel", "pool", "household"];
 /**
  * Fun packs: free extras (0 €, anyone may give what they like) picked up in the shop by customers – not Pro add-ons,
  * shown in their own section of the extensions page and switched on and off there.
@@ -22,7 +22,7 @@ export type Gated = Feature | FreeFeature;
  * unlocked (the tester has the pack) or the lab switch is on (localStorage "neonplan3d.lab" = "1").
  * A release takes a feature off this list.
  */
-export const UNRELEASED: readonly Gated[] = ["pool", "diagnostics", "fun_halloween"];
+export const UNRELEASED: readonly Gated[] = ["pool", "diagnostics"];
 
 export function labOn(): boolean {
   try {
@@ -56,7 +56,7 @@ const isGerman = (lang: string | undefined) => (lang ?? navigator.language).toLo
  * from the app. (The exact address comes from the shop – see "Rueckmeldung Claude Desktop - Fun-Pack Halloween.md".)
  */
 export function registerUrl(lang: string | undefined): string {
-  return isGerman(lang) ? "https://mastershort.de/mein-konto/?action=register&src=neonplan-app" : "https://mastershort.de/en/my-account/?action=register&src=neonplan-app";
+  return `https://mastershort.de/my-account/?lang=${isGerman(lang) ? "de" : "en"}&src=neonplan-app`;
 }
 
 export function shopUrl(lang: string | undefined): string {
@@ -73,6 +73,7 @@ const MANUAL_FEATURE: Record<string, { de: string; en: string }> = {
   auto_pro: { de: "pro-erweiterungen/#66-auto-pro", en: "pro-add-ons/#66-auto-pro" },
   time_travel: { de: "pro-erweiterungen/#67-zeitreise", en: "pro-add-ons/#67-time-travel" },
   pool: { de: "pro-erweiterungen/#68-pool-pro", en: "pro-add-ons/#68-pool-pro" },
+  household: { de: "pro-erweiterungen/#68-haushalt-pro-beta", en: "pro-add-ons/#68-household-pro-beta" },
   extensions: { de: "erweiterungen-shop-moebel-packs/", en: "extensions-shop-furniture-packs/" },
 };
 

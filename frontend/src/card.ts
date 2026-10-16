@@ -350,6 +350,7 @@ clearTimeout(this.cleanTimer);
               .floorStack=${c?.floor_stack ?? "dim"}
               .panelOpen=${!!this._roomId && c?.room_panel !== false}
               .alerts=${c?.alerts !== false}
+              .householdCard=${c?.household_card !== false}
               .alertJump=${!!c?.alert_jump}
               .scenes=${c?.scenes !== false}
               ?trail=${!!c?.motion_trail}

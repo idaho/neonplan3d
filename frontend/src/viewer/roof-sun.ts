@@ -7,6 +7,38 @@ import type { RoofWindowState } from "./roof.ts";
 import { clipConvex, polygonTriangles } from "../geometry/polygon.ts";
 import { subtractWindowPolygon, windowCoverPieces } from "../roof-window-shape.ts";
 
+/** Diffuse sky light remains below the opening even when direct sun faces the other slope. */
+export function appendRoofDaylight(buf: GeoBuffer, building: Building, floor: Floor, sun: { elevation: number }, cloud: number, states: ReadonlyMap<string, RoofWindowState>, holes: readonly Vec2[][] = []): void {
+  if (sun.elevation <= 2 || cloud >= 0.97) return;
+  const day = Math.min(1, sun.elevation / 12) * (1 - 0.8 * cloud);
+  const color = new Color(0.045 * day, 0.051 * day, 0.06 * day);
+  const faces = new Map(roofFaces(building).map(f => [f.key, f]));
+  for (const w of building.settings.roof.windows ?? []) {
+    const face = faces.get(w.face);
+    if (!face) continue;
+    const owner = roofWindowRoom(building, face, w);
+    if (owner?.floor.id !== floor.id) continue;
+    const room = floor.rooms.find(r => r.id === owner.roomId);
+    if (!room) continue;
+    const ground = roomLevel(floor, room) + 0.019;
+    const cover = Math.min(1, Math.max(0, states.get(w.id)?.cover ?? 0));
+    if (cover >= 0.99) continue;
+    for (const piece of windowCoverPieces(w, cover, true)) {
+      const projected = piece.map(([u, v]): [number, number, number] => [
+        face.o[0] + face.eu[0] * (w.u + u * (w.w ?? 0.78)) + face.es[0] * (w.v + v * (w.h ?? 1.18)),
+        face.o[2] + face.eu[2] * (w.u + u * (w.w ?? 0.78)) + face.es[2] * (w.v + v * (w.h ?? 1.18)),
+        ground,
+      ]);
+      for (const ids of polygonTriangles(room.points)) {
+        let pieces: number[][][] = [clipConvex(projected, ids.map(i => room.points[i]))];
+        for (const hole of holes) pieces = pieces.flatMap(p => subtractWindowPolygon(p, [...hole]));
+        for (const p of pieces) for (let i = 1; i + 1 < p.length; i++)
+          buf.tri(...([p[0], p[i], p[i + 1]].map(q => [q[0], ground, q[1]]) as [number[], number[], number[]]), color);
+      }
+    }
+  }
+}
+
 /** Warm floor patches through skylights, using the same sun, cloud and blind rules as wall windows. */
 export function appendRoofSun(buf: GeoBuffer, building: Building, floor: Floor, sun: { elevation: number; azimuth: number }, cloud: number, states: ReadonlyMap<string, RoofWindowState>, holes: readonly Vec2[][] = [], zones?:number[]): void {
   if (sun.elevation <= 2 || cloud >= 0.97) return;

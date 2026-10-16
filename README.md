@@ -27,6 +27,8 @@
 | ![Alerts](docs/images/view-alert-banner.jpg) | **Wall tablet ready** – warnings for smoke, gas, water, alarm and windows open in the rain, a kiosk mode with idle return and night dimming, scene buttons, and a *Tablet* quality level for Fire tablets. |
 | ![Card](docs/images/card-og-dim.jpg) | **Dashboard card** – `custom:neonplan3d-card` with a visual editor, loaded automatically. |
 
+**Coming from another program?** The [import page](https://neonplan3d.mastershort.de/import/) turns Sweet Home 3D, iPhone LiDAR scans (RoomPlan), CAD (DXF), Blender/SketchUp models (glTF, OBJ, STL), Floorplanner and Valetudo robot maps into a NeonPlan plan – in your browser. Or let an AI write it with [this template](docs/ai-import.md) ([format](docs/plan-format.md)).
+
 Also included: parking spots with vehicles that appear while a car is home, a heatmap for temperature, humidity and CO₂, sunlight through the windows from `sun.sun`, three looks (*Neon*, *Blueprint*, *Day*), a search, restore points, and a full backup of plan, pictures and packs.
 
 ### Free, packs and Pro add-ons

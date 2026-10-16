@@ -22,7 +22,7 @@ const common = {
 const viewerConfig = { ...common, entryPoints: ["src/viewer/viewer3d.ts"], outfile: `${out}/neonplan3d-3d.js` };
 // the card's visual editor only loads in the dashboard's card dialog
 // the language files (lang/*.json) are fetched with a hash of their content, so a new text is never stale
-const LANGS = ["fr", "es", "nl", "it", "hu", "da", "sv", "nb", "nn", "fi", "cs", "pl", "ro", "sl"];
+const LANGS = ["fr", "es", "nl", "it", "hu", "da", "sv", "nb", "nn", "fi", "cs", "pl", "ro", "sl", "zh", "pt"];
 const langHash = createHash("sha256")
   .update(LANGS.map((l) => (existsSync(`lang/${l}.json`) ? readFileSync(`lang/${l}.json`) : "")).join("\n"))
   .digest("hex")
@@ -40,6 +40,8 @@ const editorConfig = (viewerHash) => ({
 const timeTravelConfig = { ...common, entryPoints: ["src/timetravel/entry.ts"], outfile: `${out}/neonplan3d-timetravel.js` };
 // the fun packs (pets …) only load when one is unlocked and switched on; three.js is lent by the 3D bundle
 const funConfig = { ...common, entryPoints: ["src/fun/entry.ts"], outfile: `${out}/neonplan3d-fun.js` };
+// the import page of the website (other programs' plans to NeonPlan, in the browser): not part of the integration
+const importConfig = { ...common, entryPoints: ["src/import/app.ts"], outfile: "../site/import/neonplan-import.js" };
 // The main bundle loads the 3D bundle with a hash of its content in the URL, so a new 3D bundle is
 // never taken from the browser cache (the integration version only changes after a restart).
 // the frontend knows its own version, to notice a backend that still runs an older one
@@ -100,9 +102,12 @@ function copyFonts() {
 // card editor 225 KB on 2026-10-13 for the floor menu texts
 // main 560 KB on 2026-10-13 for the Halloween gift notice, the extension badge and the cellar texts
 // editor 790 KB on 2026-10-13 for the tidied toolbar (tool and view menus)
-// Original 1.18.0 plus retained custom features: measured 564.4 / 820.2 / 822.5 / 225.8 KB.
-// Ground/cellar rendering and the upstream toolbar add code; retain bounded margins.
-const BUDGET = { "neonplan3d.js": 570 * 1024, "neonplan3d-fun.js": 40 * 1024, "neonplan3d-timetravel.js": 120 * 1024, "neonplan3d-3d.js": 830 * 1024, "neonplan3d-editor.js": 835 * 1024, "neonplan3d-card-editor.js": 230 * 1024 };
+// editor 800 KB on 2026-10-14 for the awning (form, sensors) and the 1.18.2 fixes
+// main 570 KB, 3D 770 KB and card editor 230 KB on 2026-10-14 for the awnings (five kinds) and their texts
+// main 590 KB, editor 820 KB, card editor 235 KB on 2026-10-15 for the household (bins, mailboxes, Haushalt Pro) and its texts
+// Original 1.19 plus retained custom geometry, roof windows and household integration; bounded combined budgets.
+// Measured merged build: main 603.9, 3D 840.6, editor 855.7, card editor 240.2 KB.
+const BUDGET = { "neonplan3d.js": 610 * 1024, "neonplan3d-fun.js": 40 * 1024, "neonplan3d-timetravel.js": 120 * 1024, "neonplan3d-3d.js": 855 * 1024, "neonplan3d-editor.js": 865 * 1024, "neonplan3d-card-editor.js": 245 * 1024 };
 
 copyFonts();
 if (watch) {
@@ -115,6 +120,7 @@ if (watch) {
   await build(cardEditorConfig);
   await build(timeTravelConfig);
   await build(funConfig);
+  await build(importConfig);
   await build(mainConfig(hashOf(viewerConfig.outfile), hashOf(editor.outfile), hashOf(cardEditorConfig.outfile), hashOf(timeTravelConfig.outfile), hashOf(funConfig.outfile)));
   let over = false;
   for (const [file, limit] of Object.entries(BUDGET)) {
@@ -123,5 +129,9 @@ if (watch) {
     over ||= !ok;
     console.log(`${ok ? "ok  " : "OVER"} ${file}: ${(size / 1024).toFixed(1)} KB (budget ${limit / 1024} KB)`);
   }
+  // the import page loads once on a website, not on a wall tablet
+  const importSize = statSync(importConfig.outfile).size;
+  over ||= importSize > 160 * 1024;
+  console.log(`${importSize <= 160 * 1024 ? "ok  " : "OVER"} site/import/neonplan-import.js: ${(importSize / 1024).toFixed(1)} KB (budget 160 KB)`);
   if (over) process.exit(1);
 }
