@@ -179,6 +179,7 @@ Vorheriger vollständig geprüfter Laufzeitstand: `62bc3a2` auf `feature/custom-
 - Neues diffuses Tageslicht unter Dachfenstern unabhängig von der direkten Sonnenrichtung erhalten. Auf den fertigen Raumboden projizieren; echte Fensterkontur, teilweise Beschattung, Zielraum und Bodenlöcher ausschneiden. Direkte warme Sonnenprojektion bleibt zusätzlich bestehen. Abnahme: `roof-sun.test.ts`, `roof.test.ts` und Rollo-Browserfälle.
 - Neue dynamische Markisen müssen dieselbe zusätzliche X-/Z-Rotation wie übrige Möbel behalten, auch während des Ausfahrens. Abnahme: alle fünf Varianten bei 0/50/100 % in `furniture-rotation.test.ts`.
 - Keine Plan-/Pack-Migration für diesen Abgleich. Generierte Frontend-Bundles vollständig neu bauen. Gemessener gemeinsamer Build statt alter Einzelzweig-Budgets: Hauptbundle ca. 604 KB, 3D 841 KB, Editor 856 KB, Karteneditor 241 KB; kleine explizite Budgetreserven beibehalten.
+- Lokal abgenommen: 511 Frontend-Tests, 97 Backend-Tests mit 46 Subtests, TypeScript/Mypy, Ruff/Formatierung und Build. 39 Update-/Deployment-/Pack-Tests bestanden; ein optionaler Archivtest ohne explizit übergebenen ZIP-Pfad übersprungen. Alle 58 signierten Packs und 1102 Produktzuordnungen gültig. Acht Browserfälle für Freiform-Markise, Rollo innen/außen bei 0/50/100 %, sofortige Produktfarben-Umschaltung, eigene Anzeigen/Animationen, Kontur-Plus, negative Höhen und Aufwärtslicht bestanden. Keine HA-Installation oder Veröffentlichung.
 
 ## Wiederaufbau- und Pflegecheckliste
 

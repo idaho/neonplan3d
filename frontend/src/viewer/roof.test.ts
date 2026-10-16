@@ -76,6 +76,8 @@ test("a floating roof window over a room of a lower floor belongs to that floor 
   assert.ok(part.win?.solid.count, "the window over the top floor's room rides with the roof's part");
   const below = part.winBelow?.get("eg");
   assert.ok(below?.solid.count, "the window over the ground floor's room goes with the ground floor");
+  assert.ok(below?.glass.count, "lower-floor floating windows retain their separate transparent glass");
+  assert.ok(part.win?.glass.count, "top-floor floating windows retain their separate transparent glass");
   // in the ground floor's own heights: above its ceiling (2.75 m), below the ridge
   const ys = below!.solid.p.filter((_, i) => i % 3 === 1);
   assert.ok(Math.min(...ys) > 2.75 && Math.max(...ys) < 2.75 + 6, `${Math.min(...ys)} … ${Math.max(...ys)}`);
