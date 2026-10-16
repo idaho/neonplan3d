@@ -29,7 +29,7 @@
     {
       "feature": "Dachtransparenz, Dachfenster und Solar-Ausrichtung",
       "intent": "Kameraseitige Dachflaechen ausblenden, Licht durch Dachfenster, konfigurierbare Fenster-Drehpunkte und gedrehte Solar-Ausrichtung erhalten.",
-      "files": ["frontend/src/viewer/roof-visibility.test.ts", "frontend/src/viewer/roof-sun.test.ts", "frontend/src/viewer/roof-window.test.ts", "frontend/src/roof-window-shape.test.ts", "frontend/src/viewer/solar-facing.test.ts", "tests/test_roof_windows.py"]
+      "files": ["frontend/src/viewer/roof-visibility.test.ts", "frontend/src/viewer/roof-sun.test.ts", "frontend/src/viewer/roof-window.test.ts", "frontend/src/roof-window-shape.test.ts", "frontend/src/roof-window-state.test.ts", "frontend/src/viewer/solar-facing.test.ts", "tests/test_roof_windows.py"]
     },
     {
       "feature": "Vollstaendiger Custom-Ausbau inklusive Moebelpacks",
