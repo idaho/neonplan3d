@@ -83,9 +83,9 @@ export interface RoofGeometry {
    * The roof windows of this part, apart from the roof: they stay when the roof fades out over a room, so the
    * room shows its windows in the slope, open or shut, the blind down or up (#482).
    */
-  win?: { solid: GeoBuffer; lines: LineBuffer };
+  win?: { solid: GeoBuffer; glass: GeoBuffer; lines: LineBuffer };
   /** The roof windows that only show in the roof: they fade out with it (the default). */
-  winRoof?: { solid: GeoBuffer; lines: LineBuffer };
+  winRoof?: { solid: GeoBuffer; glass: GeoBuffer; lines: LineBuffer };
 }
 
 /** The floor the roof sits on: the highest one with rooms. */
@@ -149,7 +149,7 @@ function pushRoofWindows(b: Building, parts: RoofGeometry[], states: ReadonlyMap
     // floating over its room only above a room of the roof's own floor: a slope reaching down over a lower floor
     // would leave the window hanging in the air under the floor shown (#482)
     const float = !!w.float && roofWindowRoom(b, face, w)?.floor.id === part.floor.id;
-    const win = float ? (part.win ??= { solid: new GeoBuffer(), lines: new LineBuffer() }) : (part.winRoof ??= { solid: new GeoBuffer(), lines: new LineBuffer() });
+    const win = float ? (part.win ??= { solid: new GeoBuffer(), glass: new GeoBuffer(), lines: new LineBuffer() }) : (part.winRoof ??= { solid: new GeoBuffer(), glass: new GeoBuffer(), lines: new LineBuffer() });
     const up = (p: number[], k: number) => [p[0] + face.n[0] * k, p[1] + face.n[1] * k, p[2] + face.n[2] * k];
     // the fixed frame in the roof; it glows warm while the window is open or tilted
     const frame = st.open > 0.02 || st.tilt > 0.02 ? WINDOW_WARM : WINDOW_FRAME;
@@ -166,7 +166,7 @@ function pushRoofWindows(b: Building, parts: RoofGeometry[], states: ReadonlyMap
     const angle = (st.open > 0.02 ? 30 * Math.min(1, st.open) : st.tilt > 0.5 ? 12 : 0) * DEG;
     const sashBase = local.map(p => up(p, 0.065));
     const sash = roofWindowSash(sashBase, face.n, face.es, w.hinge, angle);
-    for (const [i, j, k] of polygonTriangles(windowOutline(w))) win.solid.tri(sash[i], sash[j], sash[k], WINDOW_GLASS);
+    for (const [i, j, k] of polygonTriangles(windowOutline(w))) win.glass.tri(sash[i], sash[j], sash[k], WINDOW_GLASS);
     for (let i = 0; i < sash.length; i++) win.lines.seg(sash[i], sash[(i + 1) % sash.length], frame);
     // Clip the blind/awning in its configured direction, preserving any concave notches.
     if (st.cover > 0.02) {

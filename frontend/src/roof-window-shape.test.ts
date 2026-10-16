@@ -131,3 +131,15 @@ test("legacy rectangular flat-roof blinds remain on the original raised, tilted 
   const bottom=Math.min(...corners.map(p=>p[1]))-b.floors[0].elevation-b.floors[0].height+0.075;
   assert.ok(Math.abs(Math.min(...points.map(p=>p[1]))-bottom)<1e-8);
 });
+
+test("roof-window glass never shares the opaque frame and blind buffer",()=>{
+  for(const float of [false,true]){
+    const {b,w}=fixture();w.float=float;
+    const layer=(cover:number)=>{const roof=buildRoof(b,new Map([[w.id,{open:0,tilt:0,cover}]]))[0];return float?roof.win!:roof.winRoof!;};
+    const open=layer(0),closed=layer(1);
+    assert.ok(open.glass.count>0);assert.ok(closed.solid.count>open.solid.count);
+    assert.deepEqual(open.glass.p,closed.glass.p);
+    const blue=new Color(0x2b6b8f);
+    for(let i=0;i<open.solid.c.length;i+=3)assert.ok(Math.abs(open.solid.c[i]-blue.r)>1e-8||Math.abs(open.solid.c[i+1]-blue.g)>1e-8||Math.abs(open.solid.c[i+2]-blue.b)>1e-8);
+  }
+});

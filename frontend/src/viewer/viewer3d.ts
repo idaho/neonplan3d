@@ -58,6 +58,7 @@ import { makeFoldable, type FoldMasks } from "./fold.ts";
 import { roofPresentation, makeRoofGlass } from "./roof-visibility.ts";
 import { appendRoofSun } from "./roof-sun.ts";
 import { makeSolarFacing, solarFacingGeometry } from "./solar-facing.ts";
+import { roofWindowGlassMaterial } from "./roof-window.ts";
 import { pushCameraModel, pushPackGlow, pushPackLamp, screenRect, pushFridgeDoors } from "./furniture.ts";
 import { pushPipeTube, type PipeTube } from "./pipes.ts";
 // the walk through the house at eye height (lives with the viewer it drives)
@@ -564,6 +565,7 @@ export class FloorplanViewer {
     /** The roof windows, apart from the roof: they stay while the roof fades over a room. */
     wins: Group;
     winSolid: MeshBasicMaterial;
+    winGlass: MeshBasicMaterial;
     winLines: LineBasicMaterial;
   } | null = null;
   /** The hologram's anchor: a point on the solar field (building coordinates) and the field's normal. */
@@ -2115,6 +2117,7 @@ export class FloorplanViewer {
       this.roof.live.dispose();
       this.roof.wins.traverse((o) => ((o as Mesh).geometry as BufferGeometry | undefined)?.dispose());
       this.roof.winSolid.dispose();
+      this.roof.winGlass.dispose();
       this.roof.winLines.dispose();
       this.scene.remove(this.roof.wins);
       this.scene.remove(this.roof.group);
@@ -2136,6 +2139,7 @@ export class FloorplanViewer {
     const glass = themed(new MeshBasicMaterial({ vertexColors: true, transparent: true, side: DoubleSide, depthWrite: false }), this.themeUniform);
     const wins = new Group();
     const winSolid = themed(new MeshBasicMaterial({ vertexColors: true, side: DoubleSide }), this.themeUniform);
+    const winGlass = themed(roofWindowGlassMaterial(), this.themeUniform);
     const winLines = themed(new LineBasicMaterial({ vertexColors: true, transparent: true, blending: lineBlending(this.theme), depthWrite: false }), this.themeUniform, true);
     const parts = geos.map((geo) => {
       const part = new Group();
@@ -2161,13 +2165,13 @@ export class FloorplanViewer {
         writeSolarLevels(overlay, this.solarLevels);
       }
       // roof windows that only show in the roof ride and fade with it
-      if (geo.winRoof?.solid.count) part.add(new Mesh(geo.winRoof.solid.geometry(), winSolid), new LineSegments(geo.winRoof.lines.geometry(), winLines));
+      if (geo.winRoof?.solid.count) part.add(new Mesh(geo.winRoof.solid.geometry(), winSolid), new Mesh(geo.winRoof.glass.geometry(), winGlass), new LineSegments(geo.winRoof.lines.geometry(), winLines));
       part.renderOrder = 8;
       group.add(part);
       let win: Group | null = null;
       if (geo.win?.solid.count) {
         win = new Group();
-        win.add(new Mesh(geo.win.solid.geometry(), winSolid), new LineSegments(geo.win.lines.geometry(), winLines));
+        win.add(new Mesh(geo.win.solid.geometry(), winSolid), new Mesh(geo.win.glass.geometry(), winGlass), new LineSegments(geo.win.lines.geometry(), winLines));
         wins.add(win);
       }
       return { group: part, floorId: geo.floor.id, rideId: roofRider(this.building!, geo.floor, geo.sections ?? []), base: geo.base, lift: geo.lift !== false, win };
@@ -2175,7 +2179,7 @@ export class FloorplanViewer {
     group.renderOrder = 8;
     this.scene.add(group);
     this.scene.add(wins);
-    this.roof = { group, parts, solid, lines, solar, solarLines, glass, live, lives, wins, winSolid, winLines };
+    this.roof = { group, parts, solid, lines, solar, solarLines, glass, live, lives, wins, winSolid, winGlass, winLines };
     this.placeRoof();
   }
 

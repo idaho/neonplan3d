@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { roofWindowSash } from "./roof-window.ts";
+import { roofWindowSash, roofWindowGlassMaterial } from "./roof-window.ts";
+
+test("roof glass is transparent from both sides and cannot mask the exterior blind",()=>{
+  const material=roofWindowGlassMaterial();
+  assert.ok(material.transparent);assert.ok(material.opacity>0&&material.opacity<0.5);assert.equal(material.depthWrite,false);
+  assert.equal(material.side,2);material.dispose();
+});
 
 const corners = [[0,0,0],[1,0,0],[1,2,0],[0,2,0]], normal = [0,0,1], slope = [0,1,0];
 const near = (a: number[], b: number[]) => a.forEach((v, i) => assert.ok(Math.abs(v - b[i]) < 1e-8));

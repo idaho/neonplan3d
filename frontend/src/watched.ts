@@ -38,7 +38,7 @@ export function watchedEntities(hass: HomeAssistant, b: Building, w: WatchLinks)
   const states = b.floors.flatMap((f) => f.furniture.flatMap((m) => [m.state_entity ?? null, m.state_entity2 ?? null, m.color_entity ?? null]));
   const doors = b.floors.flatMap((f) => f.furniture.flatMap((m) => [m.door_left ?? null, m.door_right ?? null, m.soc ?? null, m.status ?? null, m.charge ?? null, m.export ?? null]));
   const packBindings = b.floors.flatMap(f=>f.furniture.flatMap(m=>[...Object.values(m.bindings ?? {}),...Object.values(m.spot_config ?? {}).map(s=>s.entity)])).filter(id=>id!=="none");
-  const roofWindowIds = (b.settings.roof?.windows ?? []).flatMap((x) => [x.cover, x.contact, x.tilt]).filter((x): x is string => !!x && x !== "none");
+  const roofWindowIds = (b.settings.roof?.windows ?? []).flatMap((x) => [x.cover, x.contact, x.tilt, x.window]).filter((x): x is string => !!x && x !== "none");
   // the solar fields' and strings' sensors feed the roof cables
   const solarIds = [...(b.settings.roof?.solar ?? []).map((f) => f.entity), ...(b.settings.roof?.strings ?? []).map((s) => s.entity)].filter((x): x is string => !!x && x !== "none");
   const robotRooms = b.floors.flatMap((f) => f.furniture.filter((m) => m.type === "robot_vacuum").map((m) => robotRoomSensor(hass, w.furniture.get(m.id)?.entity ?? null, m.room_sensor)));

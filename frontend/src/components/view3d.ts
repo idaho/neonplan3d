@@ -1,6 +1,7 @@
 // Lit wrapper around the lazily loaded 3D viewer.
 
 import { css, html, LitElement, nothing, svg, type PropertyValues } from "lit";
+import { roofWindowState } from "../roof-window-state.ts";
 import { carState, type CarState, roomClimateValue,
   appColor,
   areaEntities,
@@ -854,16 +855,7 @@ export class Fp3dView3d extends LitElement {
     // roof windows: sash and blind follow their contact and cover like windows do
     const roofWindows = new Map<string, { open: number; tilt: number; cover: number }>();
     for (const w of b.settings.roof?.windows ?? []) {
-      const ref = (e: string | null | undefined) => (e && e !== "none" ? e : null);
-      const s = openingState(hass, { cover: ref(w.cover), contact: ref(w.contact), tilt: ref(w.tilt) }, "window");
-      // a window motor: its position (0–100) opens the sash that far; a plain open/closed state fully
-      const motor = ref(w.window) ? hass.states[ref(w.window)!] : undefined;
-      let open = s.open;
-      if (motor && !isUnavailable(motor)) {
-        const pos = motor.attributes.current_position;
-        open = typeof pos === "number" ? Math.min(1, Math.max(0, pos / 100)) : motor.state === "open" || motor.state === "opening" ? 1 : 0;
-      }
-      roofWindows.set(w.id, { open, tilt: s.tilt, cover: s.cover ?? 0 });
+      roofWindows.set(w.id, roofWindowState(hass,w));
     }
     v.setRoofWindows(roofWindows);
     v.setParked(parkedVehicles(hass, b));

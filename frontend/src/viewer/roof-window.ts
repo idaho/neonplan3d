@@ -1,4 +1,10 @@
 import type { RoofWindow } from "../model.ts";
+import { DoubleSide, MeshBasicMaterial } from "three";
+
+/** Glass must never hide an exterior blind when viewed from the room. */
+export function roofWindowGlassMaterial(): MeshBasicMaterial {
+  return new MeshBasicMaterial({ vertexColors: true, side: DoubleSide, transparent: true, opacity: 0.22, depthWrite: false });
+}
 
 /** Rotate the sash around its chosen cross-slope pivot. Bottom-hung opens outward at the top. */
 export function roofWindowSash(corners: number[][], normal: readonly number[], slope: readonly number[], hinge: RoofWindow["hinge"], angle: number): number[][] {

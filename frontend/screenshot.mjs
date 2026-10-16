@@ -488,12 +488,27 @@ shots.push(...[false, true].map((closed) => ({ name: `view-roof-sun-${closed ? '
   e.setDoc(b); e._floorId = f.id; e.fit();
 ` })));
 const only = process.env.SHOTS?.split(",");
+if (process.env.ROOF_PLAN) {
+  const { normalizeBuilding, newFloor } = await import('./src/model.ts');
+  const { roofFaces, windowCorners } = await import('./src/solar.ts');
+  const b = normalizeBuilding(JSON.parse(readFileSync(process.env.ROOF_PLAN, 'utf8')));
+  b.floors=b.floors.map(f=>({...newFloor(f.id,f.name,f.elevation),...f}));
+  const w = b.settings.roof.windows[0], face = roofFaces(b).find(f => f.key === w.face);
+  const corners = windowCorners(face,w), center = corners[0].map((_,i)=>corners.reduce((s,p)=>s+p[i],0)/corners.length);
+  for(const position of [100,50,0]) shots.push({name:`actual-roof-rollo-${position}`,query:'',width:1280,height:900,editor:true,mockPrivatePacks:true,then3d:true,houseView:true,
+    roofRolloPosition:position, camera:{houseView:true,theta:Math.atan2(face.n[0],face.n[2]),phi:0.5,radius:4,target:{x:center[0],y:center[1],z:center[2]}},
+    editorScript:`e.setDoc(${JSON.stringify(b)});e._floorId=${JSON.stringify(b.floors[0].id)};e.fit();`});
+}
 for (const side of [-1, 1]) {
   const fixture = shots.find((s) => s.name === 'view-roof-sun-open');
   shots.push({ ...fixture, name: `view-roof-gable-${side < 0 ? 'left' : 'right'}`, roofSunClosed: undefined, gableSide: side,
     editorScript: fixture.editorScript + "e.change((b) => b.floors[0].furniture.push({ id: 'gable-chair', type: 'chair', x: 5, z: 4, w: 0.6, d: 0.6, h: 0.9, rotation: 0 }));" });
 }
 const kneeFixture = shots.find((s) => s.name === 'view-roof-gable-left');
+for (const position of [100,50,0]) for(const inside of [false,true]) shots.push({...kneeFixture,
+  name:`view-roof-rollo-${position}-${inside?'inside':'outside'}`,gableSide:undefined,houseView:true,mockPrivatePacks:true,roofRolloPosition:position,
+  camera:{theta:0,phi:inside?1.8:0.5,radius:4,target:{x:5.21,y:4.08,z:6.38}},
+  editorScript:kneeFixture.editorScript+"e.change(b=>{b.settings.pets={on:false,list:[]};b.settings.roof.windows[0].cover='cover.preview_roof_blind';});"});
 for (const hinge of ['middle', 'bottom']) shots.push({ ...kneeFixture, name: `view-roof-window-${hinge}`, gableSide: undefined, roofHinge: hinge,
   editorScript: kneeFixture.editorScript + "e._tool = 'roof'; e._roofWinId = 'sky';" });
 for (const below of [true, false]) shots.push({ ...kneeFixture, name: `view-roof-solar-${below ? 'below' : 'above'}`, gableSide: undefined, solarBelow: below,
@@ -1052,6 +1067,29 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       }
       if (v.roof.solid.depthWrite) throw new Error('Glass roof still occludes the room');
     });
+  }
+  if (shot.roofRolloPosition !== undefined) {
+    const observed = await page.evaluate(async ({position,camera}) => {
+      const panel = document.querySelector('neonplan3d-panel'), v = panel.shadowRoot.querySelector('fp3d-view3d');
+      let openCount;
+      for(const p of [100,0,50,100,position]){
+        const states = {...panel.hass.states};
+        for(const w of v.building.settings.roof.windows)if(w.cover)states[w.cover]={entity_id:w.cover,state:p===0?'closed':'open',attributes:{current_position:p,device_class:'shutter'}};
+        panel.hass={...panel.hass,states};await panel.updateComplete;await v.updateComplete;await new Promise(r=>setTimeout(r,180));
+        if([...v.viewer.roofWindows.values()].some(s=>Math.abs(s.cover-(1-p/100))>1e-8))throw new Error('Roof blind state is stale after a live update');
+        let count=0;v.viewer.roof.group.traverse(o=>{if(o.material===v.viewer.roof.winSolid)count+=o.geometry.getAttribute('position').count;});
+        if(p===100){if(openCount!==undefined&&count!==openCount)throw new Error('Reopened roof blind retained its closed mesh');openCount=count;}
+        if(p===0&&count<=openCount)throw new Error('Closed roof blind has no opaque shading mesh');
+        if(!v.viewer.roof.winGlass.transparent||v.viewer.roof.winGlass.depthWrite)throw new Error('Roof glass masks the exterior blind');
+      }
+      v.viewer.setExplode(false);
+      const target=v.viewer.controls.view.target.clone().set(camera.target.x,camera.target.y,camera.target.z);
+      v.viewer.controls.flyTo({target,radius:camera.radius,theta:camera.theta,phi:camera.phi},0);v.viewer.invalidate();
+      return [...v.viewer.roofWindows.values()].map(s=>s.cover);
+    },{position:shot.roofRolloPosition,camera:shot.camera});
+    console.log('HA cover positions rendered:',shot.roofRolloPosition,observed);
+    if(observed.some(v=>Math.abs(v-(1-shot.roofRolloPosition/100))>1e-8))throw new Error('Roof blind did not follow its HA state');
+    await new Promise(r=>setTimeout(r,600));
   }
   if (shot.roofAwning) {
     await page.evaluate(() => {
