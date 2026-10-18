@@ -29,9 +29,14 @@ export function enrich(item,baseId=item.id){
   };
   if(/miele_|kitchen_dishwasher|samsung_rs80|mini_fridge|siemens_kg|liebherr_fna|weishaupt_wtc|bosch_cl3200/.test(baseId)){
     bind("status","Betriebsstatus");bind("power","Leistung",["sensor"]);item.electric=true;
-    for(const p of item.parts.filter(p=>p.screen)){
+    for(const p of item.parts.filter(p=>p.screen && !(/^bosch_cl3200iu_w(26|35)e$/.test(baseId)&&p.id==="p018"))){
       p.status={binding:"status",colors:{running:"#37e0ff",on:"#37e0ff",active:"#37e0ff",heating:"#ff9d32",cooling:"#37e0ff",error:"#ff3b4f",finished:"#55dba7",standby:"#29364a"}};
     }
+  }
+  if(/^bosch_cl3200iu_w(26|35)e$/.test(baseId)){
+    bind("climate","Klimagerät",["climate"]);
+    // The authored air outlet is the native mode-coloured glow surface; do not light the body.
+    const outlet=item.parts.find(p=>p.id==="p018");if(outlet)outlet.screen=true;
   }
   if(baseId.startsWith("miele_")){
     const screen=item.parts.find(p=>p.screen);
@@ -124,7 +129,7 @@ export function run(args){
   const manifestPath=join(dir,"CUSTOM-FEATURES.json");
   if(existsSync(manifestPath)){
     const previous=JSON.parse(readFileSync(manifestPath,"utf8"));
-    if(!args.includes('--force') && previous.contract===16 && source.every((p,i)=>previous.payloadHashes?.[files[i]]===hash(p))){console.log(JSON.stringify({upToDate:true,packs:source.length}));return;}
+    if(!args.includes('--force') && previous.contract===17 && source.every((p,i)=>previous.payloadHashes?.[files[i]]===hash(p))){console.log(JSON.stringify({upToDate:true,packs:source.length}));return;}
   }
   const {packs,geometryChanges,mapping:updatedMapping}=upgrade(source,mapping);
   const modulePath=resolve(moduleArg);
@@ -152,8 +157,8 @@ export function run(args){
     writeFileSync(join(dir,name.replace(/\.json$/,".canonical.json")),bytes+"\n");
     writeFileSync(join(dir,exportDir,packName),JSON.stringify(signed)+"\n");
   }
-  writeFileSync(join(dir,'VARIANTS.json'),JSON.stringify({...updatedMapping,updated:'2026-10-14'},null,2)+'\n');
-  writeFileSync(manifestPath,JSON.stringify({contract:16,version:2,packs:packs.length,geometryChanges,backup:basename(backup),publicKey:key,payloadHashes:Object.fromEntries(packs.map((p,i)=>[files[i],hash(p)]))},null,2)+"\n");
+  writeFileSync(join(dir,'VARIANTS.json'),JSON.stringify({...updatedMapping,updated:'2026-10-18'},null,2)+'\n');
+  writeFileSync(manifestPath,JSON.stringify({contract:17,version:2,packs:packs.length,geometryChanges,backup:basename(backup),publicKey:key,payloadHashes:Object.fromEntries(packs.map((p,i)=>[files[i],hash(p)]))},null,2)+"\n");
   console.log(JSON.stringify({packs:packs.length,geometryChanges,backup}));
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))run(process.argv.slice(2));

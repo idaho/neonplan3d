@@ -7,6 +7,18 @@ import { modernize, winderPoints } from './pack-round-shapes.mjs';
 import { snudda, photoThermostat, addPhotoInventory } from './photo-kitchen-inventory.mjs';
 import { houseNumber } from './house-numbers.mjs';
 const part={shape:"box",x:0,z:0,y:0,w:1,d:1,h:1,color:"body"};
+test("Bosch air conditioners retain status LEDs and add a native climate outlet in both styles idempotently",()=>{
+  for(const base of ["bosch_cl3200iu_w26e","bosch_cl3200iu_w35e"])for(const colored of [false,true]){
+    const item={id:base+(colored?"__wh":""),parts:Array.from({length:30},()=>({...part,color:colored?"#ffffff":"body"}))};
+    item.parts[29].screen=true;
+    enrich(item,base);
+    assert.deepEqual(item.bindings.find(b=>b.id==="climate").domains,["climate"]);
+    assert.ok(item.parts[18].screen);assert.equal(item.parts[18].status,undefined);
+    assert.equal(item.parts[29].status.binding,"status");
+    assert.equal(item.parts.filter(p=>p.screen).length,2);
+    const saved=structuredClone(item);enrich(item,base);assert.deepEqual(item,saved);
+  }
+});
 test('house numbers 0-9 and lowercase a-c use bounded geometry in both appearances',()=>{
   for(const character of '0123456789abc'){
     const n=houseNumber(character),c=houseNumber(character,true);assert.ok(n.parts.length<=60);assert.equal(n.mount,'wall');

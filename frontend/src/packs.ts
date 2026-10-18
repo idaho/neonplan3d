@@ -16,6 +16,11 @@ export function isPackCooktop(type: string): boolean {
   return !!item && /(hob|cooker|stove|herd)/.test(type) && item.parts.filter(isCooktopZone).length >= 2;
 }
 
+/** Packs opt into native air-conditioner behaviour through an explicit climate binding. */
+export function isPackClimate(type: string): boolean {
+  return !!packItem(type)?.bindings?.some(b => b.id === "climate" && b.domains?.includes("climate"));
+}
+
 export interface PackPart {
   id?: string;
   visible?: boolean;

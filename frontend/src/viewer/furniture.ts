@@ -1362,7 +1362,7 @@ function screenRectUnmirrored(f: Furniture, floor?: Floor): { x0: number; x1: nu
     const base = floor ? mountBase(floor, f) : 0;
     const x0 = (part.x - part.w / 2) * w;
     const x1 = (part.x + part.w / 2) * w;
-    const inset = Math.min(0.02, (x1 - x0) * 0.05);
+    const inset = Math.min(0.02, (x1 - x0) * 0.05, part.h * h * 0.05);
     return { x0: x0 + inset, x1: x1 - inset, y0: base + part.y * h + inset, y1: base + (part.y + part.h) * h - inset, z: (part.z + part.d / 2) * d };
   }
   // built-in models are lifted as a whole by their mount height

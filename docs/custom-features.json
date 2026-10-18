@@ -10,7 +10,7 @@
     {"id":"outdoor_areas","implemented":true,"tests":["tests/test_custom_packs.py","tests/test_schema.py","frontend/src/viewer/outdoor.test.ts","frontend/src/surface-binding.test.ts"]},
     {"id":"roof_effects","implemented":true,"tests":["frontend/src/viewer/roof-visibility.test.ts","frontend/src/viewer/roof-sun.test.ts","frontend/src/viewer/roof-window.test.ts","frontend/src/viewer/solar-facing.test.ts"]},
     {"id":"roof_windows_freeform","implemented":true,"tests":["frontend/src/roof-window-shape.test.ts","frontend/src/roof-window-state.test.ts","frontend/src/viewer/roof-window.test.ts","tests/test_roof_windows.py"]},
-    {"id":"pack_bindings","implemented":true,"tests":["tests/test_custom_packs.py","frontend/src/watched.test.ts","frontend/src/pack-runtime.test.ts"]},
+    {"id":"pack_bindings","implemented":true,"tests":["tests/test_custom_packs.py","frontend/src/watched.test.ts","frontend/src/pack-runtime.test.ts","frontend/src/climate-packs.test.ts"]},
     {"id":"pack_displays","implemented":true,"tests":["frontend/src/pack-runtime.test.ts","tests/test_custom_packs.py"]},
     {"id":"product_colors","implemented":true,"tests":["frontend/src/viewer/custom-features.test.ts","scripts/upgrade-custom-packs.test.mjs"]},
     {"id":"status_parts","implemented":true,"tests":["frontend/src/pack-runtime.test.ts","tests/test_custom_packs.py"]},

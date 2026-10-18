@@ -3,7 +3,7 @@
 
 import type { Furniture, EntityRef, Floor, LampMount, Opening, Placement, RoofWindow, Room, Vec2 } from "./model.ts";
 import { centroid, pointInPolygon } from "./model.ts";
-import { isRobotVacuum, packScreen } from "./packs.ts";
+import { isRobotVacuum, isPackClimate, packScreen } from "./packs.ts";
 import type { HassEntity, HomeAssistant } from "./types.ts";
 
 export type DeviceKind =
@@ -926,16 +926,19 @@ export function furnitureEntities(hass: HomeAssistant, floors: readonly Floor[])
   const out = new Map<string, FurnitureLinks>();
   for (const floor of floors) {
     // entities set by hand and devices placed in the plan (an Echo Show in the corner) are taken
-    const used = new Set<string>([...floor.furniture.flatMap((f) => [f.entity, f.power]), ...floor.placements.map((p) => p.entity_id)].filter((v): v is string => !!v && v !== "none"));
+    const used = new Set<string>([...floor.furniture.flatMap((f) => [f.entity, f.power, f.bindings?.climate]), ...floor.placements.map((p) => p.entity_id)].filter((v): v is string => !!v && v !== "none"));
     for (const f of floor.furniture) {
       const lamp = f.type in LAMP_NAMES;
-      const pattern = lamp ? LAMP_NAMES[f.type] : (FURNITURE_NAMES[f.type] ?? (isRobotVacuum(f.type) ? FURNITURE_NAMES.robot_vacuum : undefined));
+      const climate = isPackClimate(f.type);
+      const boundClimate = climate && Object.prototype.hasOwnProperty.call(f.bindings ?? {}, "climate");
+      const pattern = lamp ? LAMP_NAMES[f.type] : (FURNITURE_NAMES[f.type] ?? (climate ? FURNITURE_NAMES.ac_unit : isRobotVacuum(f.type) ? FURNITURE_NAMES.robot_vacuum : undefined));
       if (!pattern && f.entity == null && f.power == null) continue;
       const room = floor.rooms.find((r) => r.points.length >= 3 && pointInPolygon([f.x, f.z], r.points));
       const ids = room ? primaryEntities(hass, areaEntities(hass, room.area_id)) : [];
       const name = (id: string) => `${id} ${entityName(hass, id)}`;
-      let entity: string | null = f.entity === "none" ? null : (f.entity ?? null);
-      if (f.entity == null) {
+      const chosen = boundClimate ? f.bindings?.climate : f.entity;
+      let entity: string | null = chosen === "none" ? null : (chosen ?? null);
+      if (chosen == null && !boundClimate) {
         const free = ids.filter((id) => !used.has(id));
         if (lamp) {
           const lights = free.filter((id) => kindOf(id) === "light");
@@ -944,7 +947,7 @@ export function furnitureEntities(hass: HomeAssistant, floors: readonly Floor[])
           // vacuums are no device kind of their own: look them up in the room's area directly
           const area = room?.area_id ?? null;
           entity = Object.keys(hass.entities ?? {}).find((id) => id.startsWith("vacuum.") && !used.has(id) && entityAreaId(hass, id) === area) ?? null;
-        } else if (f.type === "radiator" || f.type === "ac_unit") {
+        } else if (f.type === "radiator" || f.type === "ac_unit" || climate) {
           const climates = free.filter((id) => kindOf(id) === "climate");
           entity = climates.find((id) => pattern.test(name(id))) ?? climates[0] ?? null;
         } else if (isMediaFurniture(f.type)) {

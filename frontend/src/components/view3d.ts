@@ -89,7 +89,7 @@ import { HEAT_SCALES, heatColor, heatGradient, roomValues, type HeatMode } from 
 import { furnitureName } from "../furniture-names.ts";
 import { fetchImage, saveBuilding } from "../api.ts";
 import { formatNumber, translate, type I18nKey } from "../i18n.ts";
-import { getPacks, isPackCooktop, isPackType, isRobotVacuum, mountBase, packItem, packsVersion } from "../packs.ts";
+import { getPacks, isPackClimate, isPackCooktop, isPackType, isRobotVacuum, mountBase, packItem, packsVersion } from "../packs.ts";
 import { parkedVehicle, PRESENT_STATES, parkedVehicles, vehicleFurniture } from "../parking.ts";
 import { TRAIL_ICON, TRAIL_WINDOW_MS, trailEvents, trailPoints, trailSources, trailTime, type HistoryRow } from "../trail.ts";
 import { limitEffects, weatherEntity, weatherState } from "../weather.ts";
@@ -2418,7 +2418,7 @@ export class Fp3dView3d extends LitElement {
             const gap = typeof a.temperature === "number" && typeof a.current_temperature === "number" ? a.temperature - a.current_temperature : 1;
             screens.set(f.id, { color: [1, 0.42, 0.1], level: Math.min(1, 0.45 + 0.25 * Math.max(0, gap)) });
           }
-        } else if (f.type === "ac_unit" && st && kindOf(st.entity_id) === "climate") {
+        } else if ((f.type === "ac_unit" || isPackClimate(f.type)) && st && kindOf(st.entity_id) === "climate") {
           const glow = climateModeGlow(st);
           if (glow) screens.set(f.id, glow);
         } else if ((f.type === "washer" || f.type === "dryer" || f.type === "dishwasher") && running) {
@@ -2435,7 +2435,7 @@ export class Fp3dView3d extends LitElement {
           const vol = typeof st.attributes.volume_level === "number" ? st.attributes.volume_level : 0.5;
           screens.set(f.id, { color: appColor(st) ?? [0.22, 0.88, 1], level: 0.5 + 0.5 * vol, ring: true, plain: true });
         }
-        if (st && hasScreen(f.type) && !isPackCooktop(f.type)) {
+        if (st && hasScreen(f.type) && !isPackCooktop(f.type) && !isPackClimate(f.type)) {
           // without the "screens" feature a screen is only lit or dark: no app colour, no picture
           const live = hasFeature("screens");
           // a light (an aquarium, a lit panel) glows in its own colour, other entities in the neon cyan

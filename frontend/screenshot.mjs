@@ -637,6 +637,20 @@ if(process.env.ROUND_PACK_DIR){
     shots.push({name:`pack-${name}`,query:'',width:1400,height:1000,editor:true,mockPrivatePacks:true,shapePack:pack,then3d:'Erdgeschoss',camera:{theta:0.5,phi:0.7,radius:items.length===1?8:10,target:{x:3,y:items.length===1?1.5:0.4,z:2.8}},editorScript:`e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[{id:'shapes',name:'Formen',area_id:null,ceiling_height:5,points:[[0,0],[6,0],[6,6],[0,6]],floor_material:'concrete'}];f.openings=[];f.outdoor=[];f.placements=[];f.walls=[];f.furniture=${JSON.stringify(furniture)};b.settings.roof.type='none';});e.fit();`});
   }
 }
+if (process.env.CLIMATE_PACK_DIR) for (const colored of [false, true]) {
+  const pack = JSON.parse(readFileSync(resolve(process.env.CLIMATE_PACK_DIR, 'v2.haustechnik' + (colored ? '_farben' : '') + '.json'), 'utf8'));
+  pack.items = pack.items.filter(i => i.id.startsWith('bosch_cl3200iu_'));
+  shots.push({name: 'pack-climate-' + (colored ? 'color' : 'neon'), query: '', width: 1400, height: 900,
+    editor: true, mockPrivatePacks: true, shapePack: pack, climateExercise: true, then3d: 'Erdgeschoss',
+    camera: {theta: 0.2, phi: 1.2, radius: 5, target: {x: 2.5, y: 2, z: 2}},
+    editorScript: `
+      const panel=document.querySelector('neonplan3d-panel');
+      panel.hass={...panel.hass,states:{...panel.hass.states,'climate.preview_ac':{entity_id:'climate.preview_ac',state:'cool',attributes:{hvac_action:'cooling'}}}};
+      e.change(b=>{b.floors=[b.floors[0]];const f=b.floors[0];f.rooms=[{id:'ac',name:'Klimageräte',area_id:null,points:[[0,0],[5,0],[5,4],[0,4]],floor_material:'wood'}];f.walls=[];f.openings=[];f.outdoor=[];f.placements=[];
+        f.furniture=[{id:'standard',type:'ac_unit',w:0.85,d:0.22,h:0.3},${JSON.stringify(pack.items.map((i,n)=>({id:'bosch'+n,type:'pack:'+pack.id+':'+i.id,w:i.size[0],d:i.size[1],h:i.size[2]}))).slice(1,-1)}].map((f,n)=>({...f,x:1+n*1.5,z:2,rotation:0,variant:null,...(n===1?{bindings:{climate:'climate.preview_ac'}}:{entity:'climate.preview_ac'})}));
+        b.settings.roof.type='none';});e.fit();
+    `});
+}
 for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
   const page = await browser.newPage();
   if (shot.freeformExercise || shot.spotsExercise || shot.roofWindowExercise) page.on("dialog", async (dialog) => { errors.push(`${shot.name}: ${dialog.message()}`); await dialog.dismiss(); });
@@ -1400,6 +1414,25 @@ for (const shot of shots.filter((s) => !only || only.includes(s.name))) {
       if(!lit)throw new Error('Roof underside receives no light');
     });
     console.log('verified upward cone is bounded by the roof and lights its underside');
+  }
+  if (shot.climateExercise) {
+    await page.evaluate(async () => {
+      const panel=document.querySelector('neonplan3d-panel'),view=panel.shadowRoot.querySelector('fp3d-view3d');
+      for (const [state,action] of [['heat','heating'],['cool','cooling'],['cool','idle'],['dry','drying'],['fan_only','fan'],['heat_cool','idle'],['off','off'],['unavailable','']]) {
+        panel.hass={...panel.hass,states:{...panel.hass.states,'climate.preview_ac':{entity_id:'climate.preview_ac',state,attributes:{hvac_action:action}}}};
+        await panel.updateComplete;await new Promise(r=>setTimeout(r,250));await view.updateComplete;
+        const screens=view.viewer.screens,standard=screens.get('standard');
+        for(const id of ['bosch0','bosch1']) {
+          if(JSON.stringify(screens.get(id))!==JSON.stringify(standard))throw new Error('Native/pack climate mismatch: '+id+' '+state);
+        }
+        if(['off','unavailable'].includes(state)&&standard)throw new Error('Inactive climate still glows');
+        if(!['off','unavailable'].includes(state)&&!standard)throw new Error('Active climate has no glow');
+      }
+      panel.hass={...panel.hass,states:{...panel.hass.states,'climate.preview_ac':{entity_id:'climate.preview_ac',state:'cool',attributes:{hvac_action:'cooling'}}}};
+      await panel.updateComplete;await new Promise(r=>setTimeout(r,300));
+      if(!view.viewer.floors[0].screenMesh.visible)throw new Error('Climate glow geometry is hidden');
+    });
+    console.log('verified native/pack climate glow parity and live mode/idle/off changes');
   }
   if(shot.customPackExercise){
     await page.evaluate(async()=>{
