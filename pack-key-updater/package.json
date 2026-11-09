@@ -1,0 +1,11 @@
+{
+  "name": "neonplan-pack-key-updater",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "update": "node ssh-update.mjs",
+    "check": "node ssh-update.mjs --dry-run",
+    "test": "node --test *.test.mjs"
+  }
+}

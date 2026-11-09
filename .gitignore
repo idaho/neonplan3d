@@ -10,3 +10,4 @@ preview/screenshots/
 private/
 *.pem
 *.key
+.DS_Store

@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 26290)
-Total output lines: 694
-
 # NeonPlan Custom Features Entwurf
 
 ## Ergänzung 15.10.2026: Freiform-Dachfenster und Dachmarkisen
